@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../git/Windots"
+		}
+	],
+	"settings": {
+		"powershell.cwd": "dotfiles",
+		"todo-tree.tree.disableCompactFolders": false
+	}
+}
