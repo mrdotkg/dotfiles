@@ -1,124 +1,102 @@
-# Setup.ps1 - Kr Gaurav
-# - - - - - - - - - - - 
-
-#Requires -RunAsAdministrator
-#Requires -Version 7
-
-# Linked Files (Destination => Source)
-$symlinks = @{
-    $PROFILE.CurrentUserAllHosts                                                                    = ".\Profile.ps1"
-    "$HOME\AppData\Local\nvim"                                                                      = ".\nvim"
-    "$HOME\AppData\Local\fastfetch"                                                                 = ".\fastfetch"
-    "$HOME\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json" = ".\windowsterminal\settings.json"
-    "$HOME\.gitconfig"                                                                              = ".\.gitconfig"
-    "$HOME\AppData\Roaming\lazygit"                                                                 = ".\lazygit"
-    "$HOME\AppData\Roaming\AltSnap\AltSnap.ini"                                                     = ".\altsnap\AltSnap.ini"
-    "$ENV:PROGRAMFILES\WezTerm\wezterm_modules"                                                     = ".\wezterm\"
-}
-
-
-winget list | ForEach-Object {
-    $name = $_.Name
-    Write-Host "Installed package: $name"
-}
-
-
-winget list | bash -c 'grep -E "Installed package: " | awk -F ", Id: " "{print \$1, \$2}"'
-
-# Winget & choco dependencies
-$wingetDeps = @(
-    "chocolatey.chocolatey"
-    "eza-community.eza"
-    "ezwinports.make"
-    "fastfetch-cli.fastfetch"
-    "git.git"
-    "github.cli"
-    "kitware.cmake"
-    "mbuilov.sed"
-    "microsoft.powershell"
-    "neovim.neovim"
-    "openjs.nodejs"
-    "starship.starship"
-    "task.task"
+# New Windows OS Setup Automation Script
+Set-Variable -Name GlobalAppList -Scope Global -Value @(
+    "ChrisTitusTech.MicroWin",
+    "AltSnap.AltSnap",
+    "Valve.Steam",
+    "Microsoft.PowerShell",
+    "Neovim.Neovim",
+    "Git.Git",
+    "Microsoft.VisualStudioCode",
+    "WezTerm.WezTerm",
+    "Notepads.NotepadsApp",
+    "Discord.Discord",
+    "Ditto.Ditto",
+    "Nvidia.GeForceExperience",
+    "AquaSnap.AquaSnap",
+    "Whatsapp.Whatsapp",
+    "GlazeWM.GlazeWM"
 )
-$chocoDeps = @(
-    "altsnap"
-    "bat"
-    "fd"
-    "fzf"
-    "gawk"
-    "lazygit"
-    "mingw"
-    "nerd-fonts-jetbrainsmono"
-    "ripgrep"
-    "sqlite"
-    "wezterm"
-    "zig"
-    "zoxide"
-)
-
-# PS Modules
-$psModules = @(
-    "CompletionPredictor"
-    "PSScriptAnalyzer"
-    "ps-arch-wsl"
-    "ps-color-scripts"
-)
-
-# Set working directory
-Set-Location $PSScriptRoot
-[Environment]::CurrentDirectory = $PSScriptRoot
-
-Write-Host "Installing missing dependencies..."
-$installedWingetDeps = winget list | Out-String
-foreach ($wingetDep in $wingetDeps) {
-    if ($installedWingetDeps -notmatch $wingetDep) {
-        winget install --id $wingetDep
+function Install-Apps {
+    param(
+        [string[]]$AppList = $Global:GlobalAppList
+    )
+    foreach ($app in $AppList) {
+        winget install --id $app -e --accept-source-agreements --accept-package-agreements
     }
 }
+function Set-DisplayScaling {
+    # Set display scaling to 100% (manual step for zoom, display, HDR, FPS)
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+}
 
-# Path Refresh
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+function Set-DarkTheme {
+    # Set dark theme
+    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -PropertyType DWord -Value 0 -Force
+    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "SystemUsesLightTheme" -PropertyType DWord -Value 0 -Force
+}
 
-$installedChocoDeps = (choco list --limit-output --id-only).Split("`n")
-foreach ($chocoDep in $chocoDeps) {
-    if ($installedChocoDeps -notcontains $chocoDep) {
-        choco install $chocoDep -y
+function Disable-ClearType {
+    # Disable ClearType
+    Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -Value 2
+}
+
+function Disable-StartupApps {
+    # Disable all startup apps
+    Get-CimInstance -ClassName Win32_StartupCommand | ForEach-Object { Remove-ItemProperty -Path $_.Location -Name $_.Name -ErrorAction SilentlyContinue }
+}
+
+function Enable-OpenSSH {
+    # Enable OpenSSH Server and Client
+    Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+    Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+
+    Start-Service sshd
+    Set-Service -Name sshd -StartupType 'Automatic'
+
+    # Allow SSH through Windows Firewall
+    if (-not (Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -DisplayName "OpenSSH Server (sshd)" `
+            -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
     }
-}
 
-# Install PS Modules
-foreach ($psModule in $psModules) {
-    if (!(Get-Module -ListAvailable -Name $psModule)) {
-        Install-Module -Name $psModule -Force -AcceptLicense -Scope CurrentUser
+    # Set latest PowerShell as default SSH shell
+    $pwshPath = (Get-Command pwsh.exe).Source
+    $sshdConfig = 'C:\ProgramData\ssh\sshd_config'
+    if (Test-Path $sshdConfig) {
+        $config = Get-Content $sshdConfig
+        if ($config -notmatch '^Subsystem\s+sftp\s+') {
+            Add-Content $sshdConfig "`nSubsystem   sftp    sftp-server.exe"
+        }
+        if ($config -notmatch '^ForceCommand\s+') {
+            Add-Content $sshdConfig "`nForceCommand $pwshPath"
+        }
     }
+    Restart-Service sshd
 }
 
-# Delete OOTB Nvim Shortcuts (including QT)
-if (Test-Path "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Neovim\") {
-    Remove-Item "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Neovim\" -Recurse -Force
+function Set-TaskbarSettings {
+    # Hide Search Menu
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -Name "SearchboxTaskbarMode" -Value 0
+
+    # Disable Widgets, Weather (Windows 11)
+    reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarDa /t REG_DWORD /d 0 /f
 }
 
-# Persist Environment Variables
-[System.Environment]::SetEnvironmentVariable('WEZTERM_CONFIG_FILE', "$PSScriptRoot\wezterm\wezterm.lua", [System.EnvironmentVariableTarget]::User)
-
-$currentGitEmail = (git config --global user.email)
-$currentGitName = (git config --global user.name)
-
-# Create Symbolic Links
-Write-Host "Creating Symbolic Links..."
-foreach ($symlink in $symlinks.GetEnumerator()) {
-    Get-Item -Path $symlink.Key -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-    New-Item -ItemType SymbolicLink -Path $symlink.Key -Target (Resolve-Path $symlink.Value) -Force | Out-Null
+function Remove-BloatApps {
+    # Remove bloat apps
+    Get-AppxPackage *xbox* | Remove-AppxPackage
+    Get-AppxPackage *bing* | Remove-AppxPackage
+    Get-AppxPackage *solitaire* | Remove-AppxPackage
+    Get-AppxPackage *zune* | Remove-AppxPackage
 }
 
-git config --global --unset user.email | Out-Null
-git config --global --unset user.name | Out-Null
-git config --global user.email $currentGitEmail | Out-Null
-git config --global user.name $currentGitName | Out-Null
-
-# Install bat themes
-bat cache --clear
-bat cache --build
-
-.\altsnap\createTask.ps1 | Out-Null
+function Setup-Github {
+    param(
+        [string]$UserName = "mrdot",
+        [string]$UserEmail = "grv.rkg@gmail.com"
+    )
+    git config --global user.name $UserName
+    git config --global user.email $UserEmail
+    ssh-keygen -t ed25519 -C $UserEmail -f "$env:USERPROFILE\.ssh\id_ed25519" -N ""
+}
