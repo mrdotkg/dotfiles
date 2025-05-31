@@ -1,6 +1,5 @@
 # New Windows OS Setup Automation Script
 Set-Variable -Name GlobalAppList -Scope Global -Value @(
-    "ChrisTitusTech.MicroWin",
     "AltSnap.AltSnap",
     "Valve.Steam",
     "Microsoft.PowerShell",
