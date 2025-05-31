@@ -12,7 +12,7 @@ Set-Variable -Name GlobalAppList -Scope Global -Value @(
     "Ditto.Ditto",
     "Nvidia.GeForceExperience",
     "AquaSnap.AquaSnap",
-    "Whatsapp.Whatsapp",
+    # "Whatsapp.Whatsapp",
     "GlazeWM.GlazeWM"
 )
 function Install-Apps {
