@@ -1,40 +1,3 @@
-# New Windows OS Setup Automation Script
-Set-Variable -Name GlobalAppList -Scope Global -Value @(
-    "AltSnap.AltSnap",
-    "Valve.Steam",
-    "Microsoft.PowerShell",
-    "Neovim.Neovim",
-    "Git.Git",
-    "Microsoft.VisualStudioCode",
-    "WezTerm.WezTerm",
-    "Notepads.NotepadsApp",
-    "Discord.Discord",
-    "Ditto.Ditto",
-    "Nvidia.GeForceExperience",
-    "AquaSnap.AquaSnap",
-    # "Whatsapp.Whatsapp",
-    "GlazeWM.GlazeWM"
-)
-function Install-Apps {
-    param(
-        [string[]]$AppList = $Global:GlobalAppList
-    )
-    foreach ($app in $AppList) {
-        winget install --id $app -e --accept-source-agreements --accept-package-agreements
-    }
-}
-function Set-DisplayScaling {
-    # Set display scaling to 100% (manual step for zoom, display, HDR, FPS)
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-}
-
-function Set-DarkTheme {
-    # Set dark theme
-    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -PropertyType DWord -Value 0 -Force
-    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "SystemUsesLightTheme" -PropertyType DWord -Value 0 -Force
-}
-
 function Disable-ClearType {
     # Disable ClearType
     Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "FontSmoothing" -Value 2
@@ -74,14 +37,6 @@ function Enable-OpenSSH {
     Restart-Service sshd
 }
 
-function Set-TaskbarSettings {
-    # Hide Search Menu
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -Name "SearchboxTaskbarMode" -Value 0
-
-    # Disable Widgets, Weather (Windows 11)
-    reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarDa /t REG_DWORD /d 0 /f
-}
-
 function Remove-BloatApps {
     # Remove bloat apps
     Get-AppxPackage *xbox* | Remove-AppxPackage
@@ -90,7 +45,27 @@ function Remove-BloatApps {
     Get-AppxPackage *zune* | Remove-AppxPackage
 }
 
-function Setup-Github {
+function Set-DarkTheme {
+    # Set dark theme
+    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -PropertyType DWord -Value 0 -Force
+    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "SystemUsesLightTheme" -PropertyType DWord -Value 0 -Force
+}
+
+function Set-DisplayScaling {
+    # Set display scaling to 100% (manual step for zoom, display, HDR, FPS)
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+}
+
+function Set-TaskbarSettings {
+    # Hide Search Menu
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -Name "SearchboxTaskbarMode" -Value 0
+
+    # Disable Widgets, Weather (Windows 11)
+    reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarDa /t REG_DWORD /d 0 /f
+}
+
+function Set-GithubConfig {
     param(
         [string]$UserName = "mrdot",
         [string]$UserEmail = "grv.rkg@gmail.com"

@@ -25,6 +25,9 @@ else {
     $accentColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
 }
 
+$appsScript = "$PSScriptRoot\apps.ps1"
+$configScript = "$PSScriptRoot\config.ps1"
+
 # Full layout
 $form = New-Object System.Windows.Forms.Form
 $form.MinimizeBox = $false
@@ -72,17 +75,18 @@ $configOptions.BorderStyle = 'None'
 $configOptions.Columns.Add("Config", 260)
 $configPanel.Controls.Add($configOptions)
 
-# Load applications from the script file
-$scriptFile = "$PSScriptRoot\script.ps1"
-. $scriptFile
-foreach ($app in $GlobalAppList) {
+# Populate Apps checkboxes as the list of applications mentioned in the script file
+. $appsScript
+$appList = $AppList
+foreach ($app in $appList) {
     $itemText = if ($app -is [string]) { $app } elseif ($app.PSObject.Properties['Name']) { $app.Name } else { $app.ToString() }
     $appOptions.Items.Add((New-Object System.Windows.Forms.ListViewItem($itemText)))
 }
 # Load configuration options from the script file
-$scriptFunctions = Get-ChildItem function: | Where-Object { $_.ScriptBlock.File -eq $scriptFile }
-foreach ($func in $scriptFunctions) {
-    $configOptions.Items.Add((New-Object System.Windows.Forms.ListViewItem($func.Name)))
+. $configScript
+$scriptFunctions = Get-ChildItem function: | Where-Object { $_.ScriptBlock.File -eq $configScript }
+foreach ($config in $scriptFunctions) {
+    $configOptions.Items.Add((New-Object System.Windows.Forms.ListViewItem($config.Name)))
 }
 
 # Execute all selected actions when the button is clicked
@@ -97,10 +101,19 @@ $runButton.FlatAppearance.BorderSize = 0
 $runButton.ForeColor = [System.Drawing.Color]::White
 $runButton.FlatStyle = 'Flat'
 $runButton.Add_Click({
+      
         $selectedApps = $appOptions.CheckedItems | ForEach-Object { $_.Text }
+        Install-Apps -Apps $selectedApps
+        
         $selectedConfigs = $configOptions.CheckedItems | ForEach-Object { $_.Text }
-        $msg = "Selected Applications:`n" + ($selectedApps -join "`n") + "`n`nSelected Config Options:`n" + ($selectedConfigs -join "`n")
-        [System.Windows.Forms.MessageBox]::Show($msg, "Selections")
+        foreach ($config in $selectedConfigs) {
+            if (Get-Command -Name $config -ErrorAction SilentlyContinue) {
+                & $config
+            }
+            else {
+                Write-Warning "Configuration function '$($config)' not found."
+            }
+        }
     })
 $form.Controls.Add($runButton)
 
