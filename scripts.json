@@ -1,0 +1,99 @@
+{
+    "apps": [
+        {
+            "category": "Pro Tools",
+            "choco": "ventoy",
+            "content": "Ventoy",
+            "description": "Ventoy is an open-source tool for creating bootable USB drives. It supports multiple ISO files on a single USB drive, making it a versatile solution for installing operating systems.",
+            "link": "https://www.ventoy.net/",
+            "winget": "Ventoy.Ventoy"
+        },
+        {
+            "category": "Communications",
+            "choco": "na",
+            "content": "Vesktop",
+            "description": "A cross platform electron-based desktop app aiming to give you a snappier Discord experience with Vencord pre-installed.",
+            "link": "https://github.com/Vencord/Vesktop",
+            "winget": "Vencord.Vesktop"
+        },
+        {
+            "category": "Communications",
+            "choco": "viber",
+            "content": "Viber",
+            "description": "Viber is a free messaging and calling app with features like group chats, video calls, and more.",
+            "link": "https://www.viber.com/",
+            "winget": "Viber.Viber"
+        },
+        {
+            "category": "Multimedia Tools",
+            "choco": "na",
+            "content": "Videomass",
+            "description": "Videomass by GianlucaPernigotto is a cross-platform GUI for FFmpeg, streamlining multimedia file processing with batch conversions and user-friendly features.",
+            "link": "https://jeanslack.github.io/Videomass/",
+            "winget": "GianlucaPernigotto.Videomass"
+        }
+    ],
+    "tweaks": [
+        {
+            "content": "Disable Activity History",
+            "Description": "This erases recent docs, clipboard, and run history.",
+            "category": "Essential Tweaks",
+            "panel": "1",
+            "Order": "a005_",
+            "registry": [
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+                    "Name": "EnableActivityFeed",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "<RemoveEntry>"
+                },
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+                    "Name": "PublishUserActivities",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "<RemoveEntry>"
+                },
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+                    "Name": "UploadUserActivities",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "<RemoveEntry>"
+                }
+            ],
+            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/ah"
+        },
+        {
+            "content": "Disable Hibernation",
+            "Description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
+            "category": "Essential Tweaks",
+            "panel": "1",
+            "Order": "a005_",
+            "registry": [
+                {
+                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
+                    "Name": "HibernateEnabled",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "1"
+                },
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
+                    "Name": "ShowHibernateOption",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "1"
+                }
+            ],
+            "InvokeScript": [
+                "powercfg.exe /hibernate off"
+            ],
+            "UndoScript": [
+                "powercfg.exe /hibernate on"
+            ],
+            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
+        }
+    ]
+}
