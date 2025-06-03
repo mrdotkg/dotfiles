@@ -66,18 +66,20 @@ $FormProps = @{
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     # MinimizeBox     = $false
     # MaximizeBox     = $false
-    Size          = '350,600'
+    Size          = '400,600'
     StartPosition = "CenterParent"
-    Text          = "Dot's WinUtil"
+    Text          = "Gandalf's WinUtil"
     Topmost       = $true
+    Padding       = '10,0,10,0'
 }
 
 $ListViewProps = @{
-    BorderStyle   = 'FixedSingle'
+    BorderStyle   = 'None'
     CheckBoxes    = $true
     Dock          = 'Fill'
     View          = 'Details'
     FullRowSelect = $true
+    MultiSelect   = $true
 }
 
 $SplitProps = @{
@@ -85,7 +87,7 @@ $SplitProps = @{
     Dock             = 'Fill'
     Orientation      = 'Horizontal'
     SplitterDistance = 50
-    SplitterWidth    = 1
+    SplitterWidth    = 3
     # BorderStyle      = 'None'
 }
 
@@ -108,7 +110,32 @@ $AppsLV.Add_ColumnClick({
 $TweaksLV.Add_ColumnClick({ 
         Format-ListView -ListView $TweaksLV -ViewName 'Tweaks' -Column $_.Column 
     })
+# Add a "Select All" item to both ListViews
+$selectAllApps = New-Object Windows.Forms.ListViewItem "Select All"
+$selectAllTweaks = New-Object Windows.Forms.ListViewItem "Select All"
+$AppsLV.Items.Insert(0, $selectAllApps)
+$TweaksLV.Items.Insert(0, $selectAllTweaks)
 
+# Handle checkbox events
+$AppsLV.Add_ItemCheck({
+        param($sender, $e)
+        if ($e.Index -eq 0) {
+            $isChecked = $e.NewValue -eq 'Checked'
+            for ($i = 1; $i -lt $AppsLV.Items.Count; $i++) {
+                $AppsLV.Items[$i].Checked = $isChecked
+            }
+        }
+    })
+
+$TweaksLV.Add_ItemCheck({
+        param($sender, $e)
+        if ($e.Index -eq 0) {
+            $isChecked = $e.NewValue -eq 'Checked'
+            for ($i = 1; $i -lt $TweaksLV.Items.Count; $i++) {
+                $TweaksLV.Items[$i].Checked = $isChecked
+            }
+        }
+    })
 $Split = New-Object Windows.Forms.SplitContainer -Property $SplitProps
 $Split.Panel1.Controls.Add($AppsLV)
 $Split.Panel2.Controls.Add($TweaksLV)
@@ -130,7 +157,7 @@ $ButtonPanel = New-Object Windows.Forms.Panel
 $ButtonPanel.Dock = 'Bottom'
 $ButtonPanel.Height = 40
 $ButtonPanel.Padding = '5,5,5,5'
-$ButtonPanel.BorderStyle = 'FixedSingle'
+$ButtonPanel.BorderStyle = 'None'
 
 # Set button widths and positions
 $InvokeButton.Width = [math]::Floor(($Form.Width - 30) / 2)
@@ -187,14 +214,34 @@ $Scripts.tweaks | ForEach-Object {
 
 # Attach actions to buttons
 $InvokeButton.Add_Click({
-        foreach ($i in $AppsLV.CheckedItems) { ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).script | ForEach-Object { Invoke-Expression $_ } }
-        foreach ($i in $TweaksLV.CheckedItems) { ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).script | ForEach-Object { Invoke-Expression $_ } }
+        # Skip "Select All" item and process only actual apps
+        $selectedApps = $AppsLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
+        $selectedTweaks = $TweaksLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
+
+        foreach ($i in $selectedApps) { 
+            ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).script | 
+            ForEach-Object { Write-Host "Executing App:" $i } 
+        }
+        foreach ($i in $selectedTweaks) { 
+            ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).script | 
+            ForEach-Object { Write-Host "Executing Tweak:" $i } 
+        }
     })
 
-# $RevokeButton.Add_Click({
-#         foreach ($i in $AppsLV.CheckedItems) { ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).Revoke | ForEach-Object { Invoke-Expression $_ } }
-#         foreach ($i in $TweaksLV.CheckedItems) { ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).Revoke | ForEach-Object { Invoke-Expression $_ } }
-#     })
+$RevokeButton.Add_Click({
+        # Skip "Select All" item and process only actual items
+        $selectedApps = $AppsLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
+        $selectedTweaks = $TweaksLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
+
+        foreach ($i in $selectedApps) { 
+            ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).Revoke | 
+            ForEach-Object { Write-Host "Revoking App:" $i } 
+        }
+        foreach ($i in $selectedTweaks) { 
+            ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).Revoke | 
+            ForEach-Object { Write-Host "Revoking Tweak:" $i } 
+        }
+    })
 
 $Form.Controls.AddRange(@($ButtonPanel, $Split))
 $Form.Add_Shown({ $Form.Activate() })
