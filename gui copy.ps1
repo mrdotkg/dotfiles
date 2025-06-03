@@ -3,7 +3,7 @@ if ([Environment]::OSVersion.Version.Major -ge 6) {
     try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
 }
 [System.Windows.Forms.Application]::EnableVisualStyles()
-[System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($true)
+# [System.Windows.Forms.Application]::SetCompatibleTextRenderingDefault($true)
 
 # Set the accent color based on the current Windows theme
 $accentColorValue = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AccentColor" -ErrorAction SilentlyContinue
