@@ -1,36 +1,76 @@
 {
     "apps": [
         {
-            "category": "Pro Tools",
-            "choco": "ventoy",
-            "content": "Ventoy",
-            "description": "Ventoy is an open-source tool for creating bootable USB drives. It supports multiple ISO files on a single USB drive, making it a versatile solution for installing operating systems.",
-            "link": "https://www.ventoy.net/",
-            "winget": "Ventoy.Ventoy"
+            "category": "Games",
+            "choco": "steam-client",
+            "content": "Steam",
+            "description": "Steam is a digital distribution platform for purchasing and playing video games, offering multiplayer gaming, video streaming, and more.",
+            "link": "https://store.steampowered.com/about/",
+            "winget": "Valve.Steam"
+        },
+        {
+            "category": "Microsoft Tools",
+            "choco": "powershell-core",
+            "content": "PowerShell",
+            "description": "PowerShell is a task automation framework and scripting language designed for system administrators, offering powerful command-line capabilities.",
+            "link": "https://github.com/PowerShell/PowerShell",
+            "winget": "Microsoft.PowerShell"
+        },
+        {
+            "category": "Development",
+            "choco": "neovim",
+            "content": "Neovim",
+            "description": "Neovim is a highly extensible text editor and an improvement over the original Vim editor.",
+            "link": "https://neovim.io/",
+            "winget": "Neovim.Neovim"
+        },
+        {
+            "category": "Development",
+            "choco": "git",
+            "content": "Git",
+            "description": "Git is a distributed version control system widely used for tracking changes in source code during software development.",
+            "link": "https://git-scm.com/",
+            "winget": "Git.Git"
+        },
+        {
+            "category": "Development",
+            "choco": "vscode",
+            "content": "VS Code",
+            "description": "Visual Studio Code is a free, open-source code editor with support for multiple programming languages.",
+            "link": "https://code.visualstudio.com/",
+            "winget": "Microsoft.VisualStudioCode"
+        },
+        {
+            "category": "Development",
+            "choco": "wezterm",
+            "content": "Wezterm",
+            "description": "WezTerm is a powerful cross-platform terminal emulator and multiplexer",
+            "link": "https://wezfurlong.org/wezterm/index.html",
+            "winget": "wez.wezterm"
         },
         {
             "category": "Communications",
-            "choco": "na",
-            "content": "Vesktop",
-            "description": "A cross platform electron-based desktop app aiming to give you a snappier Discord experience with Vencord pre-installed.",
-            "link": "https://github.com/Vencord/Vesktop",
-            "winget": "Vencord.Vesktop"
+            "choco": "discord",
+            "content": "Discord",
+            "description": "Discord is a popular communication platform with voice, video, and text chat, designed for gamers but used by a wide range of communities.",
+            "link": "https://discord.com/",
+            "winget": "Discord.Discord"
         },
         {
-            "category": "Communications",
-            "choco": "viber",
-            "content": "Viber",
-            "description": "Viber is a free messaging and calling app with features like group chats, video calls, and more.",
-            "link": "https://www.viber.com/",
-            "winget": "Viber.Viber"
+            "category": "Utilities",
+            "choco": "ditto",
+            "content": "Ditto",
+            "description": "Ditto is an extension to the standard windows clipboard.",
+            "link": "https://github.com/sabrogden/Ditto",
+            "winget": "Ditto.Ditto"
         },
         {
-            "category": "Multimedia Tools",
+            "category": "Utilities",
             "choco": "na",
-            "content": "Videomass",
-            "description": "Videomass by GianlucaPernigotto is a cross-platform GUI for FFmpeg, streamlining multimedia file processing with batch conversions and user-friendly features.",
-            "link": "https://jeanslack.github.io/Videomass/",
-            "winget": "GianlucaPernigotto.Videomass"
+            "content": "GlazeWM",
+            "description": "GlazeWM is a tiling window manager for Windows inspired by i3 and Polybar",
+            "link": "https://github.com/glzr-io/glazewm",
+            "winget": "glzr-io.glazewm"
         }
     ],
     "tweaks": [

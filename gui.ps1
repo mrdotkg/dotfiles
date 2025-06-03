@@ -1,109 +1,91 @@
-$jsonPath = "scripts.json"
-$scripts = Get-Content $jsonPath | ConvertFrom-Json
 Add-Type -AssemblyName System.Windows.Forms
 
-#  Hardened Values
-$formSize = New-Object System.Drawing.Size(300, 600)
-$form = New-Object System.Windows.Forms.Form -Property @{
-    Text          = "Select Applications to Install"
-    Size          = $formSize
-    StartPosition = "Manual"
+# Add sorting variables
+$script:LastColumnClicked = @{
+    Apps   = 0
+    Tweaks = 0
+}
+$script:LastColumnAscending = @{
+    Apps   = $true
+    Tweaks = $true
 }
 
-# Apps ListView
-$appsListView = New-Object System.Windows.Forms.ListView -Property @{
-    Dock        = 'Fill'
-    View        = 'Details'
-    CheckBoxes  = $true
-    BorderStyle = 'None'
-}
-$appsListView.Columns.Add("Applications", -2) | Out-Null
+# Add sorting function
+function Format-ListView {
+    param(
+        [Parameter(Mandatory)][System.Windows.Forms.ListView]$ListView,
+        [Parameter(Mandatory)][string]$ViewName,
+        [Parameter(Mandatory)][int]$Column
+    )
+    
+    # Toggle sort direction if same column clicked
+    if ($script:LastColumnClicked[$ViewName] -eq $Column) {
+        $script:LastColumnAscending[$ViewName] = -not $script:LastColumnAscending[$ViewName]
+    }
+    else {
+        $script:LastColumnAscending[$ViewName] = $true
+    }
+    $script:LastColumnClicked[$ViewName] = $Column
 
-# Tweaks ListView
-$tweaksListView = New-Object System.Windows.Forms.ListView -Property @{
-    Dock        = 'Fill'
-    View        = 'Details'
-    CheckBoxes  = $true
-    BorderStyle = 'None'
-}
-$tweaksListView.Columns.Add("Tweaks", -2) | Out-Null
+    $items = @($ListView.Items)
+    $ListView.BeginUpdate()
+    try {
+        # Sort items
+        $items = $items | Sort-Object -Property {
+            $_.SubItems[$Column].Text
+        } -Descending:(-not $script:LastColumnAscending[$ViewName])
 
-# Create a SplitContainer for horizontal splitting
-$splitContainer = New-Object System.Windows.Forms.SplitContainer -Property @{
-    Orientation      = [System.Windows.Forms.Orientation]::Horizontal
-    Dock             = 'Fill'
-    SplitterDistance = 30
-}
-$splitContainer.Panel1.Controls.Add($appsListView)
-$splitContainer.Panel2.Controls.Add($tweaksListView)
-
-# Create "Invoke Script" button
-$invokeButton = New-Object System.Windows.Forms.Button -Property @{
-    Text      = "Invoke Script"
-    Dock      = "Bottom"
-    Size      = New-Object System.Drawing.Size(120, 30)
-    BackColor = [System.Drawing.Color]::LightGreen
-}
-
-# Create "Undo Script" button
-$undoButton = New-Object System.Windows.Forms.Button -Property @{
-    Text      = "Undo Script"
-    Size      = New-Object System.Drawing.Size(120, 30)
-    Dock      = "Bottom"
-    BackColor = [System.Drawing.Color]::LightCoral
-
+        # Rebuild ListView
+        $ListView.Items.Clear()
+        $ListView.Items.AddRange([System.Windows.Forms.ListViewItem[]]$items)
+    }
+    finally {
+        $ListView.EndUpdate()
+    }
 }
 
-# Add button click event handlers
-$invokeButton.Add_Click({
-        # Run scripts for selected apps
-        foreach ($item in $appsListView.CheckedItems) {
-            $app = $scripts.apps | Where-Object { $_.content -eq $item.Text }
-            if ($app -and $app.script) {
-                Invoke-Expression $app.script
-            }
-        }
-        # Run scripts for selected tweaks
-        foreach ($item in $tweaksListView.CheckedItems) {
-            $tweak = $scripts.tweaks | Where-Object { $_.content -eq $item.Text }
-            if ($tweak -and $tweak.script) {
-                Invoke-Expression $tweak.script
-            }
-        }
+$Form = New-Object Windows.Forms.Form -Property @{ Text = "Dot's WinUtil"; Size = '300,600'; Topmost = $true; StartPosition = 'CenterScreen' }
+$ListViewProps = @{ Dock = 'Fill'; View = 'Details'; CheckBoxes = $true; BorderStyle = 'None' }
+$AppsLV = New-Object Windows.Forms.ListView -Property $ListViewProps
+$TweaksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
+
+$AppsLV.Columns.Add("Applications") | Out-Null
+$AppsLV.Columns.Add("Description") | Out-Null
+$AppsLV.Columns.Add("Link") | Out-Null
+
+$TweaksLV.Columns.Add("Tweaks") | Out-Null
+
+# Add column click handlers
+$AppsLV.Add_ColumnClick({ 
+        Format-ListView -ListView $AppsLV -ViewName 'Apps' -Column $_.Column 
     })
 
-$undoButton.Add_Click({
-        # Run undo scripts for selected apps
-        foreach ($item in $appsListView.CheckedItems) {
-            $app = $scripts.apps | Where-Object { $_.content -eq $item.Text }
-            if ($app -and $app.undo) {
-                Invoke-Expression $app.undo
-            }
-        }
-        # Run undo scripts for selected tweaks
-        foreach ($item in $tweaksListView.CheckedItems) {
-            $tweak = $scripts.tweaks | Where-Object { $_.content -eq $item.Text }
-            if ($tweak -and $tweak.undo) {
-                Invoke-Expression $tweak.undo
-            }
-        }
+$TweaksLV.Add_ColumnClick({ 
+        Format-ListView -ListView $TweaksLV -ViewName 'Tweaks' -Column $_.Column 
     })
 
-$form.Controls.Add($invokeButton)
-$form.Controls.Add($undoButton)
+$Split = New-Object Windows.Forms.SplitContainer -Property @{ Orientation = 'Horizontal'; Dock = 'Fill'; SplitterDistance = 30; }
+$Split.Panel1.Controls.Add($AppsLV)
+$Split.Panel2.Controls.Add($TweaksLV)
 
-$form.Controls.Add($splitContainer)
-$form.Topmost = $true
-$form.Add_Shown({ $form.Activate() })
+$InvokeButton = New-Object Windows.Forms.Button -Property @{ Text = "INVOKE Selected Actions"; Dock = "Bottom"; BackColor = 'LightGreen' }
+$UndoButton = New-Object Windows.Forms.Button -Property @{ Text = "REVOKE Selected Actions"; Dock = "Bottom"; BackColor = 'LightCoral' }
 
-foreach ($app in $scripts.apps) {
-    $item = New-Object System.Windows.Forms.ListViewItem($app.content)
-    $appsListView.Items.Add($item) | Out-Null
-}
+# Populate the ListViews with data from scripts.json
+$Scripts = Get-Content "scripts.json" | ConvertFrom-Json
+$Scripts.apps | ForEach-Object { $AppsLV.Items.Add($_.content) | Out-Null }
+$Scripts.tweaks | ForEach-Object { $TweaksLV.Items.Add($_.content) | Out-Null }
 
-foreach ($tweak in $scripts.tweaks) {
-    $item = New-Object System.Windows.Forms.ListViewItem($tweak.content)
-    $tweaksListView.Items.Add($item) | Out-Null
-}
+# Attach actions to buttons
+$InvokeButton.Add_Click({
+        foreach ($i in $AppsLV.CheckedItems) { ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).script | ForEach-Object { Invoke-Expression $_ } }
+        foreach ($i in $TweaksLV.CheckedItems) { ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).script | ForEach-Object { Invoke-Expression $_ } }
+    })
+$UndoButton.Add_Click({
+        foreach ($i in $AppsLV.CheckedItems) { ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).undo | ForEach-Object { Invoke-Expression $_ } }
+        foreach ($i in $TweaksLV.CheckedItems) { ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).undo | ForEach-Object { Invoke-Expression $_ } }
+    })
 
-[void]$form.ShowDialog()
+$Form.Controls.AddRange(@($InvokeButton, $UndoButton, $Split))
+$Form.Add_Shown({ $Form.Activate() })
+[void]$Form.ShowDialog()
