@@ -26,41 +26,7 @@ if ($AccentColorValue) {
 else {
     $AccentColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
 }
-
-# Add sorting function
-function Format-ListView {
-    param(
-        [Parameter(Mandatory)][System.Windows.Forms.ListView]$ListView,
-        [Parameter(Mandatory)][string]$ViewName,
-        [Parameter(Mandatory)][int]$Column
-    )
-    
-    # Toggle sort direction if same column clicked
-    if ($script:LastColumnClicked[$ViewName] -eq $Column) {
-        $script:LastColumnAscending[$ViewName] = -not $script:LastColumnAscending[$ViewName]
-    }
-    else {
-        $script:LastColumnAscending[$ViewName] = $true
-    }
-    $script:LastColumnClicked[$ViewName] = $Column
-
-    $items = @($ListView.Items)
-    $ListView.BeginUpdate()
-    try {
-        # Sort items
-        $items = $items | Sort-Object -Property {
-            $_.SubItems[$Column].Text
-        } -Descending:(-not $script:LastColumnAscending[$ViewName])
-
-        # Rebuild ListView
-        $ListView.Items.Clear()
-        $ListView.Items.AddRange([System.Windows.Forms.ListViewItem[]]$items)
-    }
-    finally {
-        $ListView.EndUpdate()
-    }
-}
-
+# Define properties for the main form and controls
 $FormProps = @{
     # FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
@@ -75,11 +41,15 @@ $FormProps = @{
 
 $ListViewProps = @{
     BorderStyle   = 'None'
+    # height        = $FormProps.Size.Height - 100
+    # width         = $Form.Rectangle.Width
+    # anchor        = 'Top, Left, Right, Bottom'
     CheckBoxes    = $true
     Dock          = 'Fill'
     View          = 'Details'
     FullRowSelect = $true
     MultiSelect   = $true
+    Padding       = '20,20,20,20'
 }
 
 $SplitProps = @{
@@ -91,56 +61,6 @@ $SplitProps = @{
     # BorderStyle      = 'None'
 }
 
-$Form = New-Object Windows.Forms.Form -Property $FormProps
-$AppsLV = New-Object Windows.Forms.ListView -Property $ListViewProps
-$TweaksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
-
-$AppsLV.Columns.Add("Applications", 150) | Out-Null
-# $AppsLV.Columns.Add("Link", -2) | Out-Null
-$AppsLV.Columns.Add("Description", -2) | Out-Null
-
-$TweaksLV.Columns.Add("Tweaks", 150) | Out-Null
-$TweaksLV.Columns.Add("Description", -2) | Out-Null
-
-# Add column click handlers
-$AppsLV.Add_ColumnClick({ 
-        Format-ListView -ListView $AppsLV -ViewName 'Apps' -Column $_.Column 
-    })
-
-$TweaksLV.Add_ColumnClick({ 
-        Format-ListView -ListView $TweaksLV -ViewName 'Tweaks' -Column $_.Column 
-    })
-# Add a "Select All" item to both ListViews
-$selectAllApps = New-Object Windows.Forms.ListViewItem "Select All"
-$selectAllTweaks = New-Object Windows.Forms.ListViewItem "Select All"
-$AppsLV.Items.Insert(0, $selectAllApps)
-$TweaksLV.Items.Insert(0, $selectAllTweaks)
-
-# Handle checkbox events
-$AppsLV.Add_ItemCheck({
-        param($sender, $e)
-        if ($e.Index -eq 0) {
-            $isChecked = $e.NewValue -eq 'Checked'
-            for ($i = 1; $i -lt $AppsLV.Items.Count; $i++) {
-                $AppsLV.Items[$i].Checked = $isChecked
-            }
-        }
-    })
-
-$TweaksLV.Add_ItemCheck({
-        param($sender, $e)
-        if ($e.Index -eq 0) {
-            $isChecked = $e.NewValue -eq 'Checked'
-            for ($i = 1; $i -lt $TweaksLV.Items.Count; $i++) {
-                $TweaksLV.Items[$i].Checked = $isChecked
-            }
-        }
-    })
-$Split = New-Object Windows.Forms.SplitContainer -Property $SplitProps
-$Split.Panel1.Controls.Add($AppsLV)
-$Split.Panel2.Controls.Add($TweaksLV)
-
-# Add to variable example:
 $ActionButtonProps = @{ 
     Height    = 30
     Text      = "Invoke Selected"
@@ -149,69 +69,122 @@ $ActionButtonProps = @{
     ForeColor = [System.Drawing.Color]::White
     FlatStyle = 'Flat'
 }
-$InvokeButton = [System.Windows.Forms.Button]::new()
-$RevokeButton = [System.Windows.Forms.Button]::new()
 
-# Place buttons side by side using a Panel
-$ButtonPanel = New-Object Windows.Forms.Panel
-$ButtonPanel.Dock = 'Bottom'
-$ButtonPanel.Height = 40
-$ButtonPanel.Padding = '5,5,5,5'
-$ButtonPanel.BorderStyle = 'None'
-
-# Set button widths and positions
-$InvokeButton.Width = [math]::Floor(($Form.Width - 30) / 2)
-$RevokeButton.Width = $InvokeButton.Width
-$InvokeButton.Left = 5
-$RevokeButton.Left = $InvokeButton.Right - 1
-$InvokeButton.Top = 5
-$RevokeButton.Top = 5
-
-# Center the buttons in the ButtonPanel
-$ButtonSpacing = 8
-$TotalButtonWidth = $InvokeButton.Width + $RevokeButton.Width + $ButtonSpacing
-$ButtonPanelWidth = $ButtonPanel.Width
-$StartLeft = [math]::Max(5, [math]::Floor(($ButtonPanelWidth - $TotalButtonWidth) / 2))
-
-$ButtonPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
-$InvokeButton | ForEach-Object { foreach ($k in $ActionButtonProps.Keys) { $_.$k = $ActionButtonProps[$k] } }
-$InvokeButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
-$InvokeButton.FlatAppearance.BorderSize = 0
-$InvokeButton.Left = $StartLeft
-$RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing
-$InvokeButton.Top = 5
-$RevokeButton.Top = 5
-
-# Set RevokeButton properties (similar to InvokeButton)
-$RevokeButtonOptions = $ActionButtonProps.Clone()
-$RevokeButtonOptions.Text = "Revoke Selected"
-$RevokeButtonOptions.BackColor = [System.Drawing.Color]::FromArgb(200, 60, 60) # Red-ish for revoke
-$RevokeButtonOptions.ForeColor = [System.Drawing.Color]::White
-
-$RevokeButton | ForEach-Object { foreach ($k in $RevokeButtonOptions.Keys) { $_.$k = $RevokeButtonOptions[$k] } }
-$RevokeButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(200, 60, 60)
-$RevokeButton.FlatAppearance.BorderSize = 0
-
-# Adjust position on resize
-$ButtonPanel.Add_Resize({
-        $ButtonPanelWidth = $ButtonPanel.Width
-        $StartLeft = [math]::Max(5, [math]::Floor(($ButtonPanelWidth - $TotalButtonWidth) / 2))
-        $InvokeButton.Left = $StartLeft
-        $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
-    })
-
-# Populate the ListViews with data from scripts.json
-$Scripts = Get-Content "scripts.json" | ConvertFrom-Json
-$Scripts.apps | ForEach-Object { 
-    $AppsLV.Items.Add($_.content) | Out-Null
-    # $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.link) | Out-Null
-    $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-}
-$Scripts.tweaks | ForEach-Object { 
-    $TweaksLV.Items.Add($_.content) | Out-Null 
-    $TweaksLV.Items[$TweaksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
+$ContentPanelProps = @{
+    Dock      = 'Fill'
+    Padding   = '0,0,0,0'
+    BackColor = [System.Drawing.Color]::White
 }
 
+$FooterPanelProps = @{
+    Dock        = 'Bottom'
+    Height      = 50
+    BackColor   = [System.Drawing.Color]::FromArgb(245, 245, 245)
+    Padding     = '5,5,5,10'
+    BorderStyle = 'None'
+}
+
+$InvokeButtonProps = @{
+    Width     = 150
+    Left      = 5
+    Top       = 5
+    Text      = "Invoke Selected"
+    BackColor = $AccentColor
+    ForeColor = [System.Drawing.Color]::White
+    Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    FlatStyle = 'Flat'
+}
+
+$RevokeButtonProps = @{
+    Width     = $InvokeButtonProps.Width
+    Left      = $InvokeButtonProps.Left + $InvokeButtonProps.Width - 1
+    Top       = 5
+    Text      = "Revoke Selected"
+    BackColor = [System.Drawing.Color]::FromArgb(200, 60, 60)
+    ForeColor = [System.Drawing.Color]::White
+    Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    FlatStyle = 'Flat'
+}
+
+function Format-ListView {
+    param(
+        [Parameter(Mandatory)][System.Windows.Forms.ListView]$ListView,
+        [Parameter(Mandatory)][string]$ViewName,
+        [Parameter(Mandatory)][int]$Column
+    )
+    # Toggle sort direction if same column clicked
+    if ($script:LastColumnClicked[$ViewName] -eq $Column) {
+        $script:LastColumnAscending[$ViewName] = -not $script:LastColumnAscending[$ViewName]
+    }
+    else {
+        $script:LastColumnAscending[$ViewName] = $true
+    }
+    $script:LastColumnClicked[$ViewName] = $Column
+
+    # Exclude the first row ("Select All") from sorting
+    $header = $ListView.Items[0]
+    # $itemsToSort = @($ListView.Items) | Select-Object -Skip 1
+    $items = @($ListView.Items) | Select-Object -Skip 1
+    $ListView.BeginUpdate()
+    try {
+        # Sort items
+        $items = $items | Sort-Object -Property {
+            $_.SubItems[$Column].Text
+        } -Descending:(-not $script:LastColumnAscending[$ViewName])
+
+        # Rebuild ListView
+        $ListView.Items.Clear()
+        $ListView.Items.Add($header)
+        $ListView.Items.AddRange([System.Windows.Forms.ListViewItem[]]$items)
+    }
+    finally {
+        $ListView.EndUpdate()
+    }
+}
+
+# Helper function to create styled buttons
+function New-ActionButton {
+    param(
+        [string]$Text,
+        [System.Drawing.Color]$BackColor,
+        [System.Drawing.Color]$BorderColor
+    )
+    $btn = [System.Windows.Forms.Button]::new()
+    foreach ($k in $ActionButtonProps.Keys) { $btn.$k = $ActionButtonProps[$k] }
+    $btn.Text = $Text
+    $btn.BackColor = $BackColor
+    $btn.ForeColor = [System.Drawing.Color]::White
+    $btn.FlatAppearance.BorderColor = $BorderColor
+    $btn.FlatAppearance.BorderSize = 0
+    return $btn
+}
+
+########################
+## GUI Initialization ##
+########################
+
+$Form = New-Object Windows.Forms.Form -Property $FormProps
+
+# Create a responsive layout: main content area and footer
+$ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
+$FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
+
+# Separate the Content Panel horizontally with a Splitter bar
+$Split = New-Object Windows.Forms.SplitContainer -Property $SplitProps
+
+# Append ListViews to both sides of the Splitter bar
+$AppsLV = New-Object Windows.Forms.ListView -Property $ListViewProps
+$TweaksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
+$Split.Panel1.Controls.Add($AppsLV)
+$Split.Panel2.Controls.Add($TweaksLV)
+
+# Add Split (with ListViews) to content area, and ButtonPanel to footer
+$ContentPanel.Controls.Add($Split)
+
+$InvokeButton = New-ActionButton -Text "Invoke Selected" -BackColor $AccentColor -BorderColor ([System.Drawing.Color]::FromArgb(44, 151, 222))
+$RevokeButton = New-ActionButton -Text "Revoke Selected" -BackColor ([System.Drawing.Color]::FromArgb(200, 60, 60)) -BorderColor ([System.Drawing.Color]::FromArgb(200, 60, 60))
+foreach ($k in $InvokeButtonProps.Keys) { $InvokeButton.$k = $InvokeButtonProps[$k] }
+foreach ($k in $RevokeButtonProps.Keys) { $RevokeButton.$k = $RevokeButtonProps[$k] }
 # Attach actions to buttons
 $InvokeButton.Add_Click({
         # Skip "Select All" item and process only actual apps
@@ -243,6 +216,68 @@ $RevokeButton.Add_Click({
         }
     })
 
-$Form.Controls.AddRange(@($ButtonPanel, $Split))
+# Adjust position on resize
+$FooterPanel.Add_Resize({
+        $FooterPanelWidth = $FooterPanel.Width
+        $ButtonSpacing = 8
+        $TotalButtonWidth = $InvokeButton.Width + $RevokeButton.Width + $ButtonSpacing
+        Write-Host "FooterPanel resized: Width=$FooterPanelWidth, TotalButtonWidth=$TotalButtonWidth"
+        $StartLeft = [math]::Max(5, [math]::Floor(($FooterPanelWidth - $TotalButtonWidth) / 2))
+        $InvokeButton.Left = $StartLeft
+        $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
+    })
+$FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
+
+$AppsLV.Columns.Add("Applications", 150) | Out-Null
+# $AppsLV.Columns.Add("Link", -2) | Out-Null
+$AppsLV.Columns.Add("Description", -2) | Out-Null
+
+$TweaksLV.Columns.Add("Tweaks", 150) | Out-Null
+$TweaksLV.Columns.Add("Description", -2) | Out-Null
+
+
+# Add a "Select All" item to both ListViews
+$AppsLV.Items.Add("Select All") | Out-Null
+$TweaksLV.Items.Add("Select All") | Out-Null
+
+# Create a handler for "Select All" checkbox
+$SelectAllHandler = {
+    param($sender, $e)
+    if ($e.Index -eq 0) {
+        $isChecked = $e.NewValue -eq 'Checked'
+        for ($i = 1; $i -lt $sender.Items.Count; $i++) {
+            $sender.Items[$i].Checked = $isChecked
+        }
+    }
+}
+
+# Attach the Select All handler to both ListViews
+$AppsLV.Add_ItemCheck($SelectAllHandler)
+$TweaksLV.Add_ItemCheck($SelectAllHandler)
+
+
+# Add column click handlers
+$AppsLV.Add_ColumnClick({ 
+        Format-ListView -ListView $AppsLV -ViewName 'Apps' -Column $_.Column 
+    })
+
+$TweaksLV.Add_ColumnClick({ 
+        Format-ListView -ListView $TweaksLV -ViewName 'Tweaks' -Column $_.Column 
+    })
+
+
+# Populate the ListViews with data from scripts.json
+$Scripts = Get-Content "scripts.json" | ConvertFrom-Json
+$Scripts.apps | ForEach-Object { 
+    $AppsLV.Items.Add($_.content) | Out-Null
+    # $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.link) | Out-Null
+    $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
+}
+$Scripts.tweaks | ForEach-Object { 
+    $TweaksLV.Items.Add($_.content) | Out-Null 
+    $TweaksLV.Items[$TweaksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
+}
+
+$Form.Controls.AddRange(@($ContentPanel, $FooterPanel))
 $Form.Add_Shown({ $Form.Activate() })
 [void]$Form.ShowDialog()
