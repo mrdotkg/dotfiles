@@ -74,9 +74,17 @@ $ActionButtonProps = @{
     FlatStyle = 'Flat'
 }
 
+$HeaderHeight = 40
+$HeaderPanelProps = @{
+    Height    = $HeaderHeight
+    Dock      = 'Top'
+    BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
+    Padding   = '10,10,10,0'
+}
+
 $ContentPanelProps = @{
     Dock      = 'Fill'
-    Padding   = '10,0,10,10'
+    Padding   = '0,40,10,10'
     BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
 }
 
@@ -86,6 +94,48 @@ $FooterPanelProps = @{
     BackColor   = [System.Drawing.Color]::FromArgb(241, 243, 249)
     Padding     = '10,5,10,10'
     BorderStyle = 'None'
+}
+
+$SearchBoxProps = @{
+    Location        = New-Object System.Drawing.Point(0, 0)
+    Size            = New-Object System.Drawing.Size(308, 40)
+    Font            = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+    # BackColor       = [System.Drawing.Color]::FromArgb(241, 243, 249)
+    # ForeColor       = [System.Drawing.Color]::FromArgb(100, 100, 100)
+    BorderStyle     = 'FixedSingle'
+    PlaceholderText = "Search..."
+    TextAlign       = 'Left'
+    # Add a search icon to the left of the TextBox
+    Padding         = '10,0,0,0'  # Add padding to the left for the icon
+    Add_Enter       = ({
+            if ($SearchBox.Text -eq "Search...") {
+                $SearchBox.Text = ""
+                $SearchBox.ForeColor = [System.Drawing.Color]::Black
+            }
+        })
+    Add_Leave       = ({
+            if ($SearchBox.Text -eq "") {
+                $SearchBox.Text = "Search..."
+                $SearchBox.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
+            }
+        })
+    Add_TextChanged = ({
+            $searchText = $SearchBox.Text.Trim()
+            if ($searchText -eq "Search...") { return }
+        
+            # Filter ListViews based on search text
+            $listViews = @($AppsLV, $TweaksLV, $TasksLV)
+            foreach ($lv in $listViews) {
+                foreach ($item in $lv.Items) {
+                    if ($item.Text -like "*$searchText*") {
+                        $item.ForeColor = [System.Drawing.Color]::Black
+                    }
+                    else {
+                        $item.ForeColor = [System.Drawing.Color]::LightGray
+                    }
+                }
+            }
+        })
 }
 
 $InvokeButtonProps = @{
@@ -170,6 +220,7 @@ function Set-FooterButtonPositions {
     $StartLeft = [math]::Max(5, [math]::Floor(($FooterPanelWidth - $TotalButtonWidth) / 2))
     $InvokeButton.Left = $StartLeft
     $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
+    $SearchBox.Left = $StartLeft
 }
 function Run-SelectedItems {
     param(
@@ -200,9 +251,14 @@ function Run-SelectedItems {
 
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 
-# Create a responsive layout: main content area and footer
+# Create a responsive layout: header, main content area and footer
+$HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
 $FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
+
+# Create Search Bar
+$SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
+$HeaderPanel.Controls.Add($SearchBox)
 
 # Separate the Content Panel horizontally with a Splitter bar
 $Split = New-Object Windows.Forms.SplitContainer -Property $SplitProps
@@ -286,6 +342,6 @@ $Scripts.tweaks | ForEach-Object {
     $TweaksLV.Items[$TweaksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
 }
 
-$Form.Controls.AddRange(@($ContentPanel, $FooterPanel))
+$Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
 $Form.Add_Shown({ $Form.Activate() })
 [void]$Form.ShowDialog()
