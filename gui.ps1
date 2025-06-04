@@ -33,10 +33,10 @@ $FormProps = @{
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     # MinimizeBox     = $false
     # MaximizeBox     = $false
-    Size          = '600,600'
+    Size          = '400,700'
     StartPosition = "CenterParent"
     Text          = "Gandalf's WinUtil"
-    Topmost       = $true
+    # Topmost       = $true
     # Padding       = '10,10,10,10'
     BackColor     = [System.Drawing.Color]::white
     Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
@@ -53,11 +53,11 @@ $ListViewProps = @{
     FullRowSelect = $true
     MultiSelect   = $true
     # Padding       = '20,20,20,20'
-    BackColor     = [System.Drawing.Color]::white
+    BackColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
 }
 
 $SplitProps = @{
-    BackColor        = [System.Drawing.Color]::Gray
+    BackColor        = [System.Drawing.Color]::White
     Dock             = 'Fill'
     Orientation      = 'Horizontal'
     SplitterDistance = 50
@@ -76,7 +76,7 @@ $ActionButtonProps = @{
 
 $ContentPanelProps = @{
     Dock      = 'Fill'
-    Padding   = '10,0,10,0'
+    Padding   = '10,0,10,10'
     BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
 }
 
@@ -167,7 +167,6 @@ function Set-FooterButtonPositions {
     $FooterPanelWidth = $FooterPanel.Width
     $ButtonSpacing = 8
     $TotalButtonWidth = $InvokeButton.Width + $RevokeButton.Width + $ButtonSpacing
-    Write-Host "FooterPanel resized: Width=$FooterPanelWidth, TotalButtonWidth=$TotalButtonWidth"
     $StartLeft = [math]::Max(5, [math]::Floor(($FooterPanelWidth - $TotalButtonWidth) / 2))
     $InvokeButton.Left = $StartLeft
     $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
@@ -207,12 +206,22 @@ $FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
 
 # Separate the Content Panel horizontally with a Splitter bar
 $Split = New-Object Windows.Forms.SplitContainer -Property $SplitProps
+$Split2 = New-Object Windows.Forms.SplitContainer -Property $SplitProps
 
 # Append ListViews to both sides of the Splitter bar
 $AppsLV = New-Object Windows.Forms.ListView -Property $ListViewProps
 $TweaksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
+$TasksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
+
+# Enable tooltips for both ListViews
+$AppsLV.ShowItemToolTips = $true
+$TweaksLV.ShowItemToolTips = $true
+$TasksLV.ShowItemToolTips = $true
+
 $Split.Panel1.Controls.Add($AppsLV)
-$Split.Panel2.Controls.Add($TweaksLV)
+$Split.Panel2.Controls.Add($Split2)
+$Split2.Panel1.Controls.Add($TweaksLV)
+$Split2.Panel2.Controls.Add($TasksLV)
 
 # Add Split (with ListViews) to content area, and ButtonPanel to footer
 $ContentPanel.Controls.Add($Split)
@@ -230,14 +239,16 @@ $RevokeButton.Add_Click({ Run-SelectedItems -Action Revoke })
 $FooterPanel.Add_Resize({ Set-FooterButtonPositions })
 $FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
 
-$AppsLV.Columns.Add("Applications", -2) | Out-Null
-$AppsLV.Columns.Add("Description", -2) | Out-Null
-$TweaksLV.Columns.Add("Tweaks", -2) | Out-Null
-$TweaksLV.Columns.Add("Description", -2) | Out-Null
+$AppsLV.Columns.Add("Applications", 150) | Out-Null
+$AppsLV.Columns.Add("Description", 200) | Out-Null
+$TweaksLV.Columns.Add("Tweaks", 150) | Out-Null
+$TasksLV.Columns.Add("Tasks( can't be revoked )", 150) | Out-Null
+$TweaksLV.Columns.Add("Description", 200) | Out-Null
 
 # Add a "Select All" item to both ListViews
 $AppsLV.Items.Add("Select All") | Out-Null
 $TweaksLV.Items.Add("Select All") | Out-Null
+$TasksLV.Items.Add("Select All") | Out-Null
 
 # Create a handler for "Select All" checkbox
 $SelectAllHandler = {

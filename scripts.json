@@ -4,7 +4,7 @@
             "category": "Games",
             "choco": "steam-client",
             "content": "Steam",
-            "description": "Steam is a digital distribution platform for purchasing and playing video games, offering multiplayer gaming, video streaming, and more.",
+            "description": "Digital distribution platform for purchasing and playing video games, offering multiplayer gaming, video streaming, and more.",
             "link": "https://store.steampowered.com/about/",
             "winget": "Valve.Steam"
         },
@@ -12,7 +12,7 @@
             "category": "Microsoft Tools",
             "choco": "powershell-core",
             "content": "PowerShell",
-            "description": "PowerShell is a task automation framework and scripting language designed for system administrators, offering powerful command-line capabilities.",
+            "description": "Task automation framework and scripting language designed for system administrators, offering powerful command-line capabilities.",
             "link": "https://github.com/PowerShell/PowerShell",
             "winget": "Microsoft.PowerShell"
         },
@@ -20,7 +20,7 @@
             "category": "Development",
             "choco": "neovim",
             "content": "Neovim",
-            "description": "Neovim is a highly extensible text editor and an improvement over the original Vim editor.",
+            "description": "Highly extensible text editor and an improvement over the original Vim editor.",
             "link": "https://neovim.io/",
             "winget": "Neovim.Neovim"
         },
@@ -28,7 +28,7 @@
             "category": "Development",
             "choco": "git",
             "content": "Git",
-            "description": "Git is a distributed version control system widely used for tracking changes in source code during software development.",
+            "description": "Distributed version control system widely used for tracking changes in source code during software development.",
             "link": "https://git-scm.com/",
             "winget": "Git.Git"
         },
@@ -36,7 +36,7 @@
             "category": "Development",
             "choco": "vscode",
             "content": "VS Code",
-            "description": "Visual Studio Code is a free, open-source code editor with support for multiple programming languages.",
+            "description": "Free, open-source code editor with support for multiple programming languages.",
             "link": "https://code.visualstudio.com/",
             "winget": "Microsoft.VisualStudioCode"
         },
@@ -44,7 +44,7 @@
             "category": "Development",
             "choco": "wezterm",
             "content": "Wezterm",
-            "description": "WezTerm is a powerful cross-platform terminal emulator and multiplexer",
+            "description": "Powerful cross-platform terminal emulator and multiplexer.",
             "link": "https://wezfurlong.org/wezterm/index.html",
             "winget": "wez.wezterm"
         },
@@ -52,7 +52,7 @@
             "category": "Communications",
             "choco": "discord",
             "content": "Discord",
-            "description": "Discord is a popular communication platform with voice, video, and text chat, designed for gamers but used by a wide range of communities.",
+            "description": "Popular communication platform with voice, video, and text chat, designed for gamers but used by a wide range of communities.",
             "link": "https://discord.com/",
             "winget": "Discord.Discord"
         },
@@ -104,186 +104,6 @@
                 }
             ],
             "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/ah"
-        },
-        {
-            "content": "Disable Hibernation",
-            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
-            "category": "Essential Tweaks",
-            "panel": "1",
-            "Order": "a005_",
-            "registry": [
-                {
-                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
-                    "Name": "HibernateEnabled",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                },
-                {
-                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
-                    "Name": "ShowHibernateOption",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                }
-            ],
-            "InvokeScript": [
-                "powercfg.exe /hibernate off"
-            ],
-            "UndoScript": [
-                "powercfg.exe /hibernate on"
-            ],
-            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
-        },
-        {
-            "content": "Disable Hibernation",
-            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
-            "category": "Essential Tweaks",
-            "panel": "1",
-            "Order": "a005_",
-            "registry": [
-                {
-                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
-                    "Name": "HibernateEnabled",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                },
-                {
-                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
-                    "Name": "ShowHibernateOption",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                }
-            ],
-            "InvokeScript": [
-                "powercfg.exe /hibernate off"
-            ],
-            "UndoScript": [
-                "powercfg.exe /hibernate on"
-            ],
-            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
-        },
-        {
-            "content": "Disable Hibernation",
-            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
-            "category": "Essential Tweaks",
-            "panel": "1",
-            "Order": "a005_",
-            "registry": [
-                {
-                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
-                    "Name": "HibernateEnabled",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                },
-                {
-                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
-                    "Name": "ShowHibernateOption",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                }
-            ],
-            "InvokeScript": [
-                "powercfg.exe /hibernate off"
-            ],
-            "UndoScript": [
-                "powercfg.exe /hibernate on"
-            ],
-            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
-        },
-        {
-            "content": "Disable Hibernation",
-            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
-            "category": "Essential Tweaks",
-            "panel": "1",
-            "Order": "a005_",
-            "registry": [
-                {
-                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
-                    "Name": "HibernateEnabled",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                },
-                {
-                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
-                    "Name": "ShowHibernateOption",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                }
-            ],
-            "InvokeScript": [
-                "powercfg.exe /hibernate off"
-            ],
-            "UndoScript": [
-                "powercfg.exe /hibernate on"
-            ],
-            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
-        },
-        {
-            "content": "Disable Hibernation",
-            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
-            "category": "Essential Tweaks",
-            "panel": "1",
-            "Order": "a005_",
-            "registry": [
-                {
-                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
-                    "Name": "HibernateEnabled",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                },
-                {
-                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
-                    "Name": "ShowHibernateOption",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                }
-            ],
-            "InvokeScript": [
-                "powercfg.exe /hibernate off"
-            ],
-            "UndoScript": [
-                "powercfg.exe /hibernate on"
-            ],
-            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
-        },
-        {
-            "content": "Disable Hibernation",
-            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
-            "category": "Essential Tweaks",
-            "panel": "1",
-            "Order": "a005_",
-            "registry": [
-                {
-                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
-                    "Name": "HibernateEnabled",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                },
-                {
-                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
-                    "Name": "ShowHibernateOption",
-                    "Type": "DWord",
-                    "Value": "0",
-                    "OriginalValue": "1"
-                }
-            ],
-            "InvokeScript": [
-                "powercfg.exe /hibernate off"
-            ],
-            "UndoScript": [
-                "powercfg.exe /hibernate on"
-            ],
-            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
         },
         {
             "content": "Disable Hibernation",
