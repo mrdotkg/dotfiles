@@ -26,17 +26,20 @@ if ($AccentColorValue) {
 else {
     $AccentColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
 }
+
 # Define properties for the main form and controls
 $FormProps = @{
     # FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     # MinimizeBox     = $false
     # MaximizeBox     = $false
-    Size          = '400,600'
+    Size          = '600,600'
     StartPosition = "CenterParent"
     Text          = "Gandalf's WinUtil"
     Topmost       = $true
-    Padding       = '10,0,10,0'
+    # Padding       = '10,10,10,10'
+    BackColor     = [System.Drawing.Color]::white
+    Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 }
 
 $ListViewProps = @{
@@ -49,11 +52,12 @@ $ListViewProps = @{
     View          = 'Details'
     FullRowSelect = $true
     MultiSelect   = $true
-    Padding       = '20,20,20,20'
+    # Padding       = '20,20,20,20'
+    BackColor     = [System.Drawing.Color]::white
 }
 
 $SplitProps = @{
-    BackColor        = $AccentColor
+    BackColor        = [System.Drawing.Color]::Gray
     Dock             = 'Fill'
     Orientation      = 'Horizontal'
     SplitterDistance = 50
@@ -72,8 +76,8 @@ $ActionButtonProps = @{
 
 $ContentPanelProps = @{
     Dock      = 'Fill'
-    Padding   = '0,0,0,0'
-    BackColor = [System.Drawing.Color]::White
+    Padding   = '5,5,5,5'
+    BackColor = [System.Drawing.Color]::FromArgb(245, 245, 245)
 }
 
 $FooterPanelProps = @{
@@ -229,47 +233,9 @@ $FooterPanel.Add_Resize({
 $FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
 
 $AppsLV.Columns.Add("Applications", -2) | Out-Null
-# $AppsLV.Columns.Add("Link", -2) | Out-Null
-# $AppsLV.Columns.Add("Description", -2) | Out-Null
-# Change header row background color for AppsLV and TweaksLV
-$headerBackColor = [System.Drawing.Color]::Gray
-$headerForeColor = [System.Drawing.Color]::White
-
-$AppsLV.OwnerDraw = $true
-$TweaksLV.OwnerDraw = $true
-
-$DrawColumnHeader = {
-    param($sender, $e)
-    $e.Graphics.FillRectangle((New-Object System.Drawing.SolidBrush $headerBackColor), $e.Bounds)
-    $format = New-Object System.Drawing.StringFormat
-    $format.Alignment = [System.Drawing.StringAlignment]::Near
-    $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-    $font = $e.Font
-    $rectF = [System.Drawing.RectangleF]::FromLTRB($e.Bounds.Left, $e.Bounds.Top, $e.Bounds.Right, $e.Bounds.Bottom)
-    $e.Graphics.DrawString($e.Header.Text, $font, (New-Object System.Drawing.SolidBrush $headerForeColor), $rectF, $format)
-    $e.DrawDefault = $false
-}
-
-$DrawItem = {
-    param($sender, $e)
-    $e.DrawDefault = $true
-}
-
-$DrawSubItem = {
-    param($sender, $e)
-    $e.DrawDefault = $true
-}
-
-$AppsLV.add_DrawColumnHeader($DrawColumnHeader)
-$AppsLV.add_DrawItem($DrawItem)
-$AppsLV.add_DrawSubItem($DrawSubItem)
-
-$TweaksLV.add_DrawColumnHeader($DrawColumnHeader)
-$TweaksLV.add_DrawItem($DrawItem)
-$TweaksLV.add_DrawSubItem($DrawSubItem)
+$AppsLV.Columns.Add("Description", -2) | Out-Null
 $TweaksLV.Columns.Add("Tweaks", -2) | Out-Null
-# $TweaksLV.Columns.Add("Description", -2) | Out-Null
-
+$TweaksLV.Columns.Add("Description", -2) | Out-Null
 
 # Add a "Select All" item to both ListViews
 $AppsLV.Items.Add("Select All") | Out-Null
@@ -289,7 +255,6 @@ $SelectAllHandler = {
 # Attach the Select All handler to both ListViews
 $AppsLV.Add_ItemCheck($SelectAllHandler)
 $TweaksLV.Add_ItemCheck($SelectAllHandler)
-
 
 # Add column click handlers
 $AppsLV.Add_ColumnClick({ 
