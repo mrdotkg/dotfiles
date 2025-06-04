@@ -228,12 +228,47 @@ $FooterPanel.Add_Resize({
     })
 $FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
 
-$AppsLV.Columns.Add("Applications", 150) | Out-Null
+$AppsLV.Columns.Add("Applications", -2) | Out-Null
 # $AppsLV.Columns.Add("Link", -2) | Out-Null
-$AppsLV.Columns.Add("Description", -2) | Out-Null
+# $AppsLV.Columns.Add("Description", -2) | Out-Null
+# Change header row background color for AppsLV and TweaksLV
+$headerBackColor = [System.Drawing.Color]::Gray
+$headerForeColor = [System.Drawing.Color]::White
 
-$TweaksLV.Columns.Add("Tweaks", 150) | Out-Null
-$TweaksLV.Columns.Add("Description", -2) | Out-Null
+$AppsLV.OwnerDraw = $true
+$TweaksLV.OwnerDraw = $true
+
+$DrawColumnHeader = {
+    param($sender, $e)
+    $e.Graphics.FillRectangle((New-Object System.Drawing.SolidBrush $headerBackColor), $e.Bounds)
+    $format = New-Object System.Drawing.StringFormat
+    $format.Alignment = [System.Drawing.StringAlignment]::Near
+    $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+    $font = $e.Font
+    $rectF = [System.Drawing.RectangleF]::FromLTRB($e.Bounds.Left, $e.Bounds.Top, $e.Bounds.Right, $e.Bounds.Bottom)
+    $e.Graphics.DrawString($e.Header.Text, $font, (New-Object System.Drawing.SolidBrush $headerForeColor), $rectF, $format)
+    $e.DrawDefault = $false
+}
+
+$DrawItem = {
+    param($sender, $e)
+    $e.DrawDefault = $true
+}
+
+$DrawSubItem = {
+    param($sender, $e)
+    $e.DrawDefault = $true
+}
+
+$AppsLV.add_DrawColumnHeader($DrawColumnHeader)
+$AppsLV.add_DrawItem($DrawItem)
+$AppsLV.add_DrawSubItem($DrawSubItem)
+
+$TweaksLV.add_DrawColumnHeader($DrawColumnHeader)
+$TweaksLV.add_DrawItem($DrawItem)
+$TweaksLV.add_DrawSubItem($DrawSubItem)
+$TweaksLV.Columns.Add("Tweaks", -2) | Out-Null
+# $TweaksLV.Columns.Add("Description", -2) | Out-Null
 
 
 # Add a "Select All" item to both ListViews
