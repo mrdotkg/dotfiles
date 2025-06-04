@@ -76,15 +76,15 @@ $ActionButtonProps = @{
 
 $ContentPanelProps = @{
     Dock      = 'Fill'
-    Padding   = '5,5,5,5'
-    BackColor = [System.Drawing.Color]::FromArgb(245, 245, 245)
+    Padding   = '10,0,10,0'
+    BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
 }
 
 $FooterPanelProps = @{
     Dock        = 'Bottom'
     Height      = 50
-    BackColor   = [System.Drawing.Color]::FromArgb(245, 245, 245)
-    Padding     = '5,5,5,10'
+    BackColor   = [System.Drawing.Color]::FromArgb(241, 243, 249)
+    Padding     = '10,5,10,10'
     BorderStyle = 'None'
 }
 
@@ -163,6 +163,38 @@ function New-ActionButton {
     return $btn
 }
 
+function Set-FooterButtonPositions {
+    $FooterPanelWidth = $FooterPanel.Width
+    $ButtonSpacing = 8
+    $TotalButtonWidth = $InvokeButton.Width + $RevokeButton.Width + $ButtonSpacing
+    Write-Host "FooterPanel resized: Width=$FooterPanelWidth, TotalButtonWidth=$TotalButtonWidth"
+    $StartLeft = [math]::Max(5, [math]::Floor(($FooterPanelWidth - $TotalButtonWidth) / 2))
+    $InvokeButton.Left = $StartLeft
+    $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
+}
+function Run-SelectedItems {
+    param(
+        [ValidateSet("Invoke", "Revoke")]
+        [string]$Action
+    )
+    $listViews = @(
+        @{ LV = $AppsLV; Data = $Scripts.apps },
+        @{ LV = $TweaksLV; Data = $Scripts.tweaks }
+    )
+    foreach ($entry in $listViews) {
+        $selected = $entry.LV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
+        foreach ($item in $selected) {
+            $scriptObj = $entry.Data | Where-Object { $_.content -eq $item.Text }
+            if ($Action -eq "Invoke") {
+                $scriptObj.script | ForEach-Object { Write-Host "Executing $($item.Text): $_" }
+            }
+            elseif ($Action -eq "Revoke") {
+                $scriptObj.Revoke | ForEach-Object { Write-Host "Revoking $($item.Text): $_" }
+            }
+        }
+    }
+}
+
 ########################
 ## GUI Initialization ##
 ########################
@@ -189,47 +221,13 @@ $InvokeButton = New-ActionButton -Text "Invoke Selected" -BackColor $AccentColor
 $RevokeButton = New-ActionButton -Text "Revoke Selected" -BackColor ([System.Drawing.Color]::FromArgb(200, 60, 60)) -BorderColor ([System.Drawing.Color]::FromArgb(200, 60, 60))
 foreach ($k in $InvokeButtonProps.Keys) { $InvokeButton.$k = $InvokeButtonProps[$k] }
 foreach ($k in $RevokeButtonProps.Keys) { $RevokeButton.$k = $RevokeButtonProps[$k] }
+
 # Attach actions to buttons
-$InvokeButton.Add_Click({
-        # Skip "Select All" item and process only actual apps
-        $selectedApps = $AppsLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
-        $selectedTweaks = $TweaksLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
-
-        foreach ($i in $selectedApps) { 
-            ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).script | 
-            ForEach-Object { Write-Host "Executing App:" $i } 
-        }
-        foreach ($i in $selectedTweaks) { 
-            ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).script | 
-            ForEach-Object { Write-Host "Executing Tweak:" $i } 
-        }
-    })
-
-$RevokeButton.Add_Click({
-        # Skip "Select All" item and process only actual items
-        $selectedApps = $AppsLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
-        $selectedTweaks = $TweaksLV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
-
-        foreach ($i in $selectedApps) { 
-            ($Scripts.apps | Where-Object { $_.content -eq $i.Text }).Revoke | 
-            ForEach-Object { Write-Host "Revoking App:" $i } 
-        }
-        foreach ($i in $selectedTweaks) { 
-            ($Scripts.tweaks | Where-Object { $_.content -eq $i.Text }).Revoke | 
-            ForEach-Object { Write-Host "Revoking Tweak:" $i } 
-        }
-    })
+$InvokeButton.Add_Click({ Run-SelectedItems -Action Invoke })
+$RevokeButton.Add_Click({ Run-SelectedItems -Action Revoke })
 
 # Adjust position on resize
-$FooterPanel.Add_Resize({
-        $FooterPanelWidth = $FooterPanel.Width
-        $ButtonSpacing = 8
-        $TotalButtonWidth = $InvokeButton.Width + $RevokeButton.Width + $ButtonSpacing
-        Write-Host "FooterPanel resized: Width=$FooterPanelWidth, TotalButtonWidth=$TotalButtonWidth"
-        $StartLeft = [math]::Max(5, [math]::Floor(($FooterPanelWidth - $TotalButtonWidth) / 2))
-        $InvokeButton.Left = $StartLeft
-        $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
-    })
+$FooterPanel.Add_Resize({ Set-FooterButtonPositions })
 $FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
 
 $AppsLV.Columns.Add("Applications", -2) | Out-Null
@@ -264,7 +262,6 @@ $AppsLV.Add_ColumnClick({
 $TweaksLV.Add_ColumnClick({ 
         Format-ListView -ListView $TweaksLV -ViewName 'Tweaks' -Column $_.Column 
     })
-
 
 # Populate the ListViews with data from scripts.json
 $Scripts = Get-Content "scripts.json" | ConvertFrom-Json
