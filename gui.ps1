@@ -107,7 +107,6 @@ $FooterPanelProps = @{
 }
 
 $SearchBoxProps = @{
-    Top             = 5
     Font            = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
     ForeColor       = [System.Drawing.Color]::FromArgb(100, 100, 100)
     BorderStyle     = 'FixedSingle'
@@ -222,7 +221,8 @@ function Set-ButtonPositions {
     $StartLeft = [math]::Max(5, [math]::Floor(($FooterPanelWidth - $TotalButtonWidth) / 2))
     $InvokeButton.Left = $StartLeft
     $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
-    $SearchBox.Left = $StartLeft + $InvokeButton.Width / 2
+    $SearchBox.Left = ($StartLeft + $InvokeButton.Width / 2 + $ButtonSpacing / 2 + $RevokeButton.Width / 2) - $SearchBox.Width / 2
+    $SearchBox.Top = 5  
 }
 function Run-SelectedItems {
     param(
@@ -231,13 +231,17 @@ function Run-SelectedItems {
     )
     $listViews = @(
         @{ LV = $AppsLV; Data = $Scripts.apps },
-        @{ LV = $TweaksLV; Data = $Scripts.tweaks }
+        @{ LV = $TweaksLV; Data = $Scripts.tweaks },
+        @{ LV = $TasksLV; Data = $Scripts.tasks }
     )
     foreach ($entry in $listViews) {
+        # differentiate between Apps, Tweaks and Tasks
+        
         $selected = $entry.LV.CheckedItems | Where-Object { $_.Text -ne "Select All" }
         foreach ($item in $selected) {
             $scriptObj = $entry.Data | Where-Object { $_.content -eq $item.Text }
             if ($Action -eq "Invoke") {
+                # TODO - Execute the script or command associated with the item
                 $scriptObj.script | ForEach-Object { Write-Host "Executing $($item.Text): $_" }
             }
             elseif ($Action -eq "Revoke") {
