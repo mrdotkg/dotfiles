@@ -41,9 +41,12 @@ $FormProps = @{
     BackColor     = [System.Drawing.Color]::white
     Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 
+    Add_Resize    = { Set-ButtonPositions }
+
     Add_Shown     = {
         # Activate the form when shown
         $Form.Activate()
+        Set-ButtonPositions
     }
 }
 
@@ -87,12 +90,11 @@ $HeaderPanelProps = @{
     Height    = $HeaderHeight
     Dock      = 'Top'
     BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
-    Padding   = '10,5,10,5'
 }
 
 $ContentPanelProps = @{
     Dock      = 'Fill'
-    Padding   = '0,40,10,10'
+    Padding   = '10,40,10,10'
     BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
 }
 
@@ -102,24 +104,16 @@ $FooterPanelProps = @{
     BackColor   = [System.Drawing.Color]::FromArgb(241, 243, 249)
     Padding     = '10,5,10,10'
     BorderStyle = 'None'
-
-    Add_Resize  = { Set-FooterButtonPositions }
 }
 
 $SearchBoxProps = @{
-    Location        = New-Object System.Drawing.Point(0, 0)
-    Size            = New-Object System.Drawing.Size(150, 30)
+    Top             = 5
     Font            = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-    # BackColor       = [System.Drawing.Color]::FromArgb(241, 243, 249)
     ForeColor       = [System.Drawing.Color]::FromArgb(100, 100, 100)
-    # BorderStyle     = 'Bevel'
     BorderStyle     = 'FixedSingle'
     PlaceholderText = "Search..."
     TextAlign       = 'Left'
-    # BackgroundImage       = $SearchIcon
-    # BackgroundImageLayout = 'Zoom'
-    # Padding         = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
-    Multiline       = $false  # Ensure single-line input
+    Multiline       = $false
 
     Add_Enter       = ({
             if ($SearchBox.Text -eq "Search...") {
@@ -179,12 +173,6 @@ $RevokeButtonProps = @{
     ForeColor = [System.Drawing.Color]::White
     Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     FlatStyle = 'Flat'
-    
-    # FlatAppearance = @{
-    #     BorderSize         = 0
-    #     MouseOverBackColor = [System.Drawing.Color]::FromArgb(220, 80, 80)
-    #     MouseDownBackColor = [System.Drawing.Color]::FromArgb(180, 50, 50)
-    # }
 
     Add_Click = {
         Run-SelectedItems -Action Revoke
@@ -227,7 +215,7 @@ function Format-ListView {
     }
 }
 
-function Set-FooterButtonPositions {
+function Set-ButtonPositions {
     $FooterPanelWidth = $FooterPanel.Width
     $ButtonSpacing = 8
     $TotalButtonWidth = $InvokeButton.Width + $RevokeButton.Width + $ButtonSpacing
@@ -294,7 +282,6 @@ $ContentPanel.Controls.Add($Split)
 $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
 $RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonProps
 
-# Adjust position on resize
 $FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
 
 $AppsLV.Columns.Add("Applications", 150) | Out-Null
