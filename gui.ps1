@@ -33,7 +33,7 @@ $FormProps = @{
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     # MinimizeBox     = $false
     # MaximizeBox     = $false
-    Size          = '400,700'
+    Size          = '380,700'
     StartPosition = "CenterParent"
     Text          = "Gandalf's WinUtil"
     # Topmost       = $true
@@ -79,6 +79,7 @@ $SplitProps = @{
     SplitterDistance = 50
     SplitterWidth    = 3
     # BorderStyle      = 'None'
+    Padding          = '0,0,0,20'
 }
 
 $HeaderHeight = 40
