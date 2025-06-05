@@ -33,7 +33,7 @@ $FormProps = @{
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     # MinimizeBox     = $false
     # MaximizeBox     = $false
-    Size          = '380,700'
+    Size          = '400,700'
     StartPosition = "CenterParent"
     Text          = "Gandalf's WinUtil"
     # Topmost       = $true
@@ -56,6 +56,7 @@ $ListViewProps = @{
     # width         = $Form.Rectangle.Width
     # anchor        = 'Top, Left, Right, Bottom'
     CheckBoxes       = $true
+    Font             = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
     Dock             = 'Fill'
     View             = 'Details'
     FullRowSelect    = $true
@@ -81,8 +82,10 @@ $SplitProps = @{
     Orientation      = 'Horizontal'
     SplitterDistance = 50
     SplitterWidth    = 3
-    # BorderStyle      = 'None'
+    BorderStyle      = 'None'
     Padding          = '0,0,0,20'
+    Panel1MinSize    = 50
+    Panel2MinSize    = 30
 }
 
 $HeaderHeight = 40
@@ -241,10 +244,11 @@ function Run-SelectedItems {
         foreach ($item in $selected) {
             $scriptObj = $entry.Data | Where-Object { $_.content -eq $item.Text }
             if ($Action -eq "Invoke") {
-                # TODO - Execute the script or command associated with the item
+                # TODO - Create a universal invoke action
                 $scriptObj.script | ForEach-Object { Write-Host "Executing $($item.Text): $_" }
             }
             elseif ($Action -eq "Revoke") {
+                # TODO - Create a universal revoke action
                 $scriptObj.Revoke | ForEach-Object { Write-Host "Revoking $($item.Text): $_" }
             }
         }
@@ -288,10 +292,10 @@ $RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonPr
 
 $FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
 
-$AppsLV.Columns.Add("Applications", 150) | Out-Null
+$AppsLV.Columns.Add("Install Apps & Tools", 150) | Out-Null
 $AppsLV.Columns.Add("Description", 200) | Out-Null
-$TweaksLV.Columns.Add("Tweaks", 150) | Out-Null
-$TasksLV.Columns.Add("Tasks( can't be revoked )", 150) | Out-Null
+$TweaksLV.Columns.Add("Edit System Settings", 150) | Out-Null
+$TasksLV.Columns.Add("Run Helper Tasks", 150) | Out-Null
 $TweaksLV.Columns.Add("Description", 200) | Out-Null
 
 # Add a "Select All" item to both ListViews
