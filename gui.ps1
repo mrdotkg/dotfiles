@@ -40,20 +40,36 @@ $FormProps = @{
     # Padding       = '10,10,10,10'
     BackColor     = [System.Drawing.Color]::white
     Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+
+    Add_Shown     = {
+        # Activate the form when shown
+        $Form.Activate()
+    }
 }
 
 $ListViewProps = @{
-    BorderStyle   = 'None'
+    BorderStyle      = 'None'
     # height        = $FormProps.Size.Height - 100
     # width         = $Form.Rectangle.Width
     # anchor        = 'Top, Left, Right, Bottom'
-    CheckBoxes    = $true
-    Dock          = 'Fill'
-    View          = 'Details'
-    FullRowSelect = $true
-    MultiSelect   = $true
+    CheckBoxes       = $true
+    Dock             = 'Fill'
+    View             = 'Details'
+    FullRowSelect    = $true
+    MultiSelect      = $true
     # Padding       = '20,20,20,20'
-    BackColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
+    BackColor        = [System.Drawing.Color]::FromArgb(241, 243, 249)
+    ShowItemToolTips = $true
+
+    Add_ItemCheck    = {
+        param($sender, $e)
+        if ($e.Index -eq 0) {
+            $isChecked = $e.NewValue -eq 'Checked'
+            for ($i = 1; $i -lt $sender.Items.Count; $i++) {
+                $sender.Items[$i].Checked = $isChecked
+            }
+        }
+    }
 }
 
 $SplitProps = @{
@@ -65,21 +81,12 @@ $SplitProps = @{
     # BorderStyle      = 'None'
 }
 
-$ActionButtonProps = @{ 
-    Height    = 30
-    Text      = "Invoke Selected"
-    Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    BackColor = $AccentColor
-    ForeColor = [System.Drawing.Color]::White
-    FlatStyle = 'Flat'
-}
-
 $HeaderHeight = 40
 $HeaderPanelProps = @{
     Height    = $HeaderHeight
     Dock      = 'Top'
     BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
-    Padding   = '10,10,10,0'
+    Padding   = '10,5,10,5'
 }
 
 $ContentPanelProps = @{
@@ -94,19 +101,25 @@ $FooterPanelProps = @{
     BackColor   = [System.Drawing.Color]::FromArgb(241, 243, 249)
     Padding     = '10,5,10,10'
     BorderStyle = 'None'
+
+    Add_Resize  = { Set-FooterButtonPositions }
 }
 
 $SearchBoxProps = @{
     Location        = New-Object System.Drawing.Point(0, 0)
-    Size            = New-Object System.Drawing.Size(308, 40)
+    Size            = New-Object System.Drawing.Size(150, 30)
     Font            = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
     # BackColor       = [System.Drawing.Color]::FromArgb(241, 243, 249)
-    # ForeColor       = [System.Drawing.Color]::FromArgb(100, 100, 100)
+    ForeColor       = [System.Drawing.Color]::FromArgb(100, 100, 100)
+    # BorderStyle     = 'Bevel'
     BorderStyle     = 'FixedSingle'
     PlaceholderText = "Search..."
     TextAlign       = 'Left'
-    # Add a search icon to the left of the TextBox
-    Padding         = '10,0,0,0'  # Add padding to the left for the icon
+    # BackgroundImage       = $SearchIcon
+    # BackgroundImageLayout = 'Zoom'
+    # Padding         = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+    Multiline       = $false  # Ensure single-line input
+
     Add_Enter       = ({
             if ($SearchBox.Text -eq "Search...") {
                 $SearchBox.Text = ""
@@ -140,6 +153,7 @@ $SearchBoxProps = @{
 
 $InvokeButtonProps = @{
     Width     = 150
+    Height    = 30
     Left      = 5
     Top       = 5
     Text      = "Invoke Selected"
@@ -147,17 +161,33 @@ $InvokeButtonProps = @{
     ForeColor = [System.Drawing.Color]::White
     Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     FlatStyle = 'Flat'
+    # Padding   = '0,2,0,2'
+
+    Add_Click = {
+        Run-SelectedItems -Action Invoke
+    }
 }
 
 $RevokeButtonProps = @{
     Width     = $InvokeButtonProps.Width
+    Height    = $InvokeButtonProps.Height
     Left      = $InvokeButtonProps.Left + $InvokeButtonProps.Width - 1
-    Top       = 5
+    Top       = $InvokeButtonProps.Top
     Text      = "Revoke Selected"
     BackColor = [System.Drawing.Color]::FromArgb(200, 60, 60)
     ForeColor = [System.Drawing.Color]::White
     Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     FlatStyle = 'Flat'
+    
+    # FlatAppearance = @{
+    #     BorderSize         = 0
+    #     MouseOverBackColor = [System.Drawing.Color]::FromArgb(220, 80, 80)
+    #     MouseDownBackColor = [System.Drawing.Color]::FromArgb(180, 50, 50)
+    # }
+
+    Add_Click = {
+        Run-SelectedItems -Action Revoke
+    }
 }
 
 function Format-ListView {
@@ -196,23 +226,6 @@ function Format-ListView {
     }
 }
 
-# Helper function to create styled buttons
-function New-ActionButton {
-    param(
-        [string]$Text,
-        [System.Drawing.Color]$BackColor,
-        [System.Drawing.Color]$BorderColor
-    )
-    $btn = [System.Windows.Forms.Button]::new()
-    foreach ($k in $ActionButtonProps.Keys) { $btn.$k = $ActionButtonProps[$k] }
-    $btn.Text = $Text
-    $btn.BackColor = $BackColor
-    $btn.ForeColor = [System.Drawing.Color]::White
-    $btn.FlatAppearance.BorderColor = $BorderColor
-    $btn.FlatAppearance.BorderSize = 0
-    return $btn
-}
-
 function Set-FooterButtonPositions {
     $FooterPanelWidth = $FooterPanel.Width
     $ButtonSpacing = 8
@@ -220,7 +233,7 @@ function Set-FooterButtonPositions {
     $StartLeft = [math]::Max(5, [math]::Floor(($FooterPanelWidth - $TotalButtonWidth) / 2))
     $InvokeButton.Left = $StartLeft
     $RevokeButton.Left = $InvokeButton.Left + $InvokeButton.Width + $ButtonSpacing / 2
-    $SearchBox.Left = $StartLeft
+    $SearchBox.Left = $StartLeft + $InvokeButton.Width / 2
 }
 function Run-SelectedItems {
     param(
@@ -269,11 +282,6 @@ $AppsLV = New-Object Windows.Forms.ListView -Property $ListViewProps
 $TweaksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
 $TasksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
 
-# Enable tooltips for both ListViews
-$AppsLV.ShowItemToolTips = $true
-$TweaksLV.ShowItemToolTips = $true
-$TasksLV.ShowItemToolTips = $true
-
 $Split.Panel1.Controls.Add($AppsLV)
 $Split.Panel2.Controls.Add($Split2)
 $Split2.Panel1.Controls.Add($TweaksLV)
@@ -282,17 +290,10 @@ $Split2.Panel2.Controls.Add($TasksLV)
 # Add Split (with ListViews) to content area, and ButtonPanel to footer
 $ContentPanel.Controls.Add($Split)
 
-$InvokeButton = New-ActionButton -Text "Invoke Selected" -BackColor $AccentColor -BorderColor ([System.Drawing.Color]::FromArgb(44, 151, 222))
-$RevokeButton = New-ActionButton -Text "Revoke Selected" -BackColor ([System.Drawing.Color]::FromArgb(200, 60, 60)) -BorderColor ([System.Drawing.Color]::FromArgb(200, 60, 60))
-foreach ($k in $InvokeButtonProps.Keys) { $InvokeButton.$k = $InvokeButtonProps[$k] }
-foreach ($k in $RevokeButtonProps.Keys) { $RevokeButton.$k = $RevokeButtonProps[$k] }
-
-# Attach actions to buttons
-$InvokeButton.Add_Click({ Run-SelectedItems -Action Invoke })
-$RevokeButton.Add_Click({ Run-SelectedItems -Action Revoke })
+$InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
+$RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonProps
 
 # Adjust position on resize
-$FooterPanel.Add_Resize({ Set-FooterButtonPositions })
 $FooterPanel.Controls.AddRange(@($InvokeButton, $RevokeButton))
 
 $AppsLV.Columns.Add("Applications", 150) | Out-Null
@@ -305,21 +306,6 @@ $TweaksLV.Columns.Add("Description", 200) | Out-Null
 $AppsLV.Items.Add("Select All") | Out-Null
 $TweaksLV.Items.Add("Select All") | Out-Null
 $TasksLV.Items.Add("Select All") | Out-Null
-
-# Create a handler for "Select All" checkbox
-$SelectAllHandler = {
-    param($sender, $e)
-    if ($e.Index -eq 0) {
-        $isChecked = $e.NewValue -eq 'Checked'
-        for ($i = 1; $i -lt $sender.Items.Count; $i++) {
-            $sender.Items[$i].Checked = $isChecked
-        }
-    }
-}
-
-# Attach the Select All handler to both ListViews
-$AppsLV.Add_ItemCheck($SelectAllHandler)
-$TweaksLV.Add_ItemCheck($SelectAllHandler)
 
 # Add column click handlers
 $AppsLV.Add_ColumnClick({ 
@@ -334,7 +320,6 @@ $TweaksLV.Add_ColumnClick({
 $Scripts = Get-Content "scripts.json" | ConvertFrom-Json
 $Scripts.apps | ForEach-Object { 
     $AppsLV.Items.Add($_.content) | Out-Null
-    # $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.link) | Out-Null
     $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
 }
 $Scripts.tweaks | ForEach-Object { 
@@ -343,5 +328,4 @@ $Scripts.tweaks | ForEach-Object {
 }
 
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
-$Form.Add_Shown({ $Form.Activate() })
 [void]$Form.ShowDialog()
