@@ -1,0 +1,185 @@
+{
+    "apps": [
+        {
+            "category": "Games",
+            "choco": "steam-client",
+            "content": "Steam",
+            "description": "Digital distribution platform for purchasing and playing video games, offering multiplayer gaming, video streaming, and more.",
+            "link": "https://store.steampowered.com/about/",
+            "winget": "Valve.Steam"
+        },
+        {
+            "category": "Microsoft Tools",
+            "choco": "powershell-core",
+            "content": "PowerShell",
+            "description": "Task automation framework and scripting language designed for system administrators, offering powerful command-line capabilities.",
+            "link": "https://github.com/PowerShell/PowerShell",
+            "winget": "Microsoft.PowerShell"
+        },
+        {
+            "category": "Development",
+            "choco": "neovim",
+            "content": "Neovim",
+            "description": "Highly extensible text editor and an improvement over the original Vim editor.",
+            "link": "https://neovim.io/",
+            "winget": "Neovim.Neovim"
+        },
+        {
+            "category": "Development",
+            "choco": "git",
+            "content": "Git",
+            "description": "Distributed version control system widely used for tracking changes in source code during software development.",
+            "link": "https://git-scm.com/",
+            "winget": "Git.Git"
+        },
+        {
+            "category": "Development",
+            "choco": "vscode",
+            "content": "VS Code",
+            "description": "Free, open-source code editor with support for multiple programming languages.",
+            "link": "https://code.visualstudio.com/",
+            "winget": "Microsoft.VisualStudioCode"
+        },
+        {
+            "category": "Development",
+            "choco": "wezterm",
+            "content": "Wezterm",
+            "description": "Powerful cross-platform terminal emulator and multiplexer.",
+            "link": "https://wezfurlong.org/wezterm/index.html",
+            "winget": "wez.wezterm"
+        },
+        {
+            "category": "Communications",
+            "choco": "discord",
+            "content": "Discord",
+            "description": "Popular communication platform with voice, video, and text chat, designed for gamers but used by a wide range of communities.",
+            "link": "https://discord.com/",
+            "winget": "Discord.Discord"
+        },
+        {
+            "category": "Utilities",
+            "choco": "ditto",
+            "content": "Ditto",
+            "description": "Ditto is an extension to the standard windows clipboard.",
+            "link": "https://github.com/sabrogden/Ditto",
+            "winget": "Ditto.Ditto"
+        },
+        {
+            "category": "Utilities",
+            "choco": "na",
+            "content": "GlazeWM",
+            "description": "GlazeWM is a tiling window manager for Windows inspired by i3 and Polybar",
+            "link": "https://github.com/glzr-io/glazewm",
+            "winget": "glzr-io.glazewm"
+        }
+    ],
+    "tweaks": [
+        {
+            "content": "Disable Activity History",
+            "description": "This erases recent docs, clipboard, and run history.",
+            "category": "Essential Tweaks",
+            "panel": "1",
+            "Order": "a005_",
+            "registry": [
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+                    "Name": "EnableActivityFeed",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "<RemoveEntry>"
+                },
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+                    "Name": "PublishUserActivities",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "<RemoveEntry>"
+                },
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System",
+                    "Name": "UploadUserActivities",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "<RemoveEntry>"
+                }
+            ],
+            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/ah"
+        },
+        {
+            "content": "Disable Hibernation",
+            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
+            "category": "Essential Tweaks",
+            "panel": "1",
+            "Order": "a005_",
+            "registry": [
+                {
+                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
+                    "Name": "HibernateEnabled",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "1"
+                },
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
+                    "Name": "ShowHibernateOption",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "1"
+                }
+            ],
+            "InvokeScript": [
+                "powercfg.exe /hibernate off"
+            ],
+            "UndoScript": [
+                "powercfg.exe /hibernate on"
+            ],
+            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
+        },
+        {
+            "content": "Disable Hibernation",
+            "description": "Hibernation is really meant for laptops as it saves what's in memory before turning the pc off. It really should never be used, but some people are lazy and rely on it. Don't be like Bob. Bob likes hibernation.",
+            "category": "Essential Tweaks",
+            "panel": "1",
+            "Order": "a005_",
+            "registry": [
+                {
+                    "Path": "HKLM:\\System\\CurrentControlSet\\Control\\Session Manager\\Power",
+                    "Name": "HibernateEnabled",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "1"
+                },
+                {
+                    "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
+                    "Name": "ShowHibernateOption",
+                    "Type": "DWord",
+                    "Value": "0",
+                    "OriginalValue": "1"
+                }
+            ],
+            "InvokeScript": [
+                "powercfg.exe /hibernate off"
+            ],
+            "UndoScript": [
+                "powercfg.exe /hibernate on"
+            ],
+            "link": "https://winutil.christitus.com/dev/tweaks/essential-tweaks/hiber"
+        }
+    ],
+    "tasks": [
+        {
+            "content": "Empty Temp Directory",
+            "description": "Deletes all files in the Temp directory.",
+            "category": "Essential Tasks",
+            "panel": "1",
+            "Order": "a005_",
+            "InvokeScript": [
+                "Remove-Item -Path $env:TEMP\\* -Recurse -Force"
+            ],
+            "UndoScript": [
+                "Remove-Item -Path $env:TEMP\\* -Recurse -Force"
+            ],
+            "link": "https://winutil.christitus.com/dev/tasks/essential-tasks/wu"
+        }
+    ]
+}
