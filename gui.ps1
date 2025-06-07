@@ -51,6 +51,19 @@ $ListViewProps = @{
     MultiSelect      = $true
     BackColor        = [System.Drawing.Color]::FromArgb(241, 243, 249)
     ShowItemToolTips = $true
+
+    # Add column click event to sort items
+    Add_ColumnClick  = {
+        param($sender, $e)
+        $ListView = $sender
+        $columnIndex = $e.Column
+        $viewName = switch ($ListView) {
+            $AppsLV { 'Apps' }
+            $TweaksLV { 'Tweaks' }
+            $TasksLV { 'Tasks' }
+        }
+        Format-ListView -ListView $ListView -ViewName $viewName -Column $columnIndex
+    }
 }
 
 $SplitProps = @{
@@ -103,10 +116,11 @@ $SelectAllSwitchProps = @{
         $AppsLV.Items | ForEach-Object { $_.Checked = $isChecked }
         $TweaksLV.Items | ForEach-Object { $_.Checked = $isChecked }
         $TasksLV.Items | ForEach-Object { $_.Checked = $isChecked }
+
     }
 }
 
-$SelectDropdownProps = @{
+$ProfileDropdownProps = @{
     Width                    = $InputWidth
     Height                   = $InputHeight
     Left                     = 15
@@ -114,7 +128,7 @@ $SelectDropdownProps = @{
     ForeColor                = [System.Drawing.Color]::FromArgb(100, 100, 100)
     DropDownStyle            = 'DropDownList'
     Add_SelectedIndexChanged = ({
-            $selectedFile = $SelectDropdown.SelectedItem
+            $selectedFile = $ProfileDropdown.SelectedItem
             if ($selectedFile) {
                 # Load the selected script JSON file
                 $SelectedFilePath = "$HOME\Documents\Gandalf-WinUtil-Scripts\$selectedFile.json"
@@ -331,76 +345,53 @@ function RunSelectedItems {
 }
 
 ## GUI Initialization ##
-
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 
-# Create a responsive layout: header, main content area and footer
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
 $FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
 
 $SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
-$SelectDropdown = New-Object System.Windows.Forms.ComboBox -Property $SelectDropdownProps
+$ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 $BrowseLibrary = New-Object System.Windows.Forms.Label -Property $BrowseLibraryProps
-$FooterPanel.Controls.Add($BrowseLibrary)
 
 # Separate the Content Panel horizontally with a Splitter bar
-$Split = New-Object Windows.Forms.SplitContainer -Property $SplitProps
-$Split2 = New-Object Windows.Forms.SplitContainer -Property $SplitProps
+$SplitContainer1 = New-Object Windows.Forms.SplitContainer -Property $SplitProps
+$SplitContainer2 = New-Object Windows.Forms.SplitContainer -Property $SplitProps
 
 # Append ListViews to both sides of the Splitter bar
 $AppsLV = New-Object Windows.Forms.ListView -Property $ListViewProps
 $TweaksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
 $TasksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
 
-$Split.Panel1.Controls.Add($AppsLV)
-$Split.Panel2.Controls.Add($Split2)
-$Split2.Panel1.Controls.Add($TweaksLV)
-$Split2.Panel2.Controls.Add($TasksLV)
+$SplitContainer1.Panel1.Controls.Add($AppsLV)
+$SplitContainer1.Panel2.Controls.Add($SplitContainer2)
+$SplitContainer2.Panel1.Controls.Add($TweaksLV)
+$SplitContainer2.Panel2.Controls.Add($TasksLV)
 
+$AppsLV.Columns.Add("Install Apps & Tools", 150)
+$AppsLV.Columns.Add("Description", 300)
 
+$TweaksLV.Columns.Add("Edit System Settings", 150)
+$TweaksLV.Columns.Add("Description", 300)
+
+$TasksLV.Columns.Add("Run Helper Tasks", 150)
+$TasksLV.Columns.Add("Description", 300)
 $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 
-$HeaderPanel.Controls.Add($SelectAllSwitch)
-$HeaderPanel.Controls.AddRange(@($InvokeButton))
-$HeaderPanel.Controls.Add($SearchBox)
-
-$ContentPanel.Controls.Add($Split)
-
-$FooterPanel.Controls.Add($SelectDropdown)
-$FooterPanel.Controls.Add($BrowseLibrary)  
-
-$AppsLV.Columns.Add("Install Apps & Tools", 150) | Out-Null
-$AppsLV.Columns.Add("Description", 300) | Out-Null
-$TweaksLV.Columns.Add("Edit System Settings", 150) | Out-Null
-$TweaksLV.Columns.Add("Description", 300) | Out-Null
-
-$TasksLV.Columns.Add("Run Helper Tasks", 150) | Out-Null
-$TasksLV.Columns.Add("Description", 300) | Out-Null
-
-# Add column click handlers
-$AppsLV.Add_ColumnClick({ 
-        Format-ListView -ListView $AppsLV -ViewName 'Apps' -Column $_.Column 
-    })
-$TweaksLV.Add_ColumnClick({ 
-        Format-ListView -ListView $TweaksLV -ViewName 'Tweaks' -Column $_.Column 
-    })
-$TasksLV.Add_ColumnClick({ 
-        Format-ListView -ListView $TasksLV -ViewName 'Tasks' -Column $_.Column 
-    })
+$HeaderPanel.Controls.AddRange(@($SelectAllSwitch, $SearchBox, $InvokeButton))
+$ContentPanel.Controls.Add($SplitContainer1)
+$FooterPanel.Controls.AddRange(@($ProfileDropdown, $BrowseLibrary))
 
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
 
-# Create a File chooser Button to select a script JSON file
 $PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
 Get-ChildItem -Path $PersonalScriptsPath -Filter *.json | ForEach-Object {
-    $SelectDropdown.Items.Add($_.BaseName) | Out-Null
+    $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
 }
-#select the first item in the dropdown if available
-if ($SelectDropdown.Items.Count -gt 0) {
-    $SelectDropdown.SelectedIndex = 0
+if ($ProfileDropdown.Items.Count -gt 0) {
+    $ProfileDropdown.SelectedIndex = 0
 }
-
 
 [void]$Form.ShowDialog()
