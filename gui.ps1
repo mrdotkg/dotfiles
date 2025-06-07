@@ -330,9 +330,7 @@ function RunSelectedItems {
     }
 }
 
-########################
 ## GUI Initialization ##
-########################
 
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 
