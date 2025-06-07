@@ -17,11 +17,11 @@ $script:LastColumnAscending = @{
 # Set the accent color based on the current Windows theme
 $AccentColorValue = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AccentColor" -ErrorAction SilentlyContinue
 if ($AccentColorValue) {
-    $a = ($AccentColorValue -band 0xFF000000) -shr 24
-    $b = ($AccentColorValue -band 0x00FF0000) -shr 16
-    $g = ($AccentColorValue -band 0x0000FF00) -shr 8
-    $r = ($AccentColorValue -band 0x000000FF)
-    $AccentColor = [System.Drawing.Color]::FromArgb($a, $r, $g, $b)
+    $AccentColor = [System.Drawing.Color]::FromArgb(
+        ($AccentColorValue -band 0xFF000000) -shr 24, 
+        ($AccentColorValue -band 0x000000FF), 
+        ($AccentColorValue -band 0x0000FF00) -shr 8, 
+        ($AccentColorValue -band 0x00FF0000) -shr 16)
 }
 else {
     $AccentColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
@@ -29,36 +29,26 @@ else {
 
 # Define properties for the main form and controls
 $FormProps = @{
-    # FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
-    # MinimizeBox     = $false
-    # MaximizeBox     = $false
     Size          = '600,700'
     StartPosition = "CenterParent"
     Text          = "Gandalf's WinUtil"
-    # Topmost       = $true
-    # Padding       = '10,10,10,10'
     BackColor     = [System.Drawing.Color]::white
     Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 
     Add_Shown     = {
-        # Activate the form when shown
         $Form.Activate()
     }
 }
 
 $ListViewProps = @{
     BorderStyle      = 'None'
-    # height        = $FormProps.Size.Height - 100
-    # width         = $Form.Rectangle.Width
-    # anchor        = 'Top, Left, Right, Bottom'
     CheckBoxes       = $true
     Font             = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
     Dock             = 'Fill'
     View             = 'Details'
     FullRowSelect    = $true
     MultiSelect      = $true
-    # Padding       = '20,20,20,20'
     BackColor        = [System.Drawing.Color]::FromArgb(241, 243, 249)
     ShowItemToolTips = $true
 }
@@ -109,7 +99,6 @@ $SelectAllSwitchProps = @{
     ForeColor          = [System.Drawing.Color]::Black
     
     Add_CheckedChanged = {
-        # Toggle all ListView items based on the switch state
         $isChecked = $SelectAllSwitch.Checked
         $AppsLV.Items | ForEach-Object { $_.Checked = $isChecked }
         $TweaksLV.Items | ForEach-Object { $_.Checked = $isChecked }
@@ -118,12 +107,45 @@ $SelectAllSwitchProps = @{
 }
 
 $SelectDropdownProps = @{
-    Width         = $InputWidth
-    Height        = $InputHeight
-    Left          = 15
-    Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-    ForeColor     = [System.Drawing.Color]::FromArgb(100, 100, 100)
-    DropDownStyle = 'DropDownList'
+    Width                    = $InputWidth
+    Height                   = $InputHeight
+    Left                     = 15
+    Font                     = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+    ForeColor                = [System.Drawing.Color]::FromArgb(100, 100, 100)
+    DropDownStyle            = 'DropDownList'
+    Add_SelectedIndexChanged = ({
+            $selectedFile = $SelectDropdown.SelectedItem
+            if ($selectedFile) {
+                # Load the selected script JSON file
+                $SelectedFilePath = "$HOME\Documents\Gandalf-WinUtil-Scripts\$selectedFile.json"
+                if (Test-Path $SelectedFilePath) {
+                    $Scripts = Get-Content $SelectedFilePath | ConvertFrom-Json
+
+                    # Clear existing items in ListViews
+                    $AppsLV.Items.Clear()
+                    $TweaksLV.Items.Clear()
+                    $TasksLV.Items.Clear()
+
+                    # Populate ListViews with new data
+                    $Scripts.apps | ForEach-Object { 
+                        $AppsLV.Items.Add($_.content) | Out-Null
+                        $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
+                    }
+                    $Scripts.tweaks | ForEach-Object { 
+                        $TweaksLV.Items.Add($_.content) | Out-Null 
+                        $TweaksLV.Items[$TweaksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
+                    }
+                    $Scripts.tasks | ForEach-Object { 
+                        $TasksLV.Items.Add($_.content) | Out-Null 
+                        $TasksLV.Items[$TasksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
+                    }
+                }
+                else {
+                    Write-Warning "Selected file '$SelectedFilePath' does not exist."
+                }
+            }
+        })
+
 }
 
 $SearchBoxProps = @{
@@ -131,11 +153,9 @@ $SearchBoxProps = @{
     Width           = $InputWidth
     Font            = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
     ForeColor       = [System.Drawing.Color]::FromArgb(100, 100, 100)
-    # BorderStyle     = 'FixedSingle'
     PlaceholderText = " Search..."
     TextAlign       = 'Left'
     Multiline       = $false
-    # Dock            = 'Right'
     Left            = 150 + 20
     Top             = 7
     Add_Enter       = ({
@@ -179,135 +199,11 @@ $InvokeButtonProps = @{
     FlatStyle = 'Flat'
 
     Add_Click = {
-        Run-SelectedItems -Action Invoke
+        RunSelectedItems -Action Invoke
     }
 }
 
-$RevokeButtonProps = @{
-    Width     = $InputWidth
-    Height    = $InputHeight
-    Left      = $InvokeButtonProps.Left + $InvokeButtonProps.Width - 5
-    Top       = $InvokeButtonProps.Top
-    Text      = "Remove / Undo"
-    # BackColor = [System.Drawing.Color]::FromArgb(200, 60, 60)
-    # ForeColor = [System.Drawing.Color]::White
-    Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-    # FlatStyle = 'Flat'
-
-    Add_Click = {
-        Run-SelectedItems -Action Revoke
-    }
-}
-
-function Format-ListView {
-    param(
-        [Parameter(Mandatory)][System.Windows.Forms.ListView]$ListView,
-        [Parameter(Mandatory)][string]$ViewName,
-        [Parameter(Mandatory)][int]$Column
-    )
-    # Toggle sort direction if same column clicked
-    if ($script:LastColumnClicked[$ViewName] -eq $Column) {
-        $script:LastColumnAscending[$ViewName] = -not $script:LastColumnAscending[$ViewName]
-    }
-    else {
-        $script:LastColumnAscending[$ViewName] = $true
-    }
-    $script:LastColumnClicked[$ViewName] = $Column
-
-    
-    $items = @($ListView.Items)
-    $ListView.BeginUpdate()
-    try {
-        # Sort items
-        $items = $items | Sort-Object -Property {
-            $_.SubItems[$Column].Text
-        } -Descending:(-not $script:LastColumnAscending[$ViewName])
-
-        # Rebuild ListView
-        $ListView.Items.Clear()
-        $ListView.Items.AddRange([System.Windows.Forms.ListViewItem[]]$items)
-    }
-    finally {
-        $ListView.EndUpdate()
-    }
-}
-function Run-SelectedItems {
-    param(
-        [ValidateSet("Invoke", "Revoke")]
-        [string]$Action
-    )
-    $listViews = @(
-        @{ LV = $AppsLV; Data = $Scripts.apps },
-        @{ LV = $TweaksLV; Data = $Scripts.tweaks },
-        @{ LV = $TasksLV; Data = $Scripts.tasks }
-    )
-    foreach ($entry in $listViews) {
-        # differentiate between Apps, Tweaks and Tasks
-        
-        $selected = $entry.LV.CheckedItems
-        foreach ($item in $selected) {
-            $scriptObj = $entry.Data | Where-Object { $_.content -eq $item.Text }
-            if ($Action -eq "Invoke") {
-                # TODO - Create a universal invoke action
-                $scriptObj.script | ForEach-Object { Write-Host "Executing $($item.Text): $_" }
-            }
-            elseif ($Action -eq "Revoke") {
-                # TODO - Create a universal revoke action
-                $scriptObj.Revoke | ForEach-Object { Write-Host "Revoking $($item.Text): $_" }
-            }
-        }
-    }
-}
-
-########################
-## GUI Initialization ##
-########################
-
-$Form = New-Object Windows.Forms.Form -Property $FormProps
-
-# Create a responsive layout: header, main content area and footer
-$HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
-$ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
-$FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
-
-$SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
-$SelectDropdown = New-Object System.Windows.Forms.ComboBox -Property $SelectDropdownProps
-# on select of dropdown, Load all the scripts from the selected file
-$SelectDropdown.Add_SelectedIndexChanged({
-        $selectedFile = $SelectDropdown.SelectedItem
-        if ($selectedFile) {
-            # Load the selected script JSON file
-            $SelectedFilePath = "$HOME\Documents\Gandalf-WinUtil-Scripts\$selectedFile.json"
-            if (Test-Path $SelectedFilePath) {
-                $Scripts = Get-Content $SelectedFilePath | ConvertFrom-Json
-
-                # Clear existing items in ListViews
-                $AppsLV.Items.Clear()
-                $TweaksLV.Items.Clear()
-                $TasksLV.Items.Clear()
-
-                # Populate ListViews with new data
-                $Scripts.apps | ForEach-Object { 
-                    $AppsLV.Items.Add($_.content) | Out-Null
-                    $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-                }
-                $Scripts.tweaks | ForEach-Object { 
-                    $TweaksLV.Items.Add($_.content) | Out-Null 
-                    $TweaksLV.Items[$TweaksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-                }
-                $Scripts.tasks | ForEach-Object { 
-                    $TasksLV.Items.Add($_.content) | Out-Null 
-                    $TasksLV.Items[$TasksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-                }
-            }
-            else {
-                Write-Warning "Selected file '$SelectedFilePath' does not exist."
-            }
-        }
-    })
-
-# Create a File chooser label to select a script JSON file
-$BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
+$BrowseLibraryProps = @{
     Text      = "Browse Plugins Online"
     Width     = $InputWidth
     Height    = $InputHeight
@@ -355,6 +251,15 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
                     Invoke-WebRequest -Uri $fileUrl -OutFile $destinationPath
                 }
                 [System.Windows.Forms.MessageBox]::Show("Selected files downloaded successfully!")
+                # Close the checkbox form after download, re populate the select dropdown and select the first item
+                $SelectDropdown.Items.Clear()
+                Get-ChildItem -Path $PersonalScriptsPath -Filter *.json | ForEach-Object {
+                    $SelectDropdown.Items.Add($_.BaseName) | Out-Null
+                }
+                if ($SelectDropdown.Items.Count -gt 0) {
+                    $SelectDropdown.SelectedIndex = 0
+                }
+
                 $CheckboxForm.Close()
             }
         }
@@ -363,23 +268,83 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
         $CheckboxForm.Controls.Add($DownloadButton)
         $CheckboxForm.ShowDialog()
     }
-
 }
 
-# Add the label to the footer panel
+function Format-ListView {
+    param(
+        [Parameter(Mandatory)][System.Windows.Forms.ListView]$ListView,
+        [Parameter(Mandatory)][string]$ViewName,
+        [Parameter(Mandatory)][int]$Column
+    )
+    # Toggle sort direction if same column clicked
+    if ($script:LastColumnClicked[$ViewName] -eq $Column) {
+        $script:LastColumnAscending[$ViewName] = -not $script:LastColumnAscending[$ViewName]
+    }
+    else {
+        $script:LastColumnAscending[$ViewName] = $true
+    }
+    $script:LastColumnClicked[$ViewName] = $Column
+
+    
+    $items = @($ListView.Items)
+    $ListView.BeginUpdate()
+    try {
+        # Sort items
+        $items = $items | Sort-Object -Property {
+            $_.SubItems[$Column].Text
+        } -Descending:(-not $script:LastColumnAscending[$ViewName])
+
+        # Rebuild ListView
+        $ListView.Items.Clear()
+        $ListView.Items.AddRange([System.Windows.Forms.ListViewItem[]]$items)
+    }
+    finally {
+        $ListView.EndUpdate()
+    }
+}
+function RunSelectedItems {
+    param(
+        [ValidateSet("Invoke", "Revoke")]
+        [string]$Action
+    )
+    $listViews = @(
+        @{ LV = $AppsLV; Data = $Scripts.apps },
+        @{ LV = $TweaksLV; Data = $Scripts.tweaks },
+        @{ LV = $TasksLV; Data = $Scripts.tasks }
+    )
+    foreach ($entry in $listViews) {
+        # differentiate between Apps, Tweaks and Tasks
+        
+        $selected = $entry.LV.CheckedItems
+        foreach ($item in $selected) {
+            $scriptObj = $entry.Data | Where-Object { $_.content -eq $item.Text }
+            if ($Action -eq "Invoke") {
+                # TODO - Create a universal invoke action
+                $scriptObj.script | ForEach-Object { Write-Host "Executing $($item.Text): $_" }
+            }
+            elseif ($Action -eq "Revoke") {
+                # TODO - Create a universal revoke action
+                $scriptObj.Revoke | ForEach-Object { Write-Host "Revoking $($item.Text): $_" }
+            }
+        }
+    }
+}
+
+########################
+## GUI Initialization ##
+########################
+
+$Form = New-Object Windows.Forms.Form -Property $FormProps
+
+# Create a responsive layout: header, main content area and footer
+$HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
+$ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
+$FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
+
+$SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
+$SelectDropdown = New-Object System.Windows.Forms.ComboBox -Property $SelectDropdownProps
+$BrowseLibrary = New-Object System.Windows.Forms.Label -Property $BrowseLibraryProps
 $FooterPanel.Controls.Add($BrowseLibrary)
-
-# Create a File chooser Button to select a script JSON file
-$PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
-Get-ChildItem -Path $PersonalScriptsPath -Filter *.json | ForEach-Object {
-    $SelectDropdown.Items.Add($_.BaseName) | Out-Null
-}
-
-#select the first item in the dropdown if available
-if ($SelectDropdown.Items.Count -gt 0) {
-    $SelectDropdown.SelectedIndex = 0
-}
-
 
 # Separate the Content Panel horizontally with a Splitter bar
 $Split = New-Object Windows.Forms.SplitContainer -Property $SplitProps
@@ -395,40 +360,15 @@ $Split.Panel2.Controls.Add($Split2)
 $Split2.Panel1.Controls.Add($TweaksLV)
 $Split2.Panel2.Controls.Add($TasksLV)
 
-# Add Split (with ListViews) to content area, and ButtonPanel to footer
-$ContentPanel.Controls.Add($Split)
 
 $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
-$RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonProps
-
-# Create a Single Switch that Selects all listview items
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
-$SelectAllSwitch.Add_CheckedChanged({
-        $isChecked = $SelectAllSwitch.Checked
-        $AppsLV.Items | ForEach-Object { $_.Selected = $isChecked }
-        $TweaksLV.Items | ForEach-Object { $_.Selected = $isChecked }
-        $TasksLV.Items | ForEach-Object { $_.Selected = $isChecked }
-    })
-
-# Get list of json files in github repo mrdotkg/dotfiles/
-$owner = "mrdotkg"
-$repo = "dotfiles"
-$url = "https://api.github.com/repos/$owner/$repo/contents"
-
-$response = Invoke-WebRequest -Uri $url -UseBasicParsing
-$content = ConvertFrom-Json $response.Content
-
-foreach ($item in $content) {
-    if ($item.type -ne "file" -or $item.name -notlike "*.json") {
-        continue
-    }
-    # add file name to the dropdown
-    Write-Host $item.name
-}
 
 $HeaderPanel.Controls.Add($SelectAllSwitch)
 $HeaderPanel.Controls.AddRange(@($InvokeButton))
 $HeaderPanel.Controls.Add($SearchBox)
+
+$ContentPanel.Controls.Add($Split)
 
 $FooterPanel.Controls.Add($SelectDropdown)
 $FooterPanel.Controls.Add($BrowseLibrary)  
@@ -445,25 +385,24 @@ $TasksLV.Columns.Add("Description", 300) | Out-Null
 $AppsLV.Add_ColumnClick({ 
         Format-ListView -ListView $AppsLV -ViewName 'Apps' -Column $_.Column 
     })
-
 $TweaksLV.Add_ColumnClick({ 
         Format-ListView -ListView $TweaksLV -ViewName 'Tweaks' -Column $_.Column 
     })
-
-# Populate the ListViews with data from scripts.json
-$Scripts = Get-Content "scripts.json" | ConvertFrom-Json
-$Scripts.apps | ForEach-Object { 
-    $AppsLV.Items.Add($_.content) | Out-Null
-    $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-}
-$Scripts.tweaks | ForEach-Object { 
-    $TweaksLV.Items.Add($_.content) | Out-Null 
-    $TweaksLV.Items[$TweaksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-}
-$Scripts.tasks | ForEach-Object { 
-    $TasksLV.Items.Add($_.content) | Out-Null 
-    $TasksLV.Items[$TasksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-}
+$TasksLV.Add_ColumnClick({ 
+        Format-ListView -ListView $TasksLV -ViewName 'Tasks' -Column $_.Column 
+    })
 
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
+
+# Create a File chooser Button to select a script JSON file
+$PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
+Get-ChildItem -Path $PersonalScriptsPath -Filter *.json | ForEach-Object {
+    $SelectDropdown.Items.Add($_.BaseName) | Out-Null
+}
+#select the first item in the dropdown if available
+if ($SelectDropdown.Items.Count -gt 0) {
+    $SelectDropdown.SelectedIndex = 0
+}
+
+
 [void]$Form.ShowDialog()
