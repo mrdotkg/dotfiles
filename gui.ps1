@@ -56,7 +56,6 @@ else {
 $FormProps = @{
     Icon      = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     Size      = '600,700'
-    # StartPosition = "CenterParent"
     Text      = "Gandalf's WinUtil"
     BackColor = $script:UI.Colors.Background
     Font      = $script:UI.Fonts.Default
@@ -317,9 +316,11 @@ $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
 $FooterPanel = New-Object System.Windows.Forms.Panel -Property $FooterPanelProps
 
+$SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 $SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
+$InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
+
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
-# Create a File chooser label to select a script JSON file
 $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
     Text      = "Download Profiles"
     Width     = $script:UI.Sizes.Input.Width
@@ -333,15 +334,24 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
         $response = Invoke-WebRequest -Uri $repoUrl -UseBasicParsing
         $content = ConvertFrom-Json $response.Content
 
-        $ProfileForm = New-Object System.Windows.Forms.Form
-        $ProfileForm.Text = "Select profiles to download"
-        $ProfileForm.Size = New-Object System.Drawing.Size(400, 300)
-        $ProfileForm.StartPosition = "CenterParent"
-        $ProfileForm.MaximizeBox = $false
-        $ProfileForm.MinimizeBox = $false
+        $ProfileForm = New-Object System.Windows.Forms.Form -Property @{
+            Text          = "Select profiles to download"
+            Size          = New-Object System.Drawing.Size(400, 300)
+            Font          = $script:UI.Fonts.Default
+            StartPosition = "CenterParent"
+            MaximizeBox   = $false
+            MinimizeBox   = $false
+            Padding       = '10,10,10,10'
+            
+        }
 
-        $ProfileLV = New-Object System.Windows.Forms.CheckedListBox
-        $ProfileLV.Dock = 'Fill'
+        $ProfileLV = New-Object System.Windows.Forms.CheckedListBox -Property @{
+            Dock        = 'Fill'
+            Font        = $script:UI.Fonts.Default
+            ForeColor   = $script:UI.Colors.Text
+            BackColor   = $script:UI.Colors.Background
+            BorderStyle = 'None'
+        }
 
         foreach ($item in $content) {
             if ($item.type -eq "file" -and $item.name -like "*.json") {
@@ -352,6 +362,10 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
         # Add a button to download selected files into the user's personal scripts folder
         $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
             Text      = "Download Selected"
+            BackColor = $script:UI.Colors.Accent
+            ForeColor = [System.Drawing.Color]::White
+            Font      = $script:UI.Fonts.Bold
+            FlatStyle = 'Flat'
             Dock      = 'Bottom'
             Height    = 30
             Add_Click = {
@@ -371,7 +385,7 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
                     [System.Windows.Forms.MessageBox]::Show("No files selected for download.")
                     return
                 }
-                [System.Windows.Forms.MessageBox]::Show("Selected files downloaded successfully!")                
+                [System.Windows.Forms.MessageBox]::Show("Selected files downloaded successfully to $HOME\Documents\Gandalf-WinUtil-Scripts!")                
                 $ProfileForm.Close()
             }
         }
@@ -382,9 +396,6 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
     }
 
 }
-
-$InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
-$SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 
 $HeaderPanel.Controls.AddRange(@($SelectAllSwitch, $SearchBox, $InvokeButton))
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $BrowseLibrary))
