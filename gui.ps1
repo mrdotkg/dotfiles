@@ -1,54 +1,105 @@
+# ------------------------------
+# Initialize Dependencies
+# ------------------------------
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
-if ([Environment]::OSVersion.Version.Major -ge 6) {
-    try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
-}
-[System.Windows.Forms.Application]::EnableVisualStyles()
 
-# Set the accent color based on the current Windows theme
+# ------------------------------
+# State Management
+# ------------------------------
+# Script-scoped variables
+$script:PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
+$script:LastColumnClicked = @{}
+$script:LastColumnAscending = @{}
+$script:ListViews = @{}
+
+# UI Theme and Constants
+$script:UI = @{
+    Colors = @{
+        Background = [System.Drawing.Color]::FromArgb(241, 243, 249)
+        Text       = [System.Drawing.Color]::Black
+        Disabled   = [System.Drawing.Color]::LightGray
+        Accent     = $null  # Will be set from Windows theme
+    }
+    Fonts  = @{
+        Default = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+        Bold    = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    }
+    Sizes  = @{
+        Input   = @{
+            Width  = 150
+            Height = 30
+        }
+        Columns = @{
+            Name        = 150
+            Description = 300
+        }
+    }
+}
+
+# Initialize accent color from Windows theme
 $AccentColorValue = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AccentColor" -ErrorAction SilentlyContinue
-if ($AccentColorValue) {
-    $AccentColor = [System.Drawing.Color]::FromArgb(
+$script:UI.Colors.Accent = if ($AccentColorValue) {
+    [System.Drawing.Color]::FromArgb(
         ($AccentColorValue -band 0xFF000000) -shr 24, 
         ($AccentColorValue -band 0x000000FF), 
         ($AccentColorValue -band 0x0000FF00) -shr 8, 
         ($AccentColorValue -band 0x00FF0000) -shr 16)
 }
 else {
-    $AccentColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
+    [System.Drawing.Color]::FromArgb(44, 151, 222)
 }
 
-$script:LastColumnClicked = @{}
-$script:LastColumnAscending = @{}
-$script:ListViews = @{}
-
-# Define properties for the main form and controls
+# ------------------------------
+# Component Properties
+# ------------------------------
+# Main Form
 $FormProps = @{
-    Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
-    Size          = '600,700'
-    StartPosition = "CenterParent"
-    Text          = "Gandalf's WinUtil"
-    BackColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
-    Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-
-    Add_Shown     = {
-        $Form.Activate()
-    }
+    Icon      = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
+    Size      = '600,700'
+    # StartPosition = "CenterParent"
+    Text      = "Gandalf's WinUtil"
+    BackColor = $script:UI.Colors.Background
+    Font      = $script:UI.Fonts.Default
+    Add_Shown = { $Form.Activate() }
 }
 
+# Panels
+$HeaderPanelProps = @{
+    Height    = 40
+    Dock      = 'Top'
+    Padding   = '15,7,15,7'
+    BackColor = $script:UI.Colors.Background
+    Font      = $script:UI.Fonts.Default
+}
+
+$ContentPanelProps = @{
+    Dock      = 'Fill'
+    Padding   = '10,40,10,10'
+    BackColor = $script:UI.Colors.Background
+}
+
+$FooterPanelProps = @{
+    Dock        = 'Bottom'
+    Height      = 50
+    BackColor   = $script:UI.Colors.Background
+    Padding     = '15,5,10,10'
+    BorderStyle = 'None'
+}
+
+# List View and Split Container
 $ListViewProps = @{
     BorderStyle      = 'None'
     CheckBoxes       = $true
-    Font             = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+    Font             = $script:UI.Fonts.Default
     Dock             = 'Fill'
     View             = 'Details'
     FullRowSelect    = $true
     MultiSelect      = $true
-    BackColor        = [System.Drawing.Color]::FromArgb(241, 243, 249)
+    BackColor        = $script:UI.Colors.Background
     ShowItemToolTips = $true
 }
 
 $SplitProps = @{
-    # BackColor        = [System.Drawing.Color]::White
     Dock             = 'Fill'
     Orientation      = 'Horizontal'
     SplitterDistance = 50
@@ -59,55 +110,92 @@ $SplitProps = @{
     Panel2MinSize    = 30
 }
 
-$HeaderPanelProps = @{
-    Height    = 40
-    Dock      = 'Top'
-    Padding   = '15,7,15,7'
-    BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
-    Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-}
-
-$ContentPanelProps = @{
-    Dock      = 'Fill'
-    Padding   = '10,40,10,10'
-    BackColor = [System.Drawing.Color]::FromArgb(241, 243, 249)
-}
-
-$FooterPanelProps = @{
-    Dock        = 'Bottom'
-    Height      = 50
-    BackColor   = [System.Drawing.Color]::FromArgb(241, 243, 249)
-    Padding     = '15,5,10,10'
-    BorderStyle = 'None'
-}
-
-$InputWidth = 150
-$InputHeight = 30
+# Control Properties
 $SelectAllSwitchProps = @{
     Text               = "Select All"
     Width              = 100
-    Height             = 30
+    Height             = $script:UI.Sizes.Input.Height
     Dock               = 'Left'
-    Font               = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-    BackColor          = [System.Drawing.Color]::FromArgb(241, 243, 249)
-    ForeColor          = [System.Drawing.Color]::Black
-
+    Font               = $script:UI.Fonts.Default
+    BackColor          = $script:UI.Colors.Background
+    ForeColor          = $script:UI.Colors.Text
     Add_CheckedChanged = {
         $isChecked = $SelectAllSwitch.Checked
-
-        # loop through $Script:ListViews and set Checked property of all items
         $listViews = @($script:ListViews.Values)
         $listViews | ForEach-Object { $_.Items | ForEach-Object { $_.Checked = $isChecked } }
     }
 }
+
+$SearchBoxProps = @{
+    Height          = $script:UI.Sizes.Input.Height
+    Width           = $script:UI.Sizes.Input.Width
+    Font            = $script:UI.Fonts.Default
+    ForeColor       = $script:UI.Colors.Text
+    PlaceholderText = " Search..."
+    TextAlign       = 'Left'
+    Multiline       = $false
+    Left            = 150 + 20
+    Top             = 7
+    Add_Enter       = { if ($SearchBox.Text -eq "Search...") { $SearchBox.Text = ""; $SearchBox.ForeColor = $script:UI.Colors.Text } }
+    Add_Leave       = { if ($SearchBox.Text -eq "") { $SearchBox.Text = "Search..."; $SearchBox.ForeColor = $script:UI.Colors.Disabled } }
+    Add_TextChanged = {
+        $searchText = $SearchBox.Text.Trim()
+        if ($searchText -eq "Search...") { return }
+        $listViews = @($script:ListViews.Values)
+        foreach ($lv in $listViews) {
+            foreach ($item in $lv.Items) {
+                $item.ForeColor = if ($item.Text -like "*$searchText*") { $script:UI.Colors.Text } else { $script:UI.Colors.Disabled }
+            }
+        }
+    }
+}
+
+$ProfileDropdownProps = @{
+    Width                    = $script:UI.Sizes.Input.Width
+    Height                   = $script:UI.Sizes.Input.Height
+    Left                     = 15
+    Font                     = $script:UI.Fonts.Default
+    ForeColor                = $script:UI.Colors.Text
+    DropDownStyle            = 'DropDownList'
+    Add_SelectedIndexChanged = {
+        $selectedFile = $ProfileDropdown.SelectedItem
+        if ($selectedFile) {
+            $SelectedFilePath = Join-Path -Path $script:PersonalScriptsPath -ChildPath "$selectedFile.json"
+            if (Test-Path $SelectedFilePath) {
+                $Scripts = Get-Content $SelectedFilePath | ConvertFrom-Json
+                $ContentPanel.Controls.Clear()
+                $keys = $Scripts.PSObject.Properties.Name
+                CreateSplitContainer -parentPanel $ContentPanel -keys $keys -index 0
+                $ContentPanel.Refresh()
+            }
+            else {
+                Write-Warning "Selected file '$SelectedFilePath' does not exist."
+            }
+        }
+    }
+}
+
+$InvokeButtonProps = @{
+    Width     = $script:UI.Sizes.Input.Width
+    Text      = "Run Selected Actions"
+    Dock      = 'Right'
+    BackColor = $script:UI.Colors.Accent
+    ForeColor = [System.Drawing.Color]::White
+    Font      = $script:UI.Fonts.Bold
+    FlatStyle = 'Flat'
+    Add_Click = { RunSelectedItems -Action Invoke }
+}
+
+# ------------------------------
+# Functions
+# ------------------------------
 function Add-ListView {
     param ($panel, $key, $data)
 
     $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
-    
     # Add columns first
-    $LV.Columns.Add($key.ToUpper(), 150) | Out-Null
-    $LV.Columns.Add("Description".ToUpper(), 300) | Out-Null
+    $LV.Columns.Add($key.ToUpper(), $script:UI.Sizes.Columns.Name) | Out-Null
+    $LV.Columns.Add("Description".ToUpper(), $script:UI.Sizes.Columns.Description) | Out-Null
 
     # Capture the current $key value in a local variable
     $currentKey = $key
@@ -128,7 +216,6 @@ function Add-ListView {
 
     # Add ListView to the specified panel
     $panel.Controls.Add($LV)
-    Write-Host "Added a ListView for: $key to split container"
 }
 
 # Function to recursively create nested SplitContainer
@@ -149,161 +236,6 @@ function CreateSplitContainer {
 
     # Add SplitContainer to the parent panel
     $parentPanel.Controls.Add($splitContainer)
-}
-
-$ProfileDropdownProps = @{
-    Width                    = $InputWidth
-    Height                   = $InputHeight
-    Left                     = 15
-    Font                     = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-    ForeColor                = [System.Drawing.Color]::FromArgb(100, 100, 100)
-    DropDownStyle            = 'DropDownList'
-    Add_SelectedIndexChanged = ({
-            $selectedFile = $ProfileDropdown.SelectedItem
-            if ($selectedFile) {
-                # Load the selected script JSON file
-                $SelectedFilePath = "$HOME\Documents\Gandalf-WinUtil-Scripts\$selectedFile.json"
-                if (Test-Path $SelectedFilePath) {
-                    $Scripts = Get-Content $SelectedFilePath | ConvertFrom-Json
-                    $Scripts | Get-Member -MemberType NoteProperty
-                    $ContentPanel.Controls.Clear()
-
-                    # Start the recursive SplitContainer creation
-                    $keys = $Scripts.PSObject.Properties.Name
-                    CreateSplitContainer -parentPanel $ContentPanel -keys $keys -index 0
-
-                    # Refresh ContentPanel to apply changes
-                    $ContentPanel.Refresh()
-
-                }
-                else {
-                    Write-Warning "Selected file '$SelectedFilePath' does not exist."
-                }
-            }
-        })
-
-}
-
-$SearchBoxProps = @{
-    Height          = $InputHeight
-    Width           = $InputWidth
-    Font            = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-    ForeColor       = [System.Drawing.Color]::FromArgb(100, 100, 100)
-    PlaceholderText = " Search..."
-    TextAlign       = 'Left'
-    Multiline       = $false
-    Left            = 150 + 20
-    Top             = 7
-    Add_Enter       = ({
-            if ($SearchBox.Text -eq "Search...") {
-                $SearchBox.Text = ""
-                $SearchBox.ForeColor = [System.Drawing.Color]::Black
-            }
-        })
-    Add_Leave       = ({
-            if ($SearchBox.Text -eq "") {
-                $SearchBox.Text = "Search..."
-                $SearchBox.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-            }
-        })
-    Add_TextChanged = ({
-            $searchText = $SearchBox.Text.Trim()
-            if ($searchText -eq "Search...") { return }
-        
-            # Filter ListViews based on search text
-            $listViews = @($script:ListViews.Values)
-            foreach ($lv in $listViews) {
-                foreach ($item in $lv.Items) {
-                    if ($item.Text -like "*$searchText*") {
-                        $item.ForeColor = [System.Drawing.Color]::Black
-                    }
-                    else {
-                        $item.ForeColor = [System.Drawing.Color]::LightGray
-                    }
-                }
-            }
-        })
-}
-
-$InvokeButtonProps = @{
-    Width     = $InputWidth
-    Text      = "Run Selected Actions"
-    Dock      = 'Right'
-    BackColor = $AccentColor
-    ForeColor = [System.Drawing.Color]::White
-    Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    FlatStyle = 'Flat'
-
-    Add_Click = {
-        RunSelectedItems -Action Invoke
-    }
-}
-
-$BrowseLibraryProps = @{
-    Text      = "Browse Plugins Online"
-    Width     = $InputWidth
-    Height    = $InputHeight
-    Dock      = 'Right'
-    Font      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-    ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-    Add_Click = {
-        # Open Another window and load a checkbox list view with all the json files in the repository mrdotkg/dotfiles/
-        $repoUrl = "https://api.github.com/repos/mrdotkg/dotfiles/contents"
-        $response = Invoke-WebRequest -Uri $repoUrl -UseBasicParsing
-        $content = ConvertFrom-Json $response.Content
-
-        $CheckboxForm = New-Object System.Windows.Forms.Form
-        $CheckboxForm.Text = "Select plugins to download"
-        $CheckboxForm.Size = New-Object System.Drawing.Size(400, 300)
-        $CheckboxForm.StartPosition = "CenterParent"
-        $CheckboxForm.MaximizeBox = $false
-        $CheckboxForm.MinimizeBox = $false
-
-        $CheckboxList = New-Object System.Windows.Forms.CheckedListBox
-        $CheckboxList.Dock = 'Fill'
-
-        foreach ($item in $content) {
-            if ($item.type -eq "file" -and $item.name -like "*.json") {
-                $CheckboxList.Items.Add($item.name)
-            }
-        }
-
-        # Add a button to download selected files into the user's personal scripts folder
-        $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
-            Text      = "Download Selected"
-            Dock      = 'Bottom'
-            Height    = 30
-            Add_Click = {
-                $selectedItems = $CheckboxList.CheckedItems
-                foreach ($selectedItem in $selectedItems) {
-                    $fileName = $selectedItem.ToString()
-                    $fileUrl = "https://raw.githubusercontent.com/mrdotkg/dotfiles/main/$fileName"
-                    $destinationPath = Join-Path -Path $HOME\Documents\Gandalf-WinUtil-Scripts -ChildPath $fileName
-                    write-host "Downloading $fileName to $destinationPath"
-                    # Ensure the destination directory exists
-                    if (-not (Test-Path -Path (Split-Path -Path $destinationPath -Parent))) {
-                        New-Item -ItemType Directory -Path (Split-Path -Path $destinationPath -Parent) | Out-Null
-                    }
-                    Invoke-WebRequest -Uri $fileUrl -OutFile $destinationPath
-                }
-                [System.Windows.Forms.MessageBox]::Show("Selected files downloaded successfully!")
-                # Close the checkbox form after download, re populate the select dropdown and select the first item
-                $SelectDropdown.Items.Clear()
-                Get-ChildItem -Path $PersonalScriptsPath -Filter *.json | ForEach-Object {
-                    $SelectDropdown.Items.Add($_.BaseName) | Out-Null
-                }
-                if ($SelectDropdown.Items.Count -gt 0) {
-                    $SelectDropdown.SelectedIndex = 0
-                }
-
-                $CheckboxForm.Close()
-            }
-        }
-
-        $CheckboxForm.Controls.Add($CheckboxList)
-        $CheckboxForm.Controls.Add($DownloadButton)
-        $CheckboxForm.ShowDialog()
-    }
 }
 
 function Format-ListView {
@@ -344,11 +276,15 @@ function RunSelectedItems {
         [ValidateSet("Invoke", "Revoke")]
         [string]$Action
     )
-    $listViews = @(
-        @{ LV = $AppsLV; Data = $Scripts.apps },
-        @{ LV = $TweaksLV; Data = $Scripts.tweaks },
-        @{ LV = $TasksLV; Data = $Scripts.tasks }
-    )
+    
+    # Get list of active views
+    $listViews = $script:ListViews.GetEnumerator() | ForEach-Object {
+        @{
+            LV   = $_.Value
+            Key  = $_.Key
+            Data = $Scripts.$($_.Key)
+        }
+    }
     foreach ($entry in $listViews) {
         # differentiate between Apps, Tweaks and Tasks
         
@@ -356,51 +292,117 @@ function RunSelectedItems {
         foreach ($item in $selected) {
             $scriptObj = $entry.Data | Where-Object { $_.content -eq $item.Text }
             if ($Action -eq "Invoke") {
-                # TODO - Create a universal invoke action
                 $scriptObj.script | ForEach-Object { Write-Host "Executing $($item.Text): $_" }
             }
             elseif ($Action -eq "Revoke") {
-                # TODO - Create a universal revoke action
                 $scriptObj.Revoke | ForEach-Object { Write-Host "Revoking $($item.Text): $_" }
             }
         }
     }
 }
 
-## GUI Initialization ##
-$Form = New-Object Windows.Forms.Form -Property $FormProps
+# ------------------------------
+# Application Initialization
+# ------------------------------
+if ([Environment]::OSVersion.Version.Major -ge 6) {
+    try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
+}
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
+# ------------------------------
+# GUI Initialization
+# ------------------------------
+$Form = New-Object Windows.Forms.Form -Property $FormProps
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
-$FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
+$FooterPanel = New-Object System.Windows.Forms.Panel -Property $FooterPanelProps
 
 $SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
-$BrowseLibrary = New-Object System.Windows.Forms.Label -Property $BrowseLibraryProps
+# Create a File chooser label to select a script JSON file
+$BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
+    Text      = "Download Profiles"
+    Width     = $script:UI.Sizes.Input.Width
+    Height    = $script:UI.Sizes.Input.Height
+    Dock      = 'Right'
+    Font      = $script:UI.Fonts.Default
+    ForeColor = $script:UI.Colors.Text
+    Add_Click = {
+        # Open Another window and load a checkbox list view with all the json files in the repository mrdotkg/dotfiles/
+        $repoUrl = "https://api.github.com/repos/mrdotkg/dotfiles/contents"
+        $response = Invoke-WebRequest -Uri $repoUrl -UseBasicParsing
+        $content = ConvertFrom-Json $response.Content
+
+        $ProfileForm = New-Object System.Windows.Forms.Form
+        $ProfileForm.Text = "Select profiles to download"
+        $ProfileForm.Size = New-Object System.Drawing.Size(400, 300)
+        $ProfileForm.StartPosition = "CenterParent"
+        $ProfileForm.MaximizeBox = $false
+        $ProfileForm.MinimizeBox = $false
+
+        $ProfileLV = New-Object System.Windows.Forms.CheckedListBox
+        $ProfileLV.Dock = 'Fill'
+
+        foreach ($item in $content) {
+            if ($item.type -eq "file" -and $item.name -like "*.json") {
+                $ProfileLV.Items.Add($item.name)
+            }
+        }
+
+        # Add a button to download selected files into the user's personal scripts folder
+        $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
+            Text      = "Download Selected"
+            Dock      = 'Bottom'
+            Height    = 30
+            Add_Click = {
+                $selectedItems = $ProfileLV.CheckedItems
+                foreach ($selectedItem in $selectedItems) {
+                    $fileName = $selectedItem.ToString()
+                    $fileUrl = "https://raw.githubusercontent.com/mrdotkg/dotfiles/main/$fileName"
+                    $destinationPath = Join-Path -Path $HOME\Documents\Gandalf-WinUtil-Scripts -ChildPath $fileName
+                    write-host "Downloading $fileName to $destinationPath"
+                    # Ensure the destination directory exists
+                    if (-not (Test-Path -Path (Split-Path -Path $destinationPath -Parent))) {
+                        New-Item -ItemType Directory -Path (Split-Path -Path $destinationPath -Parent) | Out-Null
+                    }
+                    Invoke-WebRequest -Uri $fileUrl -OutFile $destinationPath
+                }
+                if ($selectedItems.Count -eq 0) {
+                    [System.Windows.Forms.MessageBox]::Show("No files selected for download.")
+                    return
+                }
+                [System.Windows.Forms.MessageBox]::Show("Selected files downloaded successfully!")                
+                $ProfileForm.Close()
+            }
+        }
+
+        $ProfileForm.Controls.Add($ProfileLV)
+        $ProfileForm.Controls.Add($DownloadButton)
+        $ProfileForm.ShowDialog()
+    }
+
+}
 
 $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 
 $HeaderPanel.Controls.AddRange(@($SelectAllSwitch, $SearchBox, $InvokeButton))
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $BrowseLibrary))
-
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
 
-$PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
-# Ensure the directory exists
-if (-not (Test-Path $PersonalScriptsPath)) {
-    New-Item -ItemType Directory -Path $PersonalScriptsPath | Out-Null
+# Initialize file system
+if (-not (Test-Path $script:PersonalScriptsPath)) {
+    New-Item -ItemType Directory -Path $script:PersonalScriptsPath | Out-Null
 }
 
-# Load profile files
-Get-ChildItem -Path $PersonalScriptsPath -Filter *.json | ForEach-Object {
+# Load profiles
+Get-ChildItem -Path $script:PersonalScriptsPath -Filter *.json | ForEach-Object {
     $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
 }
 
-# Initialize with first profile or use default if none exists
 if ($ProfileDropdown.Items.Count -gt 0) {
-    # Trigger the SelectedIndexChanged event to load the first profile
     $ProfileDropdown.SelectedIndex = 0
 }
 
+# Start application
 [void]$Form.ShowDialog()
