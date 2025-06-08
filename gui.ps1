@@ -4,16 +4,6 @@ if ([Environment]::OSVersion.Version.Major -ge 6) {
 }
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# Add sorting variables
-$script:LastColumnClicked = @{
-    Apps   = 0
-    Tweaks = 0
-}
-$script:LastColumnAscending = @{
-    Apps   = $true
-    Tweaks = $true
-}
-
 # Set the accent color based on the current Windows theme
 $AccentColorValue = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AccentColor" -ErrorAction SilentlyContinue
 if ($AccentColorValue) {
@@ -27,13 +17,17 @@ else {
     $AccentColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
 }
 
+$script:LastColumnClicked = @{}
+$script:LastColumnAscending = @{}
+$script:ListViews = @{}
+
 # Define properties for the main form and controls
 $FormProps = @{
     Icon          = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     Size          = '600,700'
     StartPosition = "CenterParent"
     Text          = "Gandalf's WinUtil"
-    BackColor     = [System.Drawing.Color]::white
+    BackColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
     Font          = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 
     Add_Shown     = {
@@ -51,23 +45,10 @@ $ListViewProps = @{
     MultiSelect      = $true
     BackColor        = [System.Drawing.Color]::FromArgb(241, 243, 249)
     ShowItemToolTips = $true
-
-    # Add column click event to sort items
-    Add_ColumnClick  = {
-        param($sender, $e)
-        $ListView = $sender
-        $columnIndex = $e.Column
-        $viewName = switch ($ListView) {
-            $AppsLV { 'Apps' }
-            $TweaksLV { 'Tweaks' }
-            $TasksLV { 'Tasks' }
-        }
-        Format-ListView -ListView $ListView -ViewName $viewName -Column $columnIndex
-    }
 }
 
 $SplitProps = @{
-    BackColor        = [System.Drawing.Color]::White
+    # BackColor        = [System.Drawing.Color]::White
     Dock             = 'Fill'
     Orientation      = 'Horizontal'
     SplitterDistance = 50
@@ -110,14 +91,64 @@ $SelectAllSwitchProps = @{
     Font               = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
     BackColor          = [System.Drawing.Color]::FromArgb(241, 243, 249)
     ForeColor          = [System.Drawing.Color]::Black
-    
+
     Add_CheckedChanged = {
         $isChecked = $SelectAllSwitch.Checked
-        $AppsLV.Items | ForEach-Object { $_.Checked = $isChecked }
-        $TweaksLV.Items | ForEach-Object { $_.Checked = $isChecked }
-        $TasksLV.Items | ForEach-Object { $_.Checked = $isChecked }
 
+        # loop through $Script:ListViews and set Checked property of all items
+        $listViews = @($script:ListViews.Values)
+        $listViews | ForEach-Object { $_.Items | ForEach-Object { $_.Checked = $isChecked } }
     }
+}
+function Add-ListView {
+    param ($panel, $key, $data)
+
+    $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
+    
+    # Add columns first
+    $LV.Columns.Add($key.ToUpper(), 150) | Out-Null
+    $LV.Columns.Add("Description".ToUpper(), 300) | Out-Null
+
+    # Capture the current $key value in a local variable
+    $currentKey = $key
+    $LV.Add_ColumnClick({
+            Format-ListView -ListView $LV -ViewName $currentKey -Column $_.Column
+        }.GetNewClosure())
+
+    # Add items from JSON data
+    foreach ($item in $data) {
+        $listItem = New-Object System.Windows.Forms.ListViewItem($item.content)
+        $listItem.SubItems.Add($item.description)
+        $LV.Items.Add($listItem)
+    }
+
+    $script:LastColumnClicked[$key] = 0
+    $script:LastColumnAscending[$key] = $true
+    $script:ListViews[$key] = $LV
+
+    # Add ListView to the specified panel
+    $panel.Controls.Add($LV)
+    Write-Host "Added a ListView for: $key to split container"
+}
+
+# Function to recursively create nested SplitContainer
+function CreateSplitContainer {
+    param ($parentPanel, $keys, $index)
+
+    if ($index -ge $keys.Count) { return }
+
+    $splitContainer = New-Object System.Windows.Forms.SplitContainer -Property $SplitProps
+    
+    # Add ListView to first panel
+    Add-ListView -panel $splitContainer.Panel1 -key $keys[$index] -data $Scripts.$($keys[$index])
+
+    # If more keys remain, nest another SplitContainer in Panel2
+    if ($index + 1 -lt $keys.Count) {
+        CreateSplitContainer -parentPanel $splitContainer.Panel2 -keys $keys -index ($index + 1)
+    }
+
+    # Add SplitContainer to the parent panel
+    $parentPanel.Controls.Add($splitContainer)
 }
 
 $ProfileDropdownProps = @{
@@ -134,25 +165,16 @@ $ProfileDropdownProps = @{
                 $SelectedFilePath = "$HOME\Documents\Gandalf-WinUtil-Scripts\$selectedFile.json"
                 if (Test-Path $SelectedFilePath) {
                     $Scripts = Get-Content $SelectedFilePath | ConvertFrom-Json
+                    $Scripts | Get-Member -MemberType NoteProperty
+                    $ContentPanel.Controls.Clear()
 
-                    # Clear existing items in ListViews
-                    $AppsLV.Items.Clear()
-                    $TweaksLV.Items.Clear()
-                    $TasksLV.Items.Clear()
+                    # Start the recursive SplitContainer creation
+                    $keys = $Scripts.PSObject.Properties.Name
+                    CreateSplitContainer -parentPanel $ContentPanel -keys $keys -index 0
 
-                    # Populate ListViews with new data
-                    $Scripts.apps | ForEach-Object { 
-                        $AppsLV.Items.Add($_.content) | Out-Null
-                        $AppsLV.Items[$AppsLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-                    }
-                    $Scripts.tweaks | ForEach-Object { 
-                        $TweaksLV.Items.Add($_.content) | Out-Null 
-                        $TweaksLV.Items[$TweaksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-                    }
-                    $Scripts.tasks | ForEach-Object { 
-                        $TasksLV.Items.Add($_.content) | Out-Null 
-                        $TasksLV.Items[$TasksLV.Items.Count - 1].SubItems.Add($_.description) | Out-Null
-                    }
+                    # Refresh ContentPanel to apply changes
+                    $ContentPanel.Refresh()
+
                 }
                 else {
                     Write-Warning "Selected file '$SelectedFilePath' does not exist."
@@ -189,7 +211,7 @@ $SearchBoxProps = @{
             if ($searchText -eq "Search...") { return }
         
             # Filter ListViews based on search text
-            $listViews = @($AppsLV, $TweaksLV, $TasksLV)
+            $listViews = @($script:ListViews.Values)
             foreach ($lv in $listViews) {
                 foreach ($item in $lv.Items) {
                     if ($item.Text -like "*$searchText*") {
@@ -290,6 +312,7 @@ function Format-ListView {
         [Parameter(Mandatory)][string]$ViewName,
         [Parameter(Mandatory)][int]$Column
     )
+    
     # Toggle sort direction if same column clicked
     if ($script:LastColumnClicked[$ViewName] -eq $Column) {
         $script:LastColumnAscending[$ViewName] = -not $script:LastColumnAscending[$ViewName]
@@ -299,7 +322,6 @@ function Format-ListView {
     }
     $script:LastColumnClicked[$ViewName] = $Column
 
-    
     $items = @($ListView.Items)
     $ListView.BeginUpdate()
     try {
@@ -316,6 +338,7 @@ function Format-ListView {
         $ListView.EndUpdate()
     }
 }
+
 function RunSelectedItems {
     param(
         [ValidateSet("Invoke", "Revoke")]
@@ -355,42 +378,28 @@ $SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 $BrowseLibrary = New-Object System.Windows.Forms.Label -Property $BrowseLibraryProps
 
-# Separate the Content Panel horizontally with a Splitter bar
-$SplitContainer1 = New-Object Windows.Forms.SplitContainer -Property $SplitProps
-$SplitContainer2 = New-Object Windows.Forms.SplitContainer -Property $SplitProps
-
-# Append ListViews to both sides of the Splitter bar
-$AppsLV = New-Object Windows.Forms.ListView -Property $ListViewProps
-$TweaksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
-$TasksLV = New-Object Windows.Forms.ListView -Property $ListViewProps
-
-$SplitContainer1.Panel1.Controls.Add($AppsLV)
-$SplitContainer1.Panel2.Controls.Add($SplitContainer2)
-$SplitContainer2.Panel1.Controls.Add($TweaksLV)
-$SplitContainer2.Panel2.Controls.Add($TasksLV)
-
-$AppsLV.Columns.Add("Install Apps & Tools", 150)
-$AppsLV.Columns.Add("Description", 300)
-
-$TweaksLV.Columns.Add("Edit System Settings", 150)
-$TweaksLV.Columns.Add("Description", 300)
-
-$TasksLV.Columns.Add("Run Helper Tasks", 150)
-$TasksLV.Columns.Add("Description", 300)
 $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 
 $HeaderPanel.Controls.AddRange(@($SelectAllSwitch, $SearchBox, $InvokeButton))
-$ContentPanel.Controls.Add($SplitContainer1)
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $BrowseLibrary))
 
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
 
 $PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
+# Ensure the directory exists
+if (-not (Test-Path $PersonalScriptsPath)) {
+    New-Item -ItemType Directory -Path $PersonalScriptsPath | Out-Null
+}
+
+# Load profile files
 Get-ChildItem -Path $PersonalScriptsPath -Filter *.json | ForEach-Object {
     $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
 }
+
+# Initialize with first profile or use default if none exists
 if ($ProfileDropdown.Items.Count -gt 0) {
+    # Trigger the SelectedIndexChanged event to load the first profile
     $ProfileDropdown.SelectedIndex = 0
 }
 
