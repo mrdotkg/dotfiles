@@ -1,0 +1,27 @@
+[
+    {
+        "id": "Steam",
+        "description": "Installed with winget package manager, Steam is a digital distribution platform for video games.",
+        "command": "winget install Valve.Steam -e --accept-source-agreements --accept-package-agreements"
+    },
+    {
+        "id": "PowerShell",
+        "description": "Task automation framework and scripting language designed for system administrators, offering powerful command-line capabilities.",
+        "command": "winget install Microsoft.PowerShell -e --accept-source-agreements --accept-package-agreements"
+    },
+    {
+        "id": "Neovim",
+        "description": "Highly extensible text editor and an improvement over the original Vim editor.",
+        "command": "winget install Neovim.Neovim -e --accept-source-agreements --accept-package-agreements"
+    },
+    {
+        "id": "Disable Activity History",
+        "description": "This erases recent docs, clipboard, and run history.",
+        "command": "Get-ActivityHistory | Remove-Item"
+    },
+    {
+        "id": "Disable Cortana",
+        "description": "Disables Cortana, the virtual assistant in Windows.",
+        "command": "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search' -Name 'AllowCortana' -Value 0"
+    }
+]

@@ -1,3 +1,14 @@
+<#
+.SYNOPSIS
+Windows Utility GUI Application
+
+.DESCRIPTION
+This script creates a Windows Forms GUI application for managing and executing scripts from a user-defined profile. It allows users to select scripts, view descriptions, and execute them within the application.
+
+.NOTES
+This script is designed to be a starting point for building a more complex GUI application. It may require additional features and error handling for production use.
+#>
+
 # ------------------------------
 # Initialize Dependencies
 # ------------------------------
@@ -8,6 +19,7 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 # ------------------------------
 # Script-scoped variables
 $script:PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
+$script:DataDirectory = "$HOME\Documents\Gandalf-WinUtil-Scripts"
 $script:LastColumnClicked = @{}
 $script:LastColumnAscending = @{}
 $script:ListViews = @{}
@@ -31,7 +43,7 @@ $script:UI = @{
         }
         Columns = @{
             Name        = 150
-            Description = 300
+            Description = 250
         }
     }
 }
@@ -157,18 +169,65 @@ $ProfileDropdownProps = @{
     ForeColor                = $script:UI.Colors.Text
     DropDownStyle            = 'DropDownList'
     Add_SelectedIndexChanged = {
-        $selectedFile = $ProfileDropdown.SelectedItem
-        if ($selectedFile) {
-            $SelectedFilePath = Join-Path -Path $script:PersonalScriptsPath -ChildPath "$selectedFile.json"
-            if (Test-Path $SelectedFilePath) {
-                $Scripts = Get-Content $SelectedFilePath | ConvertFrom-Json
-                $ContentPanel.Controls.Clear()
-                $keys = $Scripts.PSObject.Properties.Name
-                CreateSplitContainer -parentPanel $ContentPanel -keys $keys -index 0
-                $ContentPanel.Refresh()
+        $selectedProfile = $ProfileDropdown.SelectedItem
+        if ($selectedProfile) {
+            $selectedProfilePath = Join-Path -Path $script:PersonalScriptsPath -ChildPath "$selectedProfile.txt"
+            
+            if (Test-Path $selectedProfilePath) {
+                # Load the selected profile
+                $ProfileLines = Get-Content -Path $selectedProfilePath -ErrorAction SilentlyContinue
+                if (-not $ProfileLines) {
+                    Write-Warning "Selected profile '$selectedProfilePath' is empty or does not exist."
+                    return
+                }
+                else {
+                    # Clear existing ListViews
+                    $script:ListViews.Clear()
+                    
+                    # Get the database data
+                    $dbData = Get-Content -Path (Join-Path -Path $PSScriptRoot -ChildPath "db.json") -Raw | ConvertFrom-Json
+                    
+                    # Process profile lines and group scripts
+                    $groupedScripts = @{
+                    }
+                    $currentGroupName = "Group #1"  # Default group name
+                    
+                    foreach ($line in $ProfileLines) {
+                        if ($line -eq "") {
+                            # If we hit an empty line, start a new group
+                            $currentGroupName = "Group#$($groupedScripts.Count + 1)"
+                            continue
+                        }
+                        elseif ($line.StartsWith("#")) {
+                            $currentGroupName = $line.TrimStart("#").Trim()
+                            continue
+                        }
+                        else {
+                            $line = $line.Trim()
+                            $scriptData = Get-ScriptFromId -Id $line -DbData $dbData
+                            if ($scriptData) {
+                                if (-not $groupedScripts.ContainsKey($currentGroupName)) {
+                                    $groupedScripts[$currentGroupName] = @()
+                                }
+                                $groupedScripts[$currentGroupName] += $scriptData
+                            }
+                            else {
+                                Write-Warning "No script found for ID: $line"
+                            }
+                        }
+                    }
+                    # Create split containers for grouped scripts
+                    if ($groupedScripts.Count -gt 0) {
+                        CreateSplitContainer -parentPanel $ContentPanel -keys $groupedScripts.Keys -index 0 -groupedScripts $groupedScripts
+                    }
+                    else {
+                        Write-Warning "No valid scripts found in profile."
+                    }
+                    $ContentPanel.Refresh()
+                }
             }
             else {
-                Write-Warning "Selected file '$SelectedFilePath' does not exist."
+                Write-Warning "Selected file '$selectedProfilePath' does not exist."
             }
         }
     }
@@ -195,6 +254,9 @@ function Add-ListView {
     # Add columns first
     $LV.Columns.Add($key.ToUpper(), $script:UI.Sizes.Columns.Name) | Out-Null
     $LV.Columns.Add("Description".ToUpper(), $script:UI.Sizes.Columns.Description) | Out-Null
+    $LV.Columns.Add("Command".ToUpper(), $script:UI.Sizes.Columns.Name) | Out-Null
+
+    #TODO Show context menu or right click with copy command option
 
     # Capture the current $key value in a local variable
     $currentKey = $key
@@ -202,10 +264,11 @@ function Add-ListView {
             Format-ListView -ListView $LV -ViewName $currentKey -Column $_.Column
         }.GetNewClosure())
 
-    # Add items from JSON data
-    foreach ($item in $data) {
-        $listItem = New-Object System.Windows.Forms.ListViewItem($item.content)
-        $listItem.SubItems.Add($item.description)
+    # Add items from grouped scripts data
+    foreach ($script in $data) {
+        $listItem = New-Object System.Windows.Forms.ListViewItem($script.content)
+        $listItem.SubItems.Add($script.description)
+        $listItem.SubItems.Add($script.command)
         $LV.Items.Add($listItem)
     }
 
@@ -219,18 +282,33 @@ function Add-ListView {
 
 # Function to recursively create nested SplitContainer
 function CreateSplitContainer {
-    param ($parentPanel, $keys, $index)
+    param (
+        $parentPanel, 
+        [string[]]$keys,
+        [int]$index,
+        [hashtable]$groupedScripts  # Add parameter for groupedScripts
+    )
 
     if ($index -ge $keys.Count) { return }
 
+    # Clear existing controls first
+    if ($index -eq 0) {
+        $parentPanel.Controls.Clear()
+    }
+
+    if ($keys.Count -eq 1) {
+        Add-ListView -panel $parentPanel -key $keys[0] -data $groupedScripts[$keys[0]]
+        return
+    }
     $splitContainer = New-Object System.Windows.Forms.SplitContainer -Property $SplitProps
-    
-    # Add ListView to first panel
-    Add-ListView -panel $splitContainer.Panel1 -key $keys[$index] -data $Scripts.$($keys[$index])
+
+    # Add ListView to first panel with data from the groupedScripts
+    $currentKey = $keys[$index]
+    Add-ListView -panel $splitContainer.Panel1 -key $currentKey -data $groupedScripts[$currentKey]
 
     # If more keys remain, nest another SplitContainer in Panel2
     if ($index + 1 -lt $keys.Count) {
-        CreateSplitContainer -parentPanel $splitContainer.Panel2 -keys $keys -index ($index + 1)
+        CreateSplitContainer -parentPanel $splitContainer.Panel2 -keys $keys -index ($index + 1) -groupedScripts $groupedScripts
     }
 
     # Add SplitContainer to the parent panel
@@ -275,29 +353,26 @@ function RunSelectedItems {
         [ValidateSet("Invoke", "Revoke")]
         [string]$Action
     )
+
+}
+
+function Get-ScriptFromId {
+    param (
+        [Parameter(Mandatory)]
+        [string]$Id,
+        [Parameter(Mandatory)]
+        $DbData
+    )
     
-    # Get list of active views
-    $listViews = $script:ListViews.GetEnumerator() | ForEach-Object {
-        @{
-            LV   = $_.Value
-            Key  = $_.Key
-            Data = $Scripts.$($_.Key)
+    $scriptData = $DbData | Where-Object { $_.id -eq $Id }
+    if ($scriptData) {
+        return @{
+            content     = $scriptData.id
+            description = $scriptData.description
+            command     = $scriptData.command
         }
     }
-    foreach ($entry in $listViews) {
-        # differentiate between Apps, Tweaks and Tasks
-        
-        $selected = $entry.LV.CheckedItems
-        foreach ($item in $selected) {
-            $scriptObj = $entry.Data | Where-Object { $_.content -eq $item.Text }
-            if ($Action -eq "Invoke") {
-                $scriptObj.script | ForEach-Object { Write-Host "Executing $($item.Text): $_" }
-            }
-            elseif ($Action -eq "Revoke") {
-                $scriptObj.Revoke | ForEach-Object { Write-Host "Revoking $($item.Text): $_" }
-            }
-        }
-    }
+    return $null
 }
 
 # ------------------------------
@@ -402,12 +477,34 @@ $FooterPanel.Controls.AddRange(@($ProfileDropdown, $BrowseLibrary))
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
 
 # Initialize file system
-if (-not (Test-Path $script:PersonalScriptsPath)) {
-    New-Item -ItemType Directory -Path $script:PersonalScriptsPath | Out-Null
+if (-not (Test-Path $script:DataDirectory)) {
+    New-Item -ItemType Directory -Path $script:DataDirectory | Out-Null
 }
 
-# Load profiles
-Get-ChildItem -Path $script:PersonalScriptsPath -Filter *.json | ForEach-Object {
+$defaultProfile = Join-Path -Path $script:DataDirectory -ChildPath "Default-All.txt"
+if (-not (Test-Path $defaultProfile)) {
+    New-Item -ItemType File -Path $defaultProfile | Out-Null
+
+    # scan db.json, for each entry add the id and a new line to the default profile
+    $dbJsonPath = Join-Path -Path $PSScriptRoot -ChildPath "db.json"
+    if (Test-Path $dbJsonPath) {
+        $scriptsData = Get-Content -Path $dbJsonPath -Raw | ConvertFrom-Json
+        $allIds = @()
+        $scriptsData.PSObject.Properties | ForEach-Object {
+            $_.Value | ForEach-Object {
+                if ($_.id) {
+                    $allIds += $_.id
+                }
+            }
+        }
+        if ($allIds.Count -gt 0) {
+            $allIds | Set-Content -Path $defaultProfile -Force
+        }
+    }
+}
+
+# Load user provided profiles
+Get-ChildItem -Path $script:DataDirectory | ForEach-Object {
     $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
 }
 
