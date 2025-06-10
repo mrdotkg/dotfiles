@@ -44,9 +44,9 @@ $script:UI = @{
             FooterWidth = 150
         }
         Columns = @{
-            Name        = 150
-            Description = 150
-            Command     = 150
+            Name        = 250
+            Description = 100
+            Command     = 100
         }
     }
 }
@@ -514,7 +514,7 @@ function RunSelectedItems {
     finally {
         # Re-enable the invoke button
         $InvokeButton.Enabled = $true
-        $InvokeButton.Text = "Run Selected Actions"
+        $InvokeButton.Text = "Run"
     }
 }
 
@@ -559,7 +559,7 @@ $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonPr
 
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
-    Text      = "DOWNLOAD PROFILES"
+    Text      = "MORE PROFILES"
     Width     = $script:UI.Sizes.Input.FooterWidth
     Height    = $script:UI.Sizes.Input.Height
     Dock      = 'Right'
@@ -567,7 +567,6 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
     ForeColor = $script:UI.Colors.Text
     TextAlign = 'MiddleCenter'
     AutoSize  = $false
-    Cursor    = 'Hand'
     Add_Click = {
         # Open Another window and load a checkbox list view with all the json files in the repository mrdotkg/dotfiles/
         $repoUrl = "https://api.github.com/repos/mrdotkg/dotfiles/contents"
@@ -576,12 +575,19 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
 
         $ProfileForm = New-Object System.Windows.Forms.Form -Property @{
             Text          = "Select profiles to download"
-            Size          = New-Object System.Drawing.Size(400, 300)
+            Size          = New-Object System.Drawing.Size(300, 360)
             Font          = $script:UI.Fonts.Default
+            BackColor     = $script:UI.Colors.Background
             StartPosition = "CenterParent"
             MaximizeBox   = $false
             MinimizeBox   = $false
             Padding       = '10,10,10,10'
+
+            Add_Shown     = {
+                # $DownloadButton.Enabled = $false  # Initially disable the download button
+                $ProfileForm.Activate()
+                $ProfileLV.Focus()
+            }
             
         }
 
@@ -591,6 +597,11 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
             ForeColor   = $script:UI.Colors.Text
             BackColor   = $script:UI.Colors.Background
             BorderStyle = 'None'
+
+            # Add_SelectedIndexChanged = {
+            #     # Enable the download button if at least one item is checked
+            #     $DownloadButton.Enabled = $ProfileLV.CheckedItems.Count -gt 0
+            # }
         }
 
         foreach ($item in $content) {
@@ -602,12 +613,11 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
         # Add a button to download selected files into the user's personal scripts folder
         $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
             Text      = "DOWNLOAD"
-            # BackColor = $script:UI.Colors.Accent
-            # ForeColor = [System.Drawing.Color]::White
+            Height    = 25
+            Width     = $script:UI.Sizes.Input.FooterWidth
             Font      = $script:UI.Fonts.Bold
             FlatStyle = 'Flat'
             Dock      = 'Bottom'
-            Height    = 30
             Add_Click = {
                 $selectedItems = $ProfileLV.CheckedItems
                 foreach ($selectedItem in $selectedItems) {
@@ -652,7 +662,7 @@ if (-not (Test-Path $script:DataDirectory)) {
     New-Item -ItemType Directory -Path $script:DataDirectory | Out-Null
 }
 
-$defaultProfile = Join-Path -Path $script:DataDirectory -ChildPath "Default-All.txt"
+$defaultProfile = Join-Path -Path $script:DataDirectory -ChildPath "Default-Profile.txt"
 if (-not (Test-Path $defaultProfile)) {
     New-Item -ItemType File -Path $defaultProfile | Out-Null
 
