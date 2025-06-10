@@ -38,6 +38,10 @@ $script:UI = @{
         Bold    = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     }
     Sizes  = @{
+        Window  = @{
+            Width  = 500
+            Height = 600
+        }
         Input   = @{
             Width       = 100
             Height      = 30
@@ -69,7 +73,8 @@ else {
 # ------------------------------
 # Main Form
 $FormProps = @{
-    Size      = '500,600'
+    Width     = $script:UI.Sizes.Window.Width
+    Height    = $script:UI.Sizes.Window.Height
     Text      = "Gray WinUtil"
     BackColor = $script:UI.Colors.Background
     Font      = $script:UI.Fonts.Default
