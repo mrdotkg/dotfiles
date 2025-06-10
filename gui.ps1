@@ -1,14 +1,3 @@
-<#
-.SYNOPSIS
-Windows Utility GUI Application
-
-.DESCRIPTION
-This script creates a Windows Forms GUI application for managing and executing scripts from a user-defined profile. It allows users to select scripts, view descriptions, and execute them within the application.
-
-.NOTES
-This script is designed to be a starting point for building a more complex GUI application. It may require additional features and error handling for production use.
-#>
-
 # ------------------------------
 # Configuration
 # ------------------------------
@@ -21,15 +10,15 @@ $script:Config = @{
     ScriptsPath  = "$HOME\Documents\WinUtil Local Data"  # Local data directory (Profiles stored in subdirectory)
 }
 
-# Generate URLs from configuration
-$script:Config.DatabaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/refs/heads/$($script:Config.GitHubBranch)/$($script:Config.DatabaseFile)"
-$script:Config.ApiUrl = "https://api.github.com/repos/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/contents"
-$script:Config.RawBaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/$($script:Config.GitHubBranch)"
-
 # ------------------------------
 # Initialize Dependencies
 # ------------------------------
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+
+# Generate URLs from configuration
+$script:Config.DatabaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/refs/heads/$($script:Config.GitHubBranch)/$($script:Config.DatabaseFile)"
+$script:Config.ApiUrl = "https://api.github.com/repos/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/contents"
+$script:Config.RawBaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/$($script:Config.GitHubBranch)"
 
 # ------------------------------
 # State Management
@@ -586,10 +575,16 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
     ForeColor = $script:UI.Colors.Text
     TextAlign = 'MiddleCenter'
     AutoSize  = $false
-    Add_Click = { # Open Another window and load a checkbox list view with all the json files in the repository
-        $repoUrl = $script:Config.ApiUrl
-        $response = Invoke-WebRequest -Uri $repoUrl -UseBasicParsing
-        $content = ConvertFrom-Json $response.Content
+    Add_Click = { # Open Another window and load a checkbox list view with profile files from the repository
+        $repoUrl = "$($script:Config.ApiUrl)/Profiles"
+        try {
+            $response = Invoke-WebRequest -Uri $repoUrl -UseBasicParsing
+            $content = ConvertFrom-Json $response.Content
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Error accessing repository: $_", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            return
+        }
 
         $ProfileForm = New-Object System.Windows.Forms.Form -Property @{
             Text          = "Select profiles to download"
@@ -617,12 +612,12 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
             BorderStyle = 'None'
 
             # Add_SelectedIndexChanged = {
-            #     # Enable the download button if at least one item is checked            #     $DownloadButton.Enabled = $ProfileLV.CheckedItems.Count -gt 0
-            # }
+            #     # Enable the download button if at least one item is checked
+            #     $DownloadButton.Enabled = $ProfileLV.CheckedItems.Count -gt 0            # }
         }
 
         foreach ($item in $content) {
-            if ($item.type -eq "file" -and $item.path -like "Profiles/*.txt") {
+            if ($item.type -eq "file" -and $item.name -like "*.txt") {
                 $ProfileLV.Items.Add($item.name)
             }
         }
