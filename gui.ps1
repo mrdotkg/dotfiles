@@ -197,10 +197,9 @@ $ProfileDropdownProps = @{
                 else {
                     # Clear existing ListViews
                     $script:ListViews.Clear()
-                    
-                    # Get the database data
-                    $dbData = Get-Content -Path (Join-Path -Path $PSScriptRoot -ChildPath "db.json") -Raw | ConvertFrom-Json
-                    
+
+                    # get from github
+                    $dbData = iwr "https://raw.githubusercontent.com/mrdotkg/dotfiles/refs/heads/main/db.json" | ConvertFrom-Json
                     # Create an ordered dictionary to maintain group order
                     $groupedScripts = New-Object Collections.Specialized.OrderedDictionary
                     $currentGroupName = "Group #1"  # Default group name
