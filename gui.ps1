@@ -10,6 +10,23 @@ This script is designed to be a starting point for building a more complex GUI a
 #>
 
 # ------------------------------
+# Configuration
+# ------------------------------
+# Repository configuration - Update these variables for your own repository
+$script:Config = @{
+    GitHubOwner  = "mrdotkg"           # GitHub username
+    GitHubRepo   = "dotfiles"          # Repository name
+    GitHubBranch = "main"              # Default branch
+    DatabaseFile = "db.json"           # Database file name
+    ScriptsPath  = "$HOME\Documents\WinUtil Local Data"  # Local data directory (Profiles stored in subdirectory)
+}
+
+# Generate URLs from configuration
+$script:Config.DatabaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/refs/heads/$($script:Config.GitHubBranch)/$($script:Config.DatabaseFile)"
+$script:Config.ApiUrl = "https://api.github.com/repos/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/contents"
+$script:Config.RawBaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/$($script:Config.GitHubBranch)"
+
+# ------------------------------
 # Initialize Dependencies
 # ------------------------------
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
@@ -18,8 +35,9 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 # State Management
 # ------------------------------
 # Script-scoped variables
-$script:PersonalScriptsPath = "$HOME\Documents\Gandalf-WinUtil-Scripts"
-$script:DataDirectory = "$HOME\Documents\Gandalf-WinUtil-Scripts"
+$script:PersonalScriptsPath = $script:Config.ScriptsPath
+$script:DataDirectory = "$HOME\Documents\WinUtil Local Data"
+$script:ProfilesDirectory = "$HOME\Documents\WinUtil Local Data\Profiles"
 $script:LastColumnClicked = @{}
 $script:LastColumnAscending = @{}
 $script:ListViews = @{}
@@ -118,8 +136,12 @@ $ListViewProps = @{
 
     # Enable the Invoke button only if at least one item is checked
     Add_ItemChecked  = {
-        $anyChecked = $script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object | Select-Object -ExpandProperty Count
+        $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
+        $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $anyChecked -gt 0
+        $InvokeButton.Text = "Run ($anyChecked)"
+        $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
+        $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
     }
 }
 
@@ -162,8 +184,6 @@ $SearchBoxProps = @{
     TextAlign       = 'Left'
     Multiline       = $false
     BorderStyle     = 'FixedSingle'
-    # Left            = 150 + 20
-    # Top             = 5
     Add_Enter       = { if ($SearchBox.Text -eq "SEARCH...") { $SearchBox.Text = ""; $SearchBox.ForeColor = $script:UI.Colors.Text } }
     Add_Leave       = { if ($SearchBox.Text -eq "") { $SearchBox.Text = "SEARCH..."; $SearchBox.ForeColor = $script:UI.Colors.Disabled } }
     Add_TextChanged = {
@@ -190,7 +210,7 @@ $ProfileDropdownProps = @{
     Add_SelectedIndexChanged = {
         $selectedProfile = $ProfileDropdown.SelectedItem
         if ($selectedProfile) {
-            $selectedProfilePath = Join-Path -Path $script:PersonalScriptsPath -ChildPath "$selectedProfile.txt"
+            $selectedProfilePath = Join-Path -Path $script:ProfilesDirectory -ChildPath "$selectedProfile.txt"
             
             if (Test-Path $selectedProfilePath) {
                 # Load the selected profile
@@ -201,10 +221,8 @@ $ProfileDropdownProps = @{
                 }
                 else {
                     # Clear existing ListViews
-                    $script:ListViews.Clear()
-
-                    # get from github
-                    $dbData = iwr "https://raw.githubusercontent.com/mrdotkg/dotfiles/refs/heads/main/db.json" | ConvertFrom-Json
+                    $script:ListViews.Clear()                    # get from github
+                    $dbData = Invoke-WebRequest $script:Config.DatabaseUrl | ConvertFrom-Json
                     # Create an ordered dictionary to maintain group order
                     $groupedScripts = New-Object Collections.Specialized.OrderedDictionary
                     $currentGroupName = "Group #1"  # Default group name
@@ -337,10 +355,6 @@ function CreateSplitContainer {
     if ($index -eq 0) {
         $parentPanel.Controls.Clear()
         $script:SplitContainers = @()  # Reset split containers array
-        
-        # Calculate the height for each section based on total groups
-        $totalHeight = $parentPanel.ClientSize.Height
-        $heightPerSection = [Math]::Floor($totalHeight / $keys.Count)
         
         # If only one group, add it directly without split container
         if ($keys.Count -eq 1) {
@@ -485,7 +499,7 @@ function RunSelectedItems {
 
             try {
                 $result = Invoke-Expression -Command $command
-                if ($result -ne $null) {
+                if ($null -ne $result) {
                     $progressLabel.Text += "`nOutput: $result"
                 }
 
@@ -572,9 +586,8 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
     ForeColor = $script:UI.Colors.Text
     TextAlign = 'MiddleCenter'
     AutoSize  = $false
-    Add_Click = {
-        # Open Another window and load a checkbox list view with all the json files in the repository mrdotkg/dotfiles/
-        $repoUrl = "https://api.github.com/repos/mrdotkg/dotfiles/contents"
+    Add_Click = { # Open Another window and load a checkbox list view with all the json files in the repository
+        $repoUrl = $script:Config.ApiUrl
         $response = Invoke-WebRequest -Uri $repoUrl -UseBasicParsing
         $content = ConvertFrom-Json $response.Content
 
@@ -604,13 +617,12 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
             BorderStyle = 'None'
 
             # Add_SelectedIndexChanged = {
-            #     # Enable the download button if at least one item is checked
-            #     $DownloadButton.Enabled = $ProfileLV.CheckedItems.Count -gt 0
+            #     # Enable the download button if at least one item is checked            #     $DownloadButton.Enabled = $ProfileLV.CheckedItems.Count -gt 0
             # }
         }
 
         foreach ($item in $content) {
-            if ($item.type -eq "file" -and $item.name -like "*.json") {
+            if ($item.type -eq "file" -and $item.path -like "Profiles/*.txt") {
                 $ProfileLV.Items.Add($item.name)
             }
         }
@@ -627,8 +639,8 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
                 $selectedItems = $ProfileLV.CheckedItems
                 foreach ($selectedItem in $selectedItems) {
                     $fileName = $selectedItem.ToString()
-                    $fileUrl = "https://raw.githubusercontent.com/mrdotkg/dotfiles/main/$fileName"
-                    $destinationPath = Join-Path -Path $HOME\Documents\Gandalf-WinUtil-Scripts -ChildPath $fileName
+                    $fileUrl = "$($script:Config.RawBaseUrl)/Profiles/$fileName"
+                    $destinationPath = Join-Path -Path $script:ProfilesDirectory -ChildPath $fileName
                     write-host "Downloading $fileName to $destinationPath"
                     # Ensure the destination directory exists
                     if (-not (Test-Path -Path (Split-Path -Path $destinationPath -Parent))) {
@@ -640,7 +652,7 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
                     [System.Windows.Forms.MessageBox]::Show("No files selected for download.")
                     return
                 }
-                [System.Windows.Forms.MessageBox]::Show("Selected files downloaded successfully to $HOME\Documents\Gandalf-WinUtil-Scripts!")                
+                [System.Windows.Forms.MessageBox]::Show("Selected profiles downloaded successfully to $($script:ProfilesDirectory)!")                
                 $ProfileForm.Close()
             }
         }
@@ -667,7 +679,11 @@ if (-not (Test-Path $script:DataDirectory)) {
     New-Item -ItemType Directory -Path $script:DataDirectory | Out-Null
 }
 
-$defaultProfile = Join-Path -Path $script:DataDirectory -ChildPath "Default-Profile.txt"
+if (-not (Test-Path $script:ProfilesDirectory)) {
+    New-Item -ItemType Directory -Path $script:ProfilesDirectory | Out-Null
+}
+
+$defaultProfile = Join-Path -Path $script:ProfilesDirectory -ChildPath "Default-Profile.txt"
 if (-not (Test-Path $defaultProfile)) {
     New-Item -ItemType File -Path $defaultProfile | Out-Null
 
@@ -690,7 +706,7 @@ if (-not (Test-Path $defaultProfile)) {
 }
 
 # Load user provided profiles
-Get-ChildItem -Path $script:DataDirectory | ForEach-Object {
+Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
     $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
 }
 

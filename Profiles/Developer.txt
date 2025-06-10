@@ -1,0 +1,10 @@
+# Development Environment
+PowerShell
+Neovim
+
+# System Tools
+Setup OpenSSH And Allow through Firewall
+Powershell 7 as Default SSH
+
+# Privacy
+Disable Activity History

@@ -1,0 +1,10 @@
+# Gaming Setup
+Steam
+
+# Performance
+Disable Activity History
+Disable Cortana
+
+# Remote Access
+Setup OpenSSH And Allow through Firewall
+Allow Remote Desktop

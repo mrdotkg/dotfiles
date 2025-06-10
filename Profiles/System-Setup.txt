@@ -1,0 +1,13 @@
+# System Configuration
+Setup OpenSSH And Allow through Firewall
+Powershell 7 as Default SSH
+Allow Remote Desktop
+
+# Software Installation
+PowerShell
+Steam
+Neovim
+
+# Privacy & Performance
+Disable Activity History
+Disable Cortana
