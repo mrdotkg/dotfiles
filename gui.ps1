@@ -69,7 +69,7 @@ else {
 # ------------------------------
 # Main Form
 $FormProps = @{
-    Icon      = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
+    # Icon      = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
     Size      = '500,600'
     Text      = "Gray WinUtil"
     BackColor = $script:UI.Colors.Background
