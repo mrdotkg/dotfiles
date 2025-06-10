@@ -27,6 +27,7 @@ $script:Config.RawBaseUrl = "https://raw.githubusercontent.com/$($script:Config.
 $script:PersonalScriptsPath = $script:Config.ScriptsPath
 $script:DataDirectory = "$HOME\Documents\WinUtil Local Data"
 $script:ProfilesDirectory = "$HOME\Documents\WinUtil Local Data\Profiles"
+$script:LogsDirectory = "$HOME\Documents\WinUtil Local Data\Logs"
 $script:LastColumnClicked = @{}
 $script:LastColumnAscending = @{}
 $script:ListViews = @{}
@@ -440,7 +441,14 @@ function RunSelectedItems {
         if ($selectedItems.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show("No items selected.", "Warning", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
-        }
+        }        # Create log file with timestamp
+        $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+        $logFileName = "WinUtil_Run_$timestamp.log"
+        $logFilePath = Join-Path -Path $script:LogsDirectory -ChildPath $logFileName
+        
+        # Initialize log file with simple header
+        $logHeader = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [INFO] Gray WinUtil execution started - Action: $Action, Items: $($selectedItems.Count)"
+        Set-Content -Path $logFilePath -Value $logHeader -Encoding UTF8
 
         # Create progress form
         $progressForm = New-Object System.Windows.Forms.Form -Property @{
@@ -474,9 +482,7 @@ function RunSelectedItems {
         # Track overall success
         $successCount = 0
         $failureCount = 0
-        $errorLog = @()
-
-        # Process each selected item
+        $errorLog = @()        # Process each selected item
         for ($i = 0; $i -lt $selectedItems.Count; $i++) {
             $item = $selectedItems[$i]
             $command = $item.SubItems[2].Text
@@ -486,20 +492,109 @@ function RunSelectedItems {
             $progressLabel.Text = "Running: $name"
             [System.Windows.Forms.Application]::DoEvents()
 
+            # Log command execution start
+            $startLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [INFO] Starting [$($i + 1)/$($selectedItems.Count)] $name - Command: $command"
+            Add-Content -Path $logFilePath -Value $startLogEntry -Encoding UTF8
+
             try {
-                $result = Invoke-Expression -Command $command
-                if ($null -ne $result) {
-                    $progressLabel.Text += "`nOutput: $result"
+                # Capture both standard output and error streams
+                $startTime = Get-Date
+                $output = ""
+                $errorOutput = ""
+                # Execute command and capture output
+                $psi = New-Object System.Diagnostics.ProcessStartInfo
+                $psi.FileName = "powershell.exe"
+                $psi.Arguments = "-NoProfile -Command `"$command`""
+                $psi.UseShellExecute = $false
+                $psi.RedirectStandardOutput = $true
+                $psi.RedirectStandardError = $true
+                $psi.CreateNoWindow = $true
+                
+                $process = New-Object System.Diagnostics.Process
+                $process.StartInfo = $psi
+                
+                # Start the process
+                $process.Start() | Out-Null
+                
+                # Read output streams
+                $output = $process.StandardOutput.ReadToEnd()
+                $errorOutput = $process.StandardError.ReadToEnd()
+                
+                # Wait for process to complete
+                $process.WaitForExit()
+                $exitCode = $process.ExitCode
+                $endTime = Get-Date
+                $duration = $endTime - $startTime
+                
+                # Filter out verbose progress information
+                $filteredOutput = $output
+                if ($command -like "*winget*") {
+                    # Remove winget progress bars and verbose output
+                    $outputLines = $output -split "`n"
+                    $filteredLines = $outputLines | Where-Object {
+                        $line = $_.Trim()
+                        # Keep important lines, filter out progress bars and repetitive info
+                        -not ($line -match "^\s*[\[\]█▌▐▀▄■□▪▫▬─═│┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬]") -and # Progress bar characters
+                        -not ($line -match "^\s*\d+%\s*$") -and # Percentage only lines
+                        -not ($line -match "^\s*[▓░]{5,}") -and # Progress bar blocks
+                        -not ($line -match "^\s*\.\.\.\s*$") -and # Dots only
+                        -not ($line -match "^Downloading.*MB/.*MB") -and # Download progress
+                        -not ($line -match "^\s*$")  # Empty lines
+                    }
+                    # Keep only the most relevant lines
+                    $relevantLines = $filteredLines | Where-Object {
+                        $line = $_.Trim()
+                        $line -match "(Successfully|Found|Installing|Installed|Failed|Error|Warning|Agreement|License)" -or
+                        $line.Length -lt 100  # Keep shorter informational lines
+                    }
+                    
+                    $filteredOutput = if ($relevantLines.Count -gt 0) {
+                        ($relevantLines | Select-Object -First 10) -join "`n"  # Limit to first 10 relevant lines
+                    }
+                    else {
+                        "Command completed (verbose output filtered)"
+                    }
+                }
+                else {
+                    $filteredOutput = $output
+                }
+                
+                # Log the results
+                $successLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [SUCCESS] $name - ExitCode: $exitCode, Duration: $([Math]::Round($duration.TotalSeconds, 2))s"
+                Add-Content -Path $logFilePath -Value $successLogEntry -Encoding UTF8
+                
+                # Log output if available
+                if ($filteredOutput.Trim()) {
+                    $outputLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [OUTPUT] $($filteredOutput.Trim())"
+                    Add-Content -Path $logFilePath -Value $outputLogEntry -Encoding UTF8
+                }
+                
+                # Log error output if available
+                if ($errorOutput.Trim()) {
+                    $errorLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [ERROR] $($errorOutput.Trim())"
+                    Add-Content -Path $logFilePath -Value $errorLogEntry -Encoding UTF8
+                }
+                
+                if ($null -ne $filteredOutput -and $filteredOutput.Trim() -ne "") {
+                    $progressLabel.Text += "`nOutput: $($filteredOutput.Substring(0, [Math]::Min(50, $filteredOutput.Length)))..."
                 }
 
                 $successCount++
                 $item.Checked = $false  # Uncheck successful items
             }
             catch {
+                $endTime = Get-Date
+                $duration = $endTime - $startTime
                 $failureCount++
-                $errorLog += "Error running '$name': $_"
+                $errorMessage = $_.Exception.Message
+                $errorLog += "Error running '$name': $errorMessage"
+                # Log the failure
+                $failureLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [FAILED] $name - Duration: $([Math]::Round($duration.TotalSeconds, 2))s - Error: $errorMessage"
+                Add-Content -Path $logFilePath -Value $failureLogEntry -Encoding UTF8
             }
-        }
+        }        # Log session summary
+        $summaryLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [INFO] Execution completed - Total: $($selectedItems.Count), Success: $successCount, Failed: $failureCount"
+        Add-Content -Path $logFilePath -Value $summaryLogEntry -Encoding UTF8
 
         # Show final results
         $progressForm.Close()
@@ -516,6 +611,8 @@ function RunSelectedItems {
             $resultMessage += "`nAll commands completed successfully!"
             $icon = [System.Windows.Forms.MessageBoxIcon]::Information
         }
+        
+        $resultMessage += "`n`nDetailed log saved to:`n$logFilePath"
 
         [System.Windows.Forms.MessageBox]::Show($resultMessage, "Execution Results", [System.Windows.Forms.MessageBoxButtons]::OK, $icon)
     }
@@ -676,6 +773,10 @@ if (-not (Test-Path $script:DataDirectory)) {
 
 if (-not (Test-Path $script:ProfilesDirectory)) {
     New-Item -ItemType Directory -Path $script:ProfilesDirectory | Out-Null
+}
+
+if (-not (Test-Path $script:LogsDirectory)) {
+    New-Item -ItemType Directory -Path $script:LogsDirectory | Out-Null
 }
 
 $defaultProfile = Join-Path -Path $script:ProfilesDirectory -ChildPath "Default-Profile.txt"
