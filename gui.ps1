@@ -23,6 +23,7 @@ $script:DataDirectory = "$HOME\Documents\Gandalf-WinUtil-Scripts"
 $script:LastColumnClicked = @{}
 $script:LastColumnAscending = @{}
 $script:ListViews = @{}
+$script:SplitContainers = @()
 
 # UI Theme and Constants
 $script:UI = @{
@@ -38,12 +39,14 @@ $script:UI = @{
     }
     Sizes  = @{
         Input   = @{
-            Width  = 150
-            Height = 30
+            Width       = 100
+            Height      = 30
+            FooterWidth = 150
         }
         Columns = @{
             Name        = 150
-            Description = 250
+            Description = 150
+            Command     = 150
         }
     }
 }
@@ -67,8 +70,8 @@ else {
 # Main Form
 $FormProps = @{
     Icon      = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSScriptRoot\gandalf.ico")
-    Size      = '600,700'
-    Text      = "Gandalf's WinUtil"
+    Size      = '500,600'
+    Text      = "Gray WinUtil"
     BackColor = $script:UI.Colors.Background
     Font      = $script:UI.Fonts.Default
     Add_Shown = { $Form.Activate() }
@@ -78,7 +81,7 @@ $FormProps = @{
 $HeaderPanelProps = @{
     Height    = 40
     Dock      = 'Top'
-    Padding   = '15,7,15,7'
+    Padding   = '15,10,15,5'
     BackColor = $script:UI.Colors.Background
     Font      = $script:UI.Fonts.Default
 }
@@ -93,7 +96,7 @@ $FooterPanelProps = @{
     Dock        = 'Bottom'
     Height      = 50
     BackColor   = $script:UI.Colors.Background
-    Padding     = '15,5,10,10'
+    Padding     = '15,10,15,10'
     BorderStyle = 'None'
 }
 
@@ -108,50 +111,60 @@ $ListViewProps = @{
     MultiSelect      = $true
     BackColor        = $script:UI.Colors.Background
     ShowItemToolTips = $true
+
+    # Enable the Invoke button only if at least one item is checked
+    Add_ItemChecked  = {
+        $anyChecked = $script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object | Select-Object -ExpandProperty Count
+        $InvokeButton.Enabled = $anyChecked -gt 0
+    }
 }
 
 $SplitProps = @{
     Dock             = 'Fill'
     Orientation      = 'Horizontal'
-    SplitterDistance = 50
     SplitterWidth    = 3
+    SplitterDistance = 30
     BorderStyle      = 'None'
     Padding          = '0,0,0,20'
-    Panel1MinSize    = 50
-    Panel2MinSize    = 30
 }
 
 # Control Properties
 $SelectAllSwitchProps = @{
-    Text               = "Select All"
-    Width              = 100
-    Height             = $script:UI.Sizes.Input.Height
-    Dock               = 'Left'
-    Font               = $script:UI.Fonts.Default
-    BackColor          = $script:UI.Colors.Background
-    ForeColor          = $script:UI.Colors.Text
-    Add_CheckedChanged = {
-        $isChecked = $SelectAllSwitch.Checked
+    Text      = "ALL"
+    Width     = 100
+    Height    = $script:UI.Sizes.Input.Height
+    Dock      = 'Left'
+    Font      = $script:UI.Fonts.Default
+    Tag       = $false
+    Add_Click = {
+        $isChecked = -not $SelectAllSwitch.Tag
+        $SelectAllSwitch.Tag = $isChecked
         $listViews = @($script:ListViews.Values)
-        $listViews | ForEach-Object { $_.Items | ForEach-Object { $_.Checked = $isChecked } }
+        foreach ($lv in $listViews) {
+            foreach ($item in $lv.Items) {
+                $item.Checked = $isChecked
+            }
+        }
     }
 }
 
 $SearchBoxProps = @{
     Height          = $script:UI.Sizes.Input.Height
+    Dock            = 'Right'
     Width           = $script:UI.Sizes.Input.Width
     Font            = $script:UI.Fonts.Default
     ForeColor       = $script:UI.Colors.Text
-    PlaceholderText = " Search..."
+    PlaceholderText = " SEARCH..."
     TextAlign       = 'Left'
     Multiline       = $false
-    Left            = 150 + 20
-    Top             = 7
-    Add_Enter       = { if ($SearchBox.Text -eq "Search...") { $SearchBox.Text = ""; $SearchBox.ForeColor = $script:UI.Colors.Text } }
-    Add_Leave       = { if ($SearchBox.Text -eq "") { $SearchBox.Text = "Search..."; $SearchBox.ForeColor = $script:UI.Colors.Disabled } }
+    BorderStyle     = 'FixedSingle'
+    # Left            = 150 + 20
+    # Top             = 5
+    Add_Enter       = { if ($SearchBox.Text -eq "SEARCH...") { $SearchBox.Text = ""; $SearchBox.ForeColor = $script:UI.Colors.Text } }
+    Add_Leave       = { if ($SearchBox.Text -eq "") { $SearchBox.Text = "SEARCH..."; $SearchBox.ForeColor = $script:UI.Colors.Disabled } }
     Add_TextChanged = {
         $searchText = $SearchBox.Text.Trim()
-        if ($searchText -eq "Search...") { return }
+        if ($searchText -eq "SEARCH...") { return }
         $listViews = @($script:ListViews.Values)
         foreach ($lv in $listViews) {
             foreach ($item in $lv.Items) {
@@ -162,12 +175,14 @@ $SearchBoxProps = @{
 }
 
 $ProfileDropdownProps = @{
-    Width                    = $script:UI.Sizes.Input.Width
+    Width                    = $script:UI.Sizes.Input.FooterWidth
     Height                   = $script:UI.Sizes.Input.Height
-    Left                     = 15
+    Dock                     = 'Left'
+    Text                     = "SELECT PROFILE"
     Font                     = $script:UI.Fonts.Default
     ForeColor                = $script:UI.Colors.Text
     DropDownStyle            = 'DropDownList'
+    Padding                  = New-Object System.Windows.Forms.Padding(0)
     Add_SelectedIndexChanged = {
         $selectedProfile = $ProfileDropdown.SelectedItem
         if ($selectedProfile) {
@@ -187,9 +202,8 @@ $ProfileDropdownProps = @{
                     # Get the database data
                     $dbData = Get-Content -Path (Join-Path -Path $PSScriptRoot -ChildPath "db.json") -Raw | ConvertFrom-Json
                     
-                    # Process profile lines and group scripts
-                    $groupedScripts = @{
-                    }
+                    # Create an ordered dictionary to maintain group order
+                    $groupedScripts = New-Object Collections.Specialized.OrderedDictionary
                     $currentGroupName = "Group #1"  # Default group name
                     
                     foreach ($line in $ProfileLines) {
@@ -206,24 +220,49 @@ $ProfileDropdownProps = @{
                             $line = $line.Trim()
                             $scriptData = Get-ScriptFromId -Id $line -DbData $dbData
                             if ($scriptData) {
-                                if (-not $groupedScripts.ContainsKey($currentGroupName)) {
-                                    $groupedScripts[$currentGroupName] = @()
+                                if (-not $groupedScripts.Contains($currentGroupName)) {
+                                    $groupedScripts.Add($currentGroupName, [System.Collections.ArrayList]@())
                                 }
-                                $groupedScripts[$currentGroupName] += $scriptData
+                                [void]$groupedScripts[$currentGroupName].Add($scriptData)
                             }
                             else {
                                 Write-Warning "No script found for ID: $line"
                             }
                         }
                     }
+
                     # Create split containers for grouped scripts
                     if ($groupedScripts.Count -gt 0) {
+                        # Suspend layout while we make changes
+                        $ContentPanel.SuspendLayout()
                         CreateSplitContainer -parentPanel $ContentPanel -keys $groupedScripts.Keys -index 0 -groupedScripts $groupedScripts
+                        
+                        # Calculate equal heights
+                        $totalHeight = $ContentPanel.ClientSize.Height
+                        $heightPerContainer = [Math]::Floor($totalHeight / $groupedScripts.Count)
+                        
+                        # Force layout update on all split containers
+                        foreach ($splitContainer in $script:SplitContainers) {
+                            $splitContainer.SuspendLayout()
+                            $splitContainer.Height = $heightPerContainer
+                            $splitContainer.SplitterDistance = [Math]::Floor($heightPerContainer * 0.3) # 30% split
+
+                            $splitContainer.ResumeLayout($true)
+                            $splitContainer.PerformLayout()
+                            $splitContainer.Refresh()
+                        }
+                        
+                        $ContentPanel.ResumeLayout($true)
+                        $ContentPanel.PerformLayout()
+                        $Form.PerformLayout()
+                        
+                        # Final refresh
+                        $ContentPanel.Refresh()
+                        $Form.Refresh()
                     }
                     else {
                         Write-Warning "No valid scripts found in profile."
                     }
-                    $ContentPanel.Refresh()
                 }
             }
             else {
@@ -235,10 +274,10 @@ $ProfileDropdownProps = @{
 
 $InvokeButtonProps = @{
     Width     = $script:UI.Sizes.Input.Width
-    Text      = "Run Selected Actions"
+    Text      = "RUN"
     Dock      = 'Right'
-    BackColor = $script:UI.Colors.Accent
-    ForeColor = [System.Drawing.Color]::White
+    # BackColor = $script:UI.Colors.Accent
+    # ForeColor = [System.Drawing.Color]::White
     Font      = $script:UI.Fonts.Bold
     FlatStyle = 'Flat'
     Add_Click = { RunSelectedItems -Action Invoke }
@@ -254,7 +293,7 @@ function Add-ListView {
     # Add columns first
     $LV.Columns.Add($key.ToUpper(), $script:UI.Sizes.Columns.Name) | Out-Null
     $LV.Columns.Add("Description".ToUpper(), $script:UI.Sizes.Columns.Description) | Out-Null
-    $LV.Columns.Add("Command".ToUpper(), $script:UI.Sizes.Columns.Name) | Out-Null
+    $LV.Columns.Add("Command".ToUpper(), $script:UI.Sizes.Columns.Command) | Out-Null
 
     #TODO Show context menu or right click with copy command option
 
@@ -280,13 +319,13 @@ function Add-ListView {
     $panel.Controls.Add($LV)
 }
 
-# Function to recursively create nested SplitContainer
+# Function to create nested SplitContainer
 function CreateSplitContainer {
     param (
         $parentPanel, 
         [string[]]$keys,
         [int]$index,
-        [hashtable]$groupedScripts  # Add parameter for groupedScripts
+        [System.Collections.Specialized.OrderedDictionary]$groupedScripts
     )
 
     if ($index -ge $keys.Count) { return }
@@ -294,25 +333,52 @@ function CreateSplitContainer {
     # Clear existing controls first
     if ($index -eq 0) {
         $parentPanel.Controls.Clear()
+        $script:SplitContainers = @()  # Reset split containers array
+        
+        # Calculate the height for each section based on total groups
+        $totalHeight = $parentPanel.ClientSize.Height
+        $heightPerSection = [Math]::Floor($totalHeight / $keys.Count)
+        
+        # If only one group, add it directly without split container
+        if ($keys.Count -eq 1) {
+            Add-ListView -panel $parentPanel -key $keys[0] -data $groupedScripts[$keys[0]]
+            return
+        }
     }
 
-    if ($keys.Count -eq 1) {
-        Add-ListView -panel $parentPanel -key $keys[0] -data $groupedScripts[$keys[0]]
-        return
-    }
+    # Create split container for two or more groups
     $splitContainer = New-Object System.Windows.Forms.SplitContainer -Property $SplitProps
+    $script:SplitContainers += $splitContainer
+    
+    # Calculate the position for this splitter based on remaining groups
+    $remainingGroups = $keys.Count - $index
+    if ($remainingGroups -gt 1) {
+        $splitDistance = [Math]::Floor($parentPanel.ClientSize.Height / $remainingGroups)
+        try {
+            $splitContainer.SplitterDistance = $splitDistance
+        }
+        catch {
+            Write-Warning "Error setting SplitterDistance: $_"
+        }
+    }
 
-    # Add ListView to first panel with data from the groupedScripts
+    $parentPanel.Controls.Add($splitContainer)
+
+    # Add ListView to first panel with current group
     $currentKey = $keys[$index]
     Add-ListView -panel $splitContainer.Panel1 -key $currentKey -data $groupedScripts[$currentKey]
 
-    # If more keys remain, nest another SplitContainer in Panel2
+    # If there's another group, add it to Panel2
     if ($index + 1 -lt $keys.Count) {
-        CreateSplitContainer -parentPanel $splitContainer.Panel2 -keys $keys -index ($index + 1) -groupedScripts $groupedScripts
+        # If this is the last pair of groups, add ListView directly to Panel2
+        if ($index + 2 -ge $keys.Count) {
+            Add-ListView -panel $splitContainer.Panel2 -key $keys[$index + 1] -data $groupedScripts[$keys[$index + 1]]
+        }
+        # Otherwise, continue creating nested split containers
+        else {
+            CreateSplitContainer -parentPanel $splitContainer.Panel2 -keys $keys -index ($index + 1) -groupedScripts $groupedScripts
+        }
     }
-
-    # Add SplitContainer to the parent panel
-    $parentPanel.Controls.Add($splitContainer)
 }
 
 function Format-ListView {
@@ -353,7 +419,105 @@ function RunSelectedItems {
         [ValidateSet("Invoke", "Revoke")]
         [string]$Action
     )
+    
+    # Disable the invoke button while running
+    $InvokeButton.Enabled = $false
+    $InvokeButton.Text = "Running..."
 
+    try {
+        # Get all selected items from all ListViews
+        $selectedItems = @()
+        foreach ($listView in $script:ListViews.Values) {
+            $selectedItems += $listView.Items | Where-Object { $_.Checked }
+        }
+
+        if ($selectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("No items selected.", "Warning", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        # Create progress form
+        $progressForm = New-Object System.Windows.Forms.Form -Property @{
+            Text            = "Running Commands"
+            Size            = New-Object System.Drawing.Size(400, 150)
+            StartPosition   = "CenterParent"
+            FormBorderStyle = "FixedDialog"
+            ControlBox      = $false
+            Font            = $script:UI.Fonts.Default
+        }
+
+        $progressLabel = New-Object System.Windows.Forms.Label -Property @{
+            Location = New-Object System.Drawing.Point(10, 20)
+            Size     = New-Object System.Drawing.Size(360, 40)
+            Font     = $script:UI.Fonts.Default
+            Text     = "Initializing..."
+        }
+
+        $progressBar = New-Object System.Windows.Forms.ProgressBar -Property @{
+            Location = New-Object System.Drawing.Point(10, 70)
+            Size     = New-Object System.Drawing.Size(360, 20)
+            Minimum  = 0
+            Maximum  = $selectedItems.Count
+            Value    = 0
+        }
+
+        $progressForm.Controls.AddRange(@($progressLabel, $progressBar))
+        $progressForm.Show()
+        $Form.Enabled = $false
+
+        # Track overall success
+        $successCount = 0
+        $failureCount = 0
+        $errorLog = @()
+
+        # Process each selected item
+        for ($i = 0; $i -lt $selectedItems.Count; $i++) {
+            $item = $selectedItems[$i]
+            $command = $item.SubItems[2].Text
+            $name = $item.Text
+
+            $progressBar.Value = $i
+            $progressLabel.Text = "Running: $name"
+            [System.Windows.Forms.Application]::DoEvents()
+
+            try {
+                $result = Invoke-Expression -Command $command
+                if ($result -ne $null) {
+                    $progressLabel.Text += "`nOutput: $result"
+                }
+
+                $successCount++
+                $item.Checked = $false  # Uncheck successful items
+            }
+            catch {
+                $failureCount++
+                $errorLog += "Error running '$name': $_"
+            }
+        }
+
+        # Show final results
+        $progressForm.Close()
+        $Form.Enabled = $true
+
+        $resultMessage = "Execution complete.`n`n"
+        $resultMessage += "Successful: $successCount`n"
+        if ($failureCount -gt 0) {
+            $resultMessage += "Failed: $failureCount`n`n"
+            $resultMessage += "Error Details:`n" + ($errorLog -join "`n")
+            $icon = [System.Windows.Forms.MessageBoxIcon]::Warning
+        }
+        else {
+            $resultMessage += "`nAll commands completed successfully!"
+            $icon = [System.Windows.Forms.MessageBoxIcon]::Information
+        }
+
+        [System.Windows.Forms.MessageBox]::Show($resultMessage, "Execution Results", [System.Windows.Forms.MessageBoxButtons]::OK, $icon)
+    }
+    finally {
+        # Re-enable the invoke button
+        $InvokeButton.Enabled = $true
+        $InvokeButton.Text = "Run Selected Actions"
+    }
 }
 
 function Get-ScriptFromId {
@@ -397,12 +561,15 @@ $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonPr
 
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
-    Text      = "Download Profiles"
-    Width     = $script:UI.Sizes.Input.Width
+    Text      = "DOWNLOAD PROFILES"
+    Width     = $script:UI.Sizes.Input.FooterWidth
     Height    = $script:UI.Sizes.Input.Height
     Dock      = 'Right'
     Font      = $script:UI.Fonts.Default
     ForeColor = $script:UI.Colors.Text
+    TextAlign = 'MiddleCenter'
+    AutoSize  = $false
+    Cursor    = 'Hand'
     Add_Click = {
         # Open Another window and load a checkbox list view with all the json files in the repository mrdotkg/dotfiles/
         $repoUrl = "https://api.github.com/repos/mrdotkg/dotfiles/contents"
@@ -436,9 +603,9 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
 
         # Add a button to download selected files into the user's personal scripts folder
         $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
-            Text      = "Download Selected"
-            BackColor = $script:UI.Colors.Accent
-            ForeColor = [System.Drawing.Color]::White
+            Text      = "DOWNLOAD"
+            # BackColor = $script:UI.Colors.Accent
+            # ForeColor = [System.Drawing.Color]::White
             Font      = $script:UI.Fonts.Bold
             FlatStyle = 'Flat'
             Dock      = 'Bottom'
@@ -472,7 +639,13 @@ $BrowseLibrary = New-Object System.Windows.Forms.Label -Property @{
 
 }
 
-$HeaderPanel.Controls.AddRange(@($SelectAllSwitch, $SearchBox, $InvokeButton))
+# Create a spacer panel
+$SpacerPanel = New-Object System.Windows.Forms.Panel -Property @{
+    Width = 20
+    Dock  = 'Right'
+}
+
+$HeaderPanel.Controls.AddRange(@($SelectAllSwitch, $SearchBox, $SpacerPanel, $InvokeButton))
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $BrowseLibrary))
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
 
