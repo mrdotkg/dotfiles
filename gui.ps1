@@ -1,16 +1,28 @@
 # Multiline doc comment
 <#
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
+### TODO **Command History & Last Selected Profile System**
+# - Implement a system to track frequently used commands.
+# - Add a "Favorites" tab to quickly access most-used scripts.
+# - Store usage statistics in a JSON file for persistence.
 
-### TODO 1. **Command History & Last Selected Profile System** (40-50 lines)
-- Track frequently used commands
-- Add a "Favorites" tab to quickly access most-used scripts
-- Store usage statistics in a JSON file
+### TODO **Command Scheduling**
+# - Enable scheduling of commands to run at specific times.
+# - Implement background task execution for scheduled commands.
+# - Add a notification system to inform users when scheduled tasks are completed.
 
-### TODO 2. **Command Scheduling** (35-45 lines)
-- Schedule commands to run at specific times
-- Background task execution
-- Notification system for completed scheduled tasks
+### TODO **Downloads Feature**
+# - Complete the functionality to download profiles from GitHub.
+# - Ensure downloaded profiles are stored in the appropriate directory.
+
+### TODO **ListView Sorting**
+# - Sort ListView items by name in ascending order for better organization.
+
+### TODO **Local Data Storage**
+# - Store local data in the %Temp% directory by default.
+# - Provide an option for users to store data locally.
+# - Create a PowerShell script file executing this script from github url
+# - Command - irm "<URL>" | iwr
 #>
 
 # ------------------------------
@@ -234,7 +246,10 @@ $InvokeButtonProps = @{
     Dock      = 'Right'
     Enabled   = $false  # Initially disabled
     Font      = $script:UI.Fonts.Bold
-    # FlatStyle = 'Flat'
+    FlatStyle = 'Flat'
+    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+    ForeColor = [System.Drawing.Color]::White
+        
     AutoSize  = $true
     Add_Click = { 
         if ($ConsentCheckbox.Checked) {
@@ -1330,7 +1345,8 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
         $UpdatesPanel = New-Object System.Windows.Forms.Panel -Property @{
             Dock    = 'Fill'
             Padding = '15,15,15,15'  # Add padding around the Updates panel
-        }        # Updates ListView with Details view (no checkboxes)
+        }        
+        # Updates ListView with Details view (no checkboxes)
         $UpdatesListView = New-Object System.Windows.Forms.ListView -Property @{
             Dock             = 'Fill'
             View             = 'Details'
@@ -1384,8 +1400,24 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
                 $UpdatesListView.Items.Add($listItem) | Out-Null
             }
         }
+        # Add a button to download selected files into the user's personal scripts folder
+        $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
+            Text      = "DOWNLOAD"
+            Height    = 25
+            Width     = $script:UI.Sizes.Input.FooterWidth
+            Font      = $script:UI.Fonts.Bold
+            FlatStyle = 'Flat'
+            BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+            ForeColor = [System.Drawing.Color]::White
+            Dock      = 'Bottom'
+            Add_Click = {
+                # Dowload all the profiles from github raw urls
+                 
 
+            }
+        }
         $UpdatesPanel.Controls.Add($UpdatesListView)
+        $UpdatesPanel.Controls.Add($DownloadButton)
         $script:UpdatesForm.Controls.Add($UpdatesPanel)
         
         $script:UpdatesForm.Show()  # Use Show() instead of ShowDialog() for non-blocking
