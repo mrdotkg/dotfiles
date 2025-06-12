@@ -22,7 +22,10 @@ This script is a PowerShell GUI application for managing and executing scripts f
 # - Store local data in the %Temp% directory by default.
 # - Provide an option for users to store data locally.
 # - Create a PowerShell script file executing this script from github url
+# - Create a startmenu and desktop shortcut for the script
+
 # - Command - irm "<URL>" | iwr
+
 #>
 
 # ------------------------------
@@ -127,7 +130,14 @@ $FormProps = @{
     Add_KeyDown = {
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::A) {
             # Ctrl+A: Select All
-            $SelectAllSwitch.PerformClick()
+            $SelectAllSwitch.Checked = $true
+            $SelectAllSwitch.Tag = $true
+            $listViews = @($script:ListViews.Values)
+            foreach ($lv in $listViews) {
+                foreach ($item in $lv.Items) {
+                    $item.Checked = $true
+                }
+            }
             $_.Handled = $true
         }
         elseif ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::R) {
@@ -135,6 +145,11 @@ $FormProps = @{
             if ($InvokeButton.Enabled) {
                 $InvokeButton.PerformClick()
             }
+            $_.Handled = $true
+        }
+        elseif ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::C) {
+            # Ctrl+C: Copy Selected Commands to Clipboard
+            Copy-SelectedCommandsToClipboard
             $_.Handled = $true
         }
     }
@@ -288,7 +303,6 @@ $ProfileDropdownProps = @{
         $selectedProfile = $ProfileDropdown.SelectedItem
         if ($selectedProfile) {
             $selectedProfilePath = Join-Path -Path $script:ProfilesDirectory -ChildPath "$selectedProfile.txt"
-            
             if (Test-Path $selectedProfilePath) {
                 # Load the selected profile
                 $ProfileLines = Get-Content -Path $selectedProfilePath -ErrorAction SilentlyContinue
@@ -493,7 +507,9 @@ function Copy-SelectedCommandsToClipboard {
     $commandsText += "# Total Commands: $($selectedItems.Count)`n`n"
     
     foreach ($item in $selectedItems) {
+
         $command = $item.SubItems[2].Text
+
         $risk = Get-CommandRiskLevel -command $command
         $timeEst = Get-EstimatedExecutionTime -command $command
         $category = Get-CommandCategory -command $command
@@ -503,9 +519,8 @@ function Copy-SelectedCommandsToClipboard {
         $commandsText += "# Risk: $risk | Time: $timeEst | Category: $category | Admin Required: $requiresAdmin`n"
         $commandsText += "$command`n`n"
     }
-    
+
     [System.Windows.Forms.Clipboard]::SetText($commandsText)
-    [System.Windows.Forms.MessageBox]::Show("$($selectedItems.Count) commands copied to clipboard!", "Success", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
 }
 
 # Enhanced Error Handling and Recovery Functions
