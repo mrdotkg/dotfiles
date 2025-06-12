@@ -24,7 +24,7 @@ This script is a PowerShell GUI application for managing and executing scripts f
 # - Create a PowerShell script file executing this script from github url
 # - Create a startmenu and desktop shortcut for the script
 
-# - Command - irm "<URL>" | iwr
+# - Command - irm "<URL>" | iwr7
 
 #>
 
@@ -61,7 +61,6 @@ $script:LogsDirectory = "$HOME\Documents\WinUtil Local Data\Logs"
 $script:LastColumnClicked = @{}
 $script:LastColumnAscending = @{}
 $script:ListViews = @{}
-$script:SplitContainers = @()
 # Window management for singleton pattern
 $script:HelpForm = $null
 $script:UpdatesForm = $null
@@ -202,23 +201,14 @@ $ListViewProps = @{
     ShowItemToolTips = $true
     BorderStyle      = 'None'
     Margin           = '5,5,5,5'  # Add padding around ListView
+    ShowGroups       = $true      # Enable ListView groups
     Add_ItemChecked  = {
         $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
         $InvokeButton.Text = "RUN ($anyChecked)"
         $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
-        $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
-    }
-}
-
-$SplitProps = @{
-    Dock             = 'Fill'
-    Orientation      = 'Horizontal'
-    SplitterWidth    = 10
-    SplitterDistance = 30
-    BorderStyle      = 'None'
-    Padding          = '0,0,0,20'
+        $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems) }
 }
 
 # Control Properties
@@ -260,8 +250,24 @@ $SearchBoxProps = @{
         if ($searchText -eq "Type to filter scripts...") { return }
         $listViews = @($script:ListViews.Values)
         foreach ($lv in $listViews) {
-            foreach ($item in $lv.Items) {
-                $item.ForeColor = if ($item.Text -like "*$searchText*") { $script:UI.Colors.Text } else { $script:UI.Colors.Disabled }
+            $lv.BeginUpdate()
+            try {
+                # Collect all items and separate matched from non-matched
+                $allItems = @($lv.Items)                
+                foreach ($item in $allItems) {
+                    if ($item.Text -like "*$searchText*") {
+                        # instead of setting this Forecolor use the existing ForeColor
+                        $command = $item.SubItems[2].Text
+                        $Color = if (Test-RequiresAdminPrivileges -command $command) { "Red" } else { $script:UI.Colors.Text }
+                        $item.ForeColor = $Color
+                    }
+                    else {
+                        $item.ForeColor = $script:UI.Colors.Disabled
+                    }
+                }
+            }
+            finally {
+                $lv.EndUpdate()
             }
         }
     }
@@ -353,28 +359,11 @@ $ProfileDropdownProps = @{
                                 Write-Warning "No script found for ID: $line"
                             }
                         }
-                    }
-
-                    # Create split containers for grouped scripts
+                    }                    # Create grouped ListView for all scripts
                     if ($groupedScripts.Count -gt 0) {
                         # Suspend layout while we make changes
                         $ContentPanel.SuspendLayout()
-                        CreateSplitContainer -parentPanel $ContentPanel -keys $groupedScripts.Keys -index 0 -groupedScripts $groupedScripts
-                        
-                        # Calculate equal heights
-                        $totalHeight = $ContentPanel.ClientSize.Height
-                        $heightPerContainer = [Math]::Floor($totalHeight / $groupedScripts.Count)
-                        
-                        # Force layout update on all split containers
-                        foreach ($splitContainer in $script:SplitContainers) {
-                            $splitContainer.SuspendLayout()
-                            $splitContainer.Height = $heightPerContainer
-                            $splitContainer.SplitterDistance = [Math]::Floor($heightPerContainer * 0.3) # 30% split
-
-                            $splitContainer.ResumeLayout($true)
-                            $splitContainer.PerformLayout()
-                            $splitContainer.Refresh()
-                        }
+                        CreateGroupedListView -parentPanel $ContentPanel -groupedScripts $groupedScripts
                         
                         $ContentPanel.ResumeLayout($true)
                         $ContentPanel.PerformLayout()
@@ -715,115 +704,85 @@ function Show-ErrorRecoveryDialog {
 # ------------------------------
 # Functions
 # ------------------------------
-function Add-ListView {
-    param ($panel, $key, $data)
-
-    $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
-    # Add columns: NAME, TIME, COMMAND (removed Description)
-    $LV.Columns.Add($key.ToUpper(), $script:UI.Sizes.Columns.Name) | Out-Null
-    $LV.Columns.Add("TIME", $script:UI.Sizes.Columns.Time) | Out-Null
-    $LV.Columns.Add("COMMAND", $script:UI.Sizes.Columns.Command) | Out-Null
-    $LV.Columns.Add("Permission", $script:UI.Sizes.Columns.Permission) | Out-Null
-
-    # Capture the current $key value in a local variable
-    $currentKey = $key
-    $LV.Add_ColumnClick({
-            Format-ListView -ListView $LV -ViewName $currentKey -Column $_.Column
-        }.GetNewClosure())
-
-    # Add items from grouped scripts data with risk assessment and styling
-    foreach ($script in $data) {
-        $listItem = New-Object System.Windows.Forms.ListViewItem($script.content)
-        
-        # Get time estimate and risk assessment
-        $timeEst = Get-EstimatedExecutionTime -command $script.command
-        $risk = Get-CommandRiskLevel -command $script.command
-        $requiresAdmin = Test-RequiresAdminPrivileges -command $script.command
-        
-        $listItem.SubItems.Add($timeEst)
-        $listItem.SubItems.Add($script.command)
-        $privilege = if ($requiresAdmin) { "Admin" } else { "User" }
-        $listItem.SubItems.Add($privilege)
-        
-        # Color code by risk level
-        switch ($risk) {
-            "HIGH" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(255, 230, 230) }
-            "MEDIUM" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230) }
-            "LOW" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(230, 255, 230) }
-        }
-        
-        # Bold font for admin-required commands
-        if ($requiresAdmin) {
-            $listItem.ForeColor = [System.Drawing.Color]::Red
-        }
-
-        $LV.Items.Add($listItem)
-    }
-
-    $script:LastColumnClicked[$key] = 0
-    $script:LastColumnAscending[$key] = $true
-    $script:ListViews[$key] = $LV
-
-    # Add ListView to the specified panel
-    $panel.Controls.Add($LV)
-}
-
-# Function to create nested SplitContainer
-function CreateSplitContainer {
+# Function to create a single ListView with groups
+function CreateGroupedListView {
     param (
-        $parentPanel, 
-        [string[]]$keys,
-        [int]$index,
+        $parentPanel,
         [System.Collections.Specialized.OrderedDictionary]$groupedScripts
     )
-
-    if ($index -ge $keys.Count) { return }
-
-    # Clear existing controls first
-    if ($index -eq 0) {
-        $parentPanel.Controls.Clear()
-        $script:SplitContainers = @()  # Reset split containers array
-        
-        # If only one group, add it directly without split container
-        if ($keys.Count -eq 1) {
-            Add-ListView -panel $parentPanel -key $keys[0] -data $groupedScripts[$keys[0]]
-            return
-        }
-    }
-
-    # Create split container for two or more groups
-    $splitContainer = New-Object System.Windows.Forms.SplitContainer -Property $SplitProps
-    $script:SplitContainers += $splitContainer
     
-    # Calculate the position for this splitter based on remaining groups
-    $remainingGroups = $keys.Count - $index
-    if ($remainingGroups -gt 1) {
-        $splitDistance = [Math]::Floor($parentPanel.ClientSize.Height / $remainingGroups)
-        try {
-            $splitContainer.SplitterDistance = $splitDistance
-        }
-        catch {
-            Write-Warning "Error setting SplitterDistance: $_"
+    # Clear existing controls
+    $parentPanel.Controls.Clear()
+    
+    # Create the main ListView
+    $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
+    
+    # Add columns
+    $LV.Columns.Add("SCRIPT", $script:UI.Sizes.Columns.Name) | Out-Null
+    $LV.Columns.Add("TIME", $script:UI.Sizes.Columns.Time) | Out-Null
+    $LV.Columns.Add("COMMAND", $script:UI.Sizes.Columns.Command) | Out-Null
+    $LV.Columns.Add("PERMISSION", $script:UI.Sizes.Columns.Permission) | Out-Null    # Add column click handler for sorting
+    $LV.Add_ColumnClick({
+            Format-ListView -ListView $this -ViewName "MainList" -Column $_.Column
+        })
+    # Add ItemChecked handler
+    $LV.Add_ItemChecked({
+            $totalItems = $this.Items.Count
+            $anyChecked = ($this.Items | Where-Object { $_.Checked } | Measure-Object).Count
+            $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
+            $InvokeButton.Text = "RUN ($anyChecked)"
+            $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
+            $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
+        })
+    
+    # Create and add groups, then add items to each group
+    foreach ($groupName in $groupedScripts.Keys) {
+        # Create ListView group
+        $group = New-Object System.Windows.Forms.ListViewGroup($groupName, $groupName)
+        $LV.Groups.Add($group) | Out-Null
+        
+        # Add items to this group
+        foreach ($script in $groupedScripts[$groupName]) {
+            $listItem = New-Object System.Windows.Forms.ListViewItem($script.content)
+            
+            # Get time estimate and risk assessment
+            $timeEst = Get-EstimatedExecutionTime -command $script.command
+            $risk = Get-CommandRiskLevel -command $script.command
+            $requiresAdmin = Test-RequiresAdminPrivileges -command $script.command
+            
+            $listItem.SubItems.Add($timeEst)
+            $listItem.SubItems.Add($script.command)
+            $privilege = if ($requiresAdmin) { "Admin" } else { "User" }
+            $listItem.SubItems.Add($privilege)
+            
+            # Color code by risk level
+            switch ($risk) {
+                "HIGH" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(255, 230, 230) }
+                "MEDIUM" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230) }
+                "LOW" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(230, 255, 230) }
+            }
+            
+            # Bold font for admin-required commands
+            if ($requiresAdmin) {
+                $listItem.ForeColor = [System.Drawing.Color]::Red
+            }
+            
+            # Assign item to the group
+            $listItem.Group = $group
+            
+            # Add item to ListView
+            $LV.Items.Add($listItem) | Out-Null
         }
     }
-
-    $parentPanel.Controls.Add($splitContainer)
-
-    # Add ListView to first panel with current group
-    $currentKey = $keys[$index]
-    Add-ListView -panel $splitContainer.Panel1 -key $currentKey -data $groupedScripts[$currentKey]
-
-    # If there's another group, add it to Panel2
-    if ($index + 1 -lt $keys.Count) {
-        # If this is the last pair of groups, add ListView directly to Panel2
-        if ($index + 2 -ge $keys.Count) {
-            Add-ListView -panel $splitContainer.Panel2 -key $keys[$index + 1] -data $groupedScripts[$keys[$index + 1]]
-        }
-        # Otherwise, continue creating nested split containers
-        else {
-            CreateSplitContainer -parentPanel $splitContainer.Panel2 -keys $keys -index ($index + 1) -groupedScripts $groupedScripts
-        }
-    }
+    
+    # Store the ListView in script scope
+    $script:LastColumnClicked["MainList"] = 0
+    $script:LastColumnAscending["MainList"] = $true
+    $script:ListViews.Clear()
+    $script:ListViews["MainList"] = $LV
+    
+    # Add ListView to the panel
+    $parentPanel.Controls.Add($LV)
 }
 
 function Format-ListView {
@@ -846,13 +805,16 @@ function Format-ListView {
     $ListView.BeginUpdate()
     try {
         # Sort items
-        $items = $items | Sort-Object -Property {
+        $sortedItems = $items | Sort-Object -Property {
             $_.SubItems[$Column].Text
         } -Descending:(-not $script:LastColumnAscending[$ViewName])
 
-        # Rebuild ListView
+        # Rebuild ListView while preserving group associations
         $ListView.Items.Clear()
-        $ListView.Items.AddRange([System.Windows.Forms.ListViewItem[]]$items)
+        foreach ($item in $sortedItems) {
+            # Preserve the group assignment when re-adding
+            $ListView.Items.Add($item) | Out-Null
+        }
     }
     finally {
         $ListView.EndUpdate()
