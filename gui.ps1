@@ -97,7 +97,9 @@ $script:UI = @{
         Columns = @{
             Name        = 250
             Description = 100
+            Time        = 100
             Command     = 100
+            Permission  = 100
         }
     }
 }
@@ -126,7 +128,17 @@ $FormProps = @{
     BackColor   = $script:UI.Colors.Background
     Font        = $script:UI.Fonts.Default
     KeyPreview  = $true
-    Add_Shown   = { $Form.Activate() }
+    Add_Shown   = { 
+        $Form.Activate()
+        # Load user provided profiles
+        Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
+            $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
+        }
+
+        if ($ProfileDropdown.Items.Count -gt 0) {
+            $ProfileDropdown.SelectedIndex = 0
+        }
+    }
     Add_KeyDown = {
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::A) {
             # Ctrl+A: Select All
@@ -709,8 +721,9 @@ function Add-ListView {
     $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
     # Add columns: NAME, TIME, COMMAND (removed Description)
     $LV.Columns.Add($key.ToUpper(), $script:UI.Sizes.Columns.Name) | Out-Null
-    $LV.Columns.Add("TIME", $script:UI.Sizes.Columns.Description) | Out-Null
+    $LV.Columns.Add("TIME", $script:UI.Sizes.Columns.Time) | Out-Null
     $LV.Columns.Add("COMMAND", $script:UI.Sizes.Columns.Command) | Out-Null
+    $LV.Columns.Add("Permission", $script:UI.Sizes.Columns.Permission) | Out-Null
 
     # Capture the current $key value in a local variable
     $currentKey = $key
@@ -729,6 +742,8 @@ function Add-ListView {
         
         $listItem.SubItems.Add($timeEst)
         $listItem.SubItems.Add($script.command)
+        $privilege = if ($requiresAdmin) { "Admin" } else { "User" }
+        $listItem.SubItems.Add($privilege)
         
         # Color code by risk level
         switch ($risk) {
@@ -739,9 +754,9 @@ function Add-ListView {
         
         # Bold font for admin-required commands
         if ($requiresAdmin) {
-            $listItem.Font = $script:UI.Fonts.Bold
+            $listItem.ForeColor = [System.Drawing.Color]::Red
         }
-        
+
         $LV.Items.Add($listItem)
     }
 
@@ -1476,15 +1491,6 @@ if (-not (Test-Path $defaultProfile)) {
             $allIds | Set-Content -Path $defaultProfile -Force
         }
     }
-}
-
-# Load user provided profiles
-Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
-    $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
-}
-
-if ($ProfileDropdown.Items.Count -gt 0) {
-    $ProfileDropdown.SelectedIndex = 0
 }
 
 # Start application
