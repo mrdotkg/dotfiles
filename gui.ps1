@@ -12,10 +12,6 @@ This script is a PowerShell GUI application for managing and executing scripts f
 # - Implement background task execution for scheduled commands.
 # - Add a notification system to inform users when scheduled tasks are completed.
 
-### TODO **Downloads Feature**
-# - Complete the functionality to download profiles from GitHub.
-# - Ensure downloaded profiles are stored in the appropriate directory.
-
 ### TODO **Local Data Storage**
 # - Store local data in the %Temp% directory by default.
 # - Provide an option for users to store data locally.
@@ -51,8 +47,6 @@ $script:Config.ApiUrl = "https://api.github.com/repos/$($script:Config.GitHubOwn
 $script:DataDirectory = "$HOME\Documents\WinUtil Local Data"
 $script:ProfilesDirectory = "$HOME\Documents\WinUtil Local Data\Profiles"
 $script:LogsDirectory = "$HOME\Documents\WinUtil Local Data\Logs"
-$script:LastColumnClicked = @{}
-$script:LastColumnAscending = @{}
 $script:ListViews = @{}
 # Window management for singleton pattern
 $script:HelpForm = $null
@@ -183,18 +177,19 @@ $FooterPanelProps = @{
 
 # List View and Split Container
 $ListViewProps = @{
-    CheckBoxes       = $true
-    Font             = $script:UI.Fonts.Default
-    Dock             = 'Fill'
-    View             = 'Details'
-    GridLines        = $true
-    FullRowSelect    = $true
-    MultiSelect      = $true
-    ShowItemToolTips = $true
-    BorderStyle      = 'None'
-    Margin           = '5,5,5,5'  # Add padding around ListView
-    ShowGroups       = $true      # Enable ListView groups
-    Add_ItemChecked  = {
+    CheckBoxes         = $true
+    Font               = $script:UI.Fonts.Default
+    Dock               = 'Fill'
+    View               = 'Details'
+    GridLines          = $true
+    FullRowSelect      = $true
+    MultiSelect        = $true
+    ShowItemToolTips   = $true
+    AllowColumnReorder = $true
+    Sorting            = [System.Windows.Forms.SortOrder]::Ascending
+    BorderStyle        = 'FixedSingle'
+    Margin             = '5,5,5,5'  # Add padding around ListView
+    Add_ItemChecked    = {
         $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
@@ -350,7 +345,8 @@ $ProfileDropdownProps = @{
                                 Write-Warning "No script found for ID: $line"
                             }
                         }
-                    }                    # Create grouped ListView for all scripts
+                    }                    
+                    # Create grouped ListView for all scripts
                     if ($groupedScripts.Count -gt 0) {
                         # Suspend layout while we make changes
                         $ContentPanel.SuspendLayout()
@@ -712,10 +708,8 @@ function CreateGroupedListView {
     $LV.Columns.Add("SCRIPT", $script:UI.Sizes.Columns.Name) | Out-Null
     $LV.Columns.Add("TIME", $script:UI.Sizes.Columns.Time) | Out-Null
     $LV.Columns.Add("COMMAND", $script:UI.Sizes.Columns.Command) | Out-Null
-    $LV.Columns.Add("PERMISSION", $script:UI.Sizes.Columns.Permission) | Out-Null    # Add column click handler for sorting
-    $LV.Add_ColumnClick({
-            Format-ListView -ListView $this -ViewName "MainList" -Column $_.Column
-        })
+    $LV.Columns.Add("PERMISSION", $script:UI.Sizes.Columns.Permission) | Out-Null    # Add column click handler for simple sorting toggle
+    
     # Add ItemChecked handler
     $LV.Add_ItemChecked({
             $totalItems = $this.Items.Count
@@ -726,16 +720,20 @@ function CreateGroupedListView {
             $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
         })
     
+
     # Create and add groups, then add items to each group
     foreach ($groupName in $groupedScripts.Keys) {
-        # Create ListView group
-        $group = New-Object System.Windows.Forms.ListViewGroup($groupName, $groupName)
-        $LV.Groups.Add($group) | Out-Null
-        
+
+        # do not create groups is there is just one group
+        if ($groupedScripts.Count -gt 1) {
+            # Create ListView group
+            $group = New-Object System.Windows.Forms.ListViewGroup($groupName, $groupName)
+            $LV.Groups.Add($group) | Out-Null
+        }
         # Add items to this group
         foreach ($script in $groupedScripts[$groupName]) {
             $listItem = New-Object System.Windows.Forms.ListViewItem($script.content)
-            
+
             # Get time estimate and risk assessment
             $timeEst = Get-EstimatedExecutionTime -command $script.command
             $risk = Get-CommandRiskLevel -command $script.command
@@ -758,77 +756,25 @@ function CreateGroupedListView {
                 $listItem.ForeColor = [System.Drawing.Color]::Red
             }
             
-            # Assign item to the group
-            $listItem.Group = $group
-            
+            # Assign item to the group only if there are more than 1 groups
+            if ($LV.Groups.Count -gt 1) {
+                $listItem.Group = $group
+            }
+            else {
+                # If there's only one group, we don't need to set the group
+                $listItem.Group = $null
+            }
             # Add item to ListView
             $LV.Items.Add($listItem) | Out-Null
         }
     }
-    
     # Store the ListView in script scope
-    $script:LastColumnClicked["MainList"] = 0
-    $script:LastColumnAscending["MainList"] = $true
     $script:ListViews.Clear()
     $script:ListViews["MainList"] = $LV
     
     # Add ListView to the panel
     $parentPanel.Controls.Add($LV)
 }
-
-function Format-ListView {
-    param(
-        [Parameter(Mandatory)][System.Windows.Forms.ListView]$ListView,
-        [Parameter(Mandatory)][string]$ViewName,
-        [Parameter(Mandatory)][int]$Column
-    )
-    
-    # Toggle sort direction if same column clicked
-    if ($script:LastColumnClicked[$ViewName] -eq $Column) {
-        $script:LastColumnAscending[$ViewName] = -not $script:LastColumnAscending[$ViewName]
-    }
-    else {
-        $script:LastColumnAscending[$ViewName] = $true
-    }
-    $script:LastColumnClicked[$ViewName] = $Column
-
-    $ListView.BeginUpdate()
-    try {
-        # Collect items with their group associations
-        $itemsWithGroups = @()
-        foreach ($item in $ListView.Items) {
-            $itemsWithGroups += @{
-                Item  = $item
-                Group = $item.Group
-            }
-        }
-        
-        # Sort items
-        $sortedItemsWithGroups = $itemsWithGroups | Sort-Object -Property {
-            $_.Item.SubItems[$Column].Text
-        } -Descending:(-not $script:LastColumnAscending[$ViewName])
-
-        # Clear and rebuild ListView while preserving group associations
-        $ListView.Items.Clear()
-        
-        foreach ($itemData in $sortedItemsWithGroups) {
-            $item = $itemData.Item
-            $group = $itemData.Group
-            
-            # Re-assign item to its original group
-            if ($group) {
-                $item.Group = $group
-            }
-            
-            # Add item back to ListView
-            $ListView.Items.Add($item) | Out-Null
-        }
-    }
-    finally {
-        $ListView.EndUpdate()
-    }
-}
-
 function RunSelectedItems {
     param(
         [ValidateSet("Invoke", "Revoke")]
@@ -1197,7 +1143,8 @@ $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
             Padding        = '10,10,10,10'
             Add_Shown      = { $script:HelpForm.Activate() }
             Add_FormClosed = { $script:HelpForm = $null }  # Clear reference when closed
-        }         $HelpPanel = New-Object System.Windows.Forms.Panel -Property @{
+        }         
+        $HelpPanel = New-Object System.Windows.Forms.Panel -Property @{
             Dock       = 'Fill'
             AutoScroll = $true
         }
