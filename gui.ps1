@@ -1,6 +1,7 @@
 # Multiline doc comment
 <#
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
+
 ### TODO **Command History & Last Selected Profile System**
 # - Implement a system to track frequently used commands.
 # - Add a "Favorites" tab to quickly access most-used scripts.
@@ -15,17 +16,11 @@ This script is a PowerShell GUI application for managing and executing scripts f
 # - Complete the functionality to download profiles from GitHub.
 # - Ensure downloaded profiles are stored in the appropriate directory.
 
-### TODO **ListView Sorting**
-# - Sort ListView items by name in ascending order for better organization.
-
 ### TODO **Local Data Storage**
 # - Store local data in the %Temp% directory by default.
 # - Provide an option for users to store data locally.
 # - Create a PowerShell script file executing this script from github url
 # - Create a startmenu and desktop shortcut for the script
-
-# - Command - irm "<URL>" | iwr7
-
 #>
 
 # ------------------------------
@@ -48,13 +43,11 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 # Generate URLs from configuration
 $script:Config.DatabaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/refs/heads/$($script:Config.GitHubBranch)/$($script:Config.DatabaseFile)"
 $script:Config.ApiUrl = "https://api.github.com/repos/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/contents"
-$script:Config.RawBaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/$($script:Config.GitHubBranch)"
 
 # ------------------------------
 # State Management
 # ------------------------------
 # Script-scoped variables
-$script:PersonalScriptsPath = $script:Config.ScriptsPath
 $script:DataDirectory = "$HOME\Documents\WinUtil Local Data"
 $script:ProfilesDirectory = "$HOME\Documents\WinUtil Local Data\Profiles"
 $script:LogsDirectory = "$HOME\Documents\WinUtil Local Data\Logs"
@@ -91,14 +84,13 @@ $script:UI = @{
         Input   = @{
             Width       = 100
             Height      = 30
-            FooterWidth = 150
+            FooterWidth = 150        
         }
         Columns = @{
-            Name        = 250
-            Description = 100
-            Time        = 100
-            Command     = 100
-            Permission  = 100
+            Name       = 250
+            Time       = 100
+            Command    = 100
+            Permission = 100
         }
     }
 }
@@ -308,7 +300,6 @@ $ConsentCheckboxProps = @{
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
     }
 }
-
 
 $ProfileDropdownProps = @{
     Width                    = $script:UI.Sizes.Input.FooterWidth
@@ -801,18 +792,35 @@ function Format-ListView {
     }
     $script:LastColumnClicked[$ViewName] = $Column
 
-    $items = @($ListView.Items)
     $ListView.BeginUpdate()
     try {
+        # Collect items with their group associations
+        $itemsWithGroups = @()
+        foreach ($item in $ListView.Items) {
+            $itemsWithGroups += @{
+                Item  = $item
+                Group = $item.Group
+            }
+        }
+        
         # Sort items
-        $sortedItems = $items | Sort-Object -Property {
-            $_.SubItems[$Column].Text
+        $sortedItemsWithGroups = $itemsWithGroups | Sort-Object -Property {
+            $_.Item.SubItems[$Column].Text
         } -Descending:(-not $script:LastColumnAscending[$ViewName])
 
-        # Rebuild ListView while preserving group associations
+        # Clear and rebuild ListView while preserving group associations
         $ListView.Items.Clear()
-        foreach ($item in $sortedItems) {
-            # Preserve the group assignment when re-adding
+        
+        foreach ($itemData in $sortedItemsWithGroups) {
+            $item = $itemData.Item
+            $group = $itemData.Group
+            
+            # Re-assign item to its original group
+            if ($group) {
+                $item.Group = $group
+            }
+            
+            # Add item back to ListView
             $ListView.Items.Add($item) | Out-Null
         }
     }
@@ -1189,11 +1197,13 @@ $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
             Padding        = '10,10,10,10'
             Add_Shown      = { $script:HelpForm.Activate() }
             Add_FormClosed = { $script:HelpForm = $null }  # Clear reference when closed
-        }       
-        $HelpPanel = New-Object System.Windows.Forms.Panel -Property @{
+        }         $HelpPanel = New-Object System.Windows.Forms.Panel -Property @{
             Dock       = 'Fill'
             AutoScroll = $true
         }
+        
+        $yPosition = 10
+        
         $KeyboardShortcutsLabel = New-Object System.Windows.Forms.Label -Property @{
             Text      = "Hotkeys:`n• Ctrl+A - Select All Scripts`n• Ctrl+R - Run Selected Scripts`n• Ctrl+C - Copy Selected Scripts"
             Location  = New-Object System.Drawing.Point(10, $yPosition)
@@ -1292,7 +1302,7 @@ $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
 
 $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
     Text      = "UPDATES"
-    Width     = $script:UI.Sizes.InputFooterWidth
+    Width     = $script:UI.Sizes.Input.FooterWidth
     Height    = $script:UI.Sizes.Input.Height
     Dock      = 'Right'
     Font      = $script:UI.Fonts.Default
@@ -1371,12 +1381,10 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
                 # Format file size
                 $fileSizeKB = [Math]::Round($repoItem.size / 1024, 1)
                 $sizeText = if ($fileSizeKB -lt 1) { "$($repoItem.size) B" } else { "$fileSizeKB KB" }
-                
                 if ($localProfiles -contains $repoItem.name) {
                     # Update candidate - locally available
                     $listItem.SubItems.Add("🔃")
                     $listItem.SubItems.Add($sizeText)
-                    # $listItem.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 225) # Light orange
                     $listItem.ForeColor = [System.Drawing.Color]::FromArgb(230, 126, 34) # Orange
                     $listItem.ToolTipText = "To be updated"                
                 }
@@ -1384,15 +1392,13 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
                     # Download candidate - not locally available
                     $listItem.SubItems.Add("⏬")
                     $listItem.SubItems.Add($sizeText)
-                    # $listItem.BackColor = [System.Drawing.Color]::FromArgb(232, 245, 233) # Light green
                     $listItem.ForeColor = [System.Drawing.Color]::FromArgb(76, 175, 80) # Green
                     $listItem.ToolTipText = "To be downloaded"
                 }
                 
                 $UpdatesListView.Items.Add($listItem) | Out-Null
             }
-        }
-        # Add a button to download selected files into the user's personal scripts folder
+        }        # Add a button to download selected files into the user's personal scripts folder
         $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
             Text      = "DOWNLOAD"
             Height    = 25
@@ -1403,9 +1409,7 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
             ForeColor = [System.Drawing.Color]::White
             Dock      = 'Bottom'
             Add_Click = {
-                # Dowload all the profiles from github raw urls
-                 
-
+                [System.Windows.Forms.MessageBox]::Show("Download functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
             }
         }
         $UpdatesPanel.Controls.Add($UpdatesListView)
