@@ -187,6 +187,7 @@ $ListViewProps = @{
     ShowItemToolTips   = $true
     AllowColumnReorder = $true
     Sorting            = [System.Windows.Forms.SortOrder]::Ascending
+    Forecolor          = $script:UI.Colors.Text
     BorderStyle        = 'FixedSingle'
     Margin             = '5,5,5,5'  # Add padding around ListView
     Add_ItemChecked    = {
@@ -296,6 +297,59 @@ $ConsentCheckboxProps = @{
     }
 }
 
+function Read-Profile {
+    param([string]$Path)
+    if (Test-Path $Path) {
+        # Load the selected profile
+        $ProfileLines = Get-Content -Path $Path -ErrorAction SilentlyContinue
+        if (-not $ProfileLines) {
+            Write-Warning "Selected profile '$Path' is empty or does not exist."
+            return
+        }
+        else {
+            $dbData = Invoke-WebRequest $script:Config.DatabaseUrl | ConvertFrom-Json
+            # Create an ordered dictionary to maintain group order
+            $groupedScripts = New-Object Collections.Specialized.OrderedDictionary
+            $currentGroupName = "Group #1"  # Default group name
+            
+            foreach ($line in $ProfileLines) {
+                if ($line -eq "") {
+                    # If we hit an empty line, start a new group
+                    $currentGroupName = "Group#$($groupedScripts.Count + 1)"
+                    continue
+                }
+                elseif ($line.StartsWith("#")) {
+                    $currentGroupName = $line.TrimStart("#").Trim()
+                    continue
+                }
+                else {
+                    $line = $line.Trim()
+                    $scriptData = Get-ScriptFromId -Id $line -DbData $dbData
+                    if ($scriptData) {
+                        if (-not $groupedScripts.Contains($currentGroupName)) {
+                            $groupedScripts.Add($currentGroupName, [System.Collections.ArrayList]@())
+                        }
+                        [void]$groupedScripts[$currentGroupName].Add($scriptData)
+                    }
+                    else {
+                        Write-Warning "No script found for ID: $line"
+                    }
+                }
+            }                    
+            if ($groupedScripts.Count -gt 0) {
+                return $groupedScripts
+            }
+            else {
+                Write-Warning "No valid scripts found in profile at '$Path'."
+                return @{}
+            }
+        }
+    }
+    else {
+        Write-Warning "Selected file '$Path' does not exist."
+        return @{}
+    }
+}
 $ProfileDropdownProps = @{
     Width                    = $script:UI.Sizes.Input.FooterWidth
     Height                   = $script:UI.Sizes.Input.Height
@@ -305,69 +359,11 @@ $ProfileDropdownProps = @{
     DropDownStyle            = 'DropDownList'
     Add_SelectedIndexChanged = {
         $selectedProfile = $ProfileDropdown.SelectedItem
-        if ($selectedProfile) {
-            $selectedProfilePath = Join-Path -Path $script:ProfilesDirectory -ChildPath "$selectedProfile.txt"
-            if (Test-Path $selectedProfilePath) {
-                # Load the selected profile
-                $ProfileLines = Get-Content -Path $selectedProfilePath -ErrorAction SilentlyContinue
-                if (-not $ProfileLines) {
-                    Write-Warning "Selected profile '$selectedProfilePath' is empty or does not exist."
-                    return
-                }
-                else {
-                    # Clear existing ListViews
-                    $script:ListViews.Clear()                    # get from github
-                    $dbData = Invoke-WebRequest $script:Config.DatabaseUrl | ConvertFrom-Json
-                    # Create an ordered dictionary to maintain group order
-                    $groupedScripts = New-Object Collections.Specialized.OrderedDictionary
-                    $currentGroupName = "Group #1"  # Default group name
-                    
-                    foreach ($line in $ProfileLines) {
-                        if ($line -eq "") {
-                            # If we hit an empty line, start a new group
-                            $currentGroupName = "Group#$($groupedScripts.Count + 1)"
-                            continue
-                        }
-                        elseif ($line.StartsWith("#")) {
-                            $currentGroupName = $line.TrimStart("#").Trim()
-                            continue
-                        }
-                        else {
-                            $line = $line.Trim()
-                            $scriptData = Get-ScriptFromId -Id $line -DbData $dbData
-                            if ($scriptData) {
-                                if (-not $groupedScripts.Contains($currentGroupName)) {
-                                    $groupedScripts.Add($currentGroupName, [System.Collections.ArrayList]@())
-                                }
-                                [void]$groupedScripts[$currentGroupName].Add($scriptData)
-                            }
-                            else {
-                                Write-Warning "No script found for ID: $line"
-                            }
-                        }
-                    }                    
-                    # Create grouped ListView for all scripts
-                    if ($groupedScripts.Count -gt 0) {
-                        # Suspend layout while we make changes
-                        $ContentPanel.SuspendLayout()
-                        CreateGroupedListView -parentPanel $ContentPanel -groupedScripts $groupedScripts
-                        
-                        $ContentPanel.ResumeLayout($true)
-                        $ContentPanel.PerformLayout()
-                        $Form.PerformLayout()
-                        
-                        # Final refresh
-                        $ContentPanel.Refresh()
-                        $Form.Refresh()
-                    }
-                    else {
-                        Write-Warning "No valid scripts found in profile."
-                    }
-                }
-            }
-            else {
-                Write-Warning "Selected file '$selectedProfilePath' does not exist."
-            }
+        $selectedProfilePath = Join-Path -Path $script:ProfilesDirectory -ChildPath "$selectedProfile.txt"
+        $scriptsDict = Read-Profile -Path $selectedProfilePath
+        if ($scriptsDict.Count -gt 0) {
+            # Create or update the ListView with grouped scripts
+            CreateGroupedListView -parentPanel $ContentPanel -groupedScripts $scriptsDict
         }
     }
 }
