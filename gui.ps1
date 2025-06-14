@@ -120,7 +120,7 @@ $script:UI = @{
             Height = 700
         }
         Header  = @{
-            Height = 40
+            Height = 45
         }
         Footer  = @{
             Height = 50
@@ -213,7 +213,7 @@ $HeaderPanelProps = @{
 
 $ContentPanelProps = @{
     Dock      = 'Fill'
-    Padding   = '15,40,15,15'  # Increased padding for better spacing
+    Padding   = "15,$($script:UI.Sizes.Header.Height + 5),15,15"
     BackColor = $script:UI.Colors.Background
 }
 
@@ -224,6 +224,15 @@ $FooterPanelProps = @{
     Padding     = '15,0,15,0'
     BorderStyle = 'None'
     Font        = $script:UI.Fonts.Default
+}
+
+# Spacer Panel between Header and Content
+$SpacerPanelProps = @{
+    Height      = 5
+    Dock        = 'Top'
+    BackColor   = $script:UI.Colors.Background
+    Padding     = '15,0,15,0'
+    BorderStyle = 'FixedSingle'
 }
 
 # List View and Split Container
@@ -796,6 +805,7 @@ if ([Environment]::OSVersion.Version.Major -ge 6) {
 # ------------------------------
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
+$SpacerPanel = New-Object System.Windows.Forms.Panel -Property $SpacerPanelProps
 
 # Status Header Panel - Remove this entire section
 # Remove $StatusHeaderPanel, $StatusTitleLabel, $StatusProgressBarContainer, $StatusProgressBar, $StatusCounterLabel
@@ -1070,7 +1080,7 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
 }
 $HeaderPanel.Controls.AddRange(@($SearchBox, $SelectAllSwitch, $PaddingSpacerPanel, $ConsentCheckbox, $InvokeButton))
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $HelpLabel, $UpdatesLabel))
-$Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
+$Form.Controls.AddRange(@($SpacerPanel, $HeaderPanel, $ContentPanel, $FooterPanel))
 
 # Initialize file system
 if (-not (Test-Path $script:DataDirectory)) {
