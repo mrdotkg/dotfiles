@@ -24,11 +24,60 @@ This script is a PowerShell GUI application for managing and executing scripts f
 # ------------------------------
 # Repository configuration - Update these variables for your own repository
 $script:Config = @{
-    GitHubOwner  = "mrdotkg"           # GitHub username
-    GitHubRepo   = "dotfiles"          # Repository name
-    GitHubBranch = "main"              # Default branch
-    DatabaseFile = "db.json"           # Database file name
-    ScriptsPath  = "$HOME\Documents\WinUtil Local Data"  # Local data directory (Profiles stored in subdirectory)
+    GitHubOwner           = "mrdotkg"           # GitHub username
+    GitHubRepo            = "dotfiles"          # Repository name
+    GitHubBranch          = "main"              # Default branch
+    DatabaseFile          = "db.json"           # Database file name
+    ScriptsPath           = "$HOME\Documents\WinUtil Local Data"  # Local data directory (Profiles stored in subdirectory)
+    AdminRequiredPatterns = @(
+        'Set-ItemProperty.*HKLM',
+        'New-ItemProperty.*HKLM',
+        'reg add.*HKLM',
+        'reg delete.*HKLM',
+        'Set-Service',
+        'Start-Service',
+        'Stop-Service',
+        'Enable-Service',
+        'Disable-Service',
+        'Add-WindowsCapability',
+        'Remove-WindowsCapability',
+        'Set-NetFirewallRule',
+        'New-NetFirewallRule',
+        'Remove-NetFirewallRule',
+        'bcdedit',
+        'diskpart',
+        'Format-Volume',
+        'Clear-Disk',
+        'netsh',
+        'sc.exe',
+        'dism',
+        'sfc',
+        'winget'
+    )
+    HighRiskPatterns      = @(
+        'Remove-Item.*-Recurse',
+        'rm.*-rf',
+        'Format-Volume',
+        'Clear-Disk',
+        'Remove-Computer',
+        'Restart-Computer',
+        'Stop-Computer',
+        'shutdown',
+        'bcdedit',
+        'diskpart',
+        'reg delete.*HKLM',
+        'Set-ExecutionPolicy.*Unrestricted'
+    )
+    MediumRiskPatterns    = @(
+        'Set-ItemProperty.*HKLM',
+        'New-ItemProperty.*HKLM',
+        'Set-Service',
+        'Stop-Service',
+        'Disable-Service',
+        'Set-NetFirewallRule',
+        'New-NetFirewallRule',
+        'winget uninstall'
+    )
 }
 
 # ------------------------------
@@ -48,6 +97,7 @@ $script:DataDirectory = "$HOME\Documents\WinUtil Local Data"
 $script:ProfilesDirectory = "$HOME\Documents\WinUtil Local Data\Profiles"
 $script:LogsDirectory = "$HOME\Documents\WinUtil Local Data\Logs"
 $script:ListViews = @{}
+$script:CurrentProfileIndex = -1  # Track currently selected profile index
 # Window management for singleton pattern
 $script:HelpForm = $null
 $script:UpdatesForm = $null
@@ -122,6 +172,7 @@ $FormProps = @{
 
         if ($ProfileDropdown.Items.Count -gt 0) {
             $ProfileDropdown.SelectedIndex = 0
+            $script:CurrentProfileIndex = 0  # Initialize the script variable
         }
     }
     Add_KeyDown = {
@@ -296,7 +347,6 @@ $ConsentCheckboxProps = @{
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
     }
 }
-
 function Read-Profile {
     param([string]$Path)
     if (Test-Path $Path) {
@@ -350,6 +400,7 @@ function Read-Profile {
         return @{}
     }
 }
+
 $ProfileDropdownProps = @{
     Width                    = $script:UI.Sizes.Input.FooterWidth
     Height                   = $script:UI.Sizes.Input.Height
@@ -358,6 +409,9 @@ $ProfileDropdownProps = @{
     ForeColor                = $script:UI.Colors.Text
     DropDownStyle            = 'DropDownList'
     Add_SelectedIndexChanged = {
+        # Update the script-scoped variable with current selection
+        $script:CurrentProfileIndex = $ProfileDropdown.SelectedIndex
+        
         $selectedProfile = $ProfileDropdown.SelectedItem
         $selectedProfilePath = Join-Path -Path $script:ProfilesDirectory -ChildPath "$selectedProfile.txt"
         $scriptsDict = Read-Profile -Path $selectedProfilePath
@@ -371,41 +425,14 @@ $ProfileDropdownProps = @{
 # ------------------------------
 # Enhanced RUN Button Functions
 # ------------------------------
-
 function Get-CommandRiskLevel {
     param([string]$command)
     
-    $highRiskPatterns = @(
-        'Remove-Item.*-Recurse',
-        'rm.*-rf',
-        'Format-Volume',
-        'Clear-Disk',
-        'Remove-Computer',
-        'Restart-Computer',
-        'Stop-Computer',
-        'shutdown',
-        'bcdedit',
-        'diskpart',
-        'reg delete.*HKLM',
-        'Set-ExecutionPolicy.*Unrestricted'
-    )
-    
-    $mediumRiskPatterns = @(
-        'Set-ItemProperty.*HKLM',
-        'New-ItemProperty.*HKLM',
-        'Set-Service',
-        'Stop-Service',
-        'Disable-Service',
-        'Set-NetFirewallRule',
-        'New-NetFirewallRule',
-        'winget uninstall'
-    )
-    
-    foreach ($pattern in $highRiskPatterns) {
+    foreach ($pattern in $script:Config.HighRiskPatterns) {
         if ($command -match $pattern) { return "HIGH" }
     }
     
-    foreach ($pattern in $mediumRiskPatterns) {
+    foreach ($pattern in $script:Config.MediumRiskPatterns) {
         if ($command -match $pattern) { return "MEDIUM" }
     }
     
@@ -425,49 +452,10 @@ function Get-EstimatedExecutionTime {
     
     return "< 30 seconds"
 }
-
-function Get-CommandCategory {
-    param([string]$command)
-    
-    if ($command -match 'winget') { return "SOFTWARE" }
-    if ($command -match 'Set-ItemProperty|New-ItemProperty|reg ') { return "REGISTRY" }
-    if ($command -match 'Set-Service|Start-Service|Stop-Service') { return "SERVICES" }
-    if ($command -match 'NetFirewall|firewall') { return "FIREWALL" }
-    if ($command -match 'Add-WindowsCapability') { return "FEATURES" }
-    if ($command -match 'Remove-Item|Clear-') { return "CLEANUP" }
-    
-    return "SYSTEM"
-}
-
 function Test-RequiresAdminPrivileges {
     param([string]$command)
     
-    $adminRequiredPatterns = @(
-        'Set-ItemProperty.*HKLM',
-        'New-ItemProperty.*HKLM',
-        'reg add.*HKLM',
-        'reg delete.*HKLM',
-        'Set-Service',
-        'Start-Service',
-        'Stop-Service',
-        'Enable-Service',
-        'Disable-Service',
-        'Add-WindowsCapability',
-        'Remove-WindowsCapability',
-        'Set-NetFirewallRule',
-        'New-NetFirewallRule',
-        'Remove-NetFirewallRule',
-        'bcdedit',
-        'diskpart',
-        'Format-Volume',
-        'Clear-Disk',
-        'netsh',
-        'sc.exe',
-        'dism',
-        'sfc'
-    )
-    
-    foreach ($pattern in $adminRequiredPatterns) {
+    foreach ($pattern in $script:Config.AdminRequiredPatterns) {
         if ($command -match $pattern) { return $true }
     }
     
@@ -496,192 +484,14 @@ function Copy-SelectedCommandsToClipboard {
 
         $risk = Get-CommandRiskLevel -command $command
         $timeEst = Get-EstimatedExecutionTime -command $command
-        $category = Get-CommandCategory -command $command
         $requiresAdmin = Test-RequiresAdminPrivileges -command $command
         
         $commandsText += "# $($item.Text)`n"
-        $commandsText += "# Risk: $risk | Time: $timeEst | Category: $category | Admin Required: $requiresAdmin`n"
+        $commandsText += "# Risk: $risk | Time: $timeEst | Admin Required: $requiresAdmin`n"
         $commandsText += "$command`n`n"
     }
 
     [System.Windows.Forms.Clipboard]::SetText($commandsText)
-}
-
-# Enhanced Error Handling and Recovery Functions
-function Get-ErrorCategory {
-    param([string]$errorMessage)
-    
-    if ($errorMessage -match 'Access.*denied|Permission.*denied|Unauthorized') {
-        return "PERMISSION"
-    }
-    if ($errorMessage -match 'Not found|Cannot find|does not exist') {
-        return "MISSING_DEPENDENCY"
-    }
-    if ($errorMessage -match 'Network|timeout|connection|download') {
-        return "NETWORK"
-    }
-    if ($errorMessage -match 'Syntax error|Invalid command|Parse error') {
-        return "SYNTAX"
-    }
-    if ($errorMessage -match 'Already exists|Already installed') {
-        return "ALREADY_EXISTS"
-    }
-    
-    return "UNKNOWN"
-}
-
-function Get-ErrorSuggestion {
-    param([string]$errorMessage, [string]$command)
-    
-    $category = Get-ErrorCategory -errorMessage $errorMessage
-    
-    switch ($category) {
-        "PERMISSION" {
-            return "Try running as Administrator or check user permissions for this operation."
-        }
-        "MISSING_DEPENDENCY" {
-            if ($command -match 'winget') {
-                return "Ensure Windows Package Manager (winget) is installed and updated."
-            }
-            return "Check if required dependencies or services are installed and running."
-        }
-        "NETWORK" {
-            return "Check internet connection and try again. Some packages may require network access."
-        }
-        "SYNTAX" {
-            return "Command syntax may be incorrect. Review the command parameters."
-        }
-        "ALREADY_EXISTS" {
-            return "Item already exists or is installed. This may not be an error."
-        }
-        default {
-            return "Review the error details and command syntax. Consider retrying the operation."
-        }
-    }
-}
-
-function Show-ErrorRecoveryDialog {
-    param(
-        [string]$commandName,
-        [string]$errorMessage,
-        [string]$command,
-        [string]$suggestion
-    )
-    
-    $recoveryForm = New-Object System.Windows.Forms.Form -Property @{
-        Text          = "Error Recovery - $commandName"
-        Size          = New-Object System.Drawing.Size(600, 400)
-        StartPosition = "CenterParent"
-        Font          = $script:UI.Fonts.Default
-        BackColor     = $script:UI.Colors.Background
-        MaximizeBox   = $false
-        MinimizeBox   = $false
-        ShowIcon      = $false
-    }
-
-    $mainPanel = New-Object System.Windows.Forms.Panel -Property @{
-        Dock    = 'Fill'
-        Padding = '15,15,15,15'
-    }
-
-    $titleLabel = New-Object System.Windows.Forms.Label -Property @{
-        Text      = "Command failed: $commandName"
-        Dock      = 'Top'
-        Height    = 30
-        Font      = [System.Drawing.Font]::new("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
-        ForeColor = [System.Drawing.Color]::FromArgb(244, 67, 54)
-    }
-
-    $errorLabel = New-Object System.Windows.Forms.Label -Property @{
-        Text      = "Error Details:"
-        Dock      = 'Top'
-        Height    = 20
-        Font      = $script:UI.Fonts.Bold
-        ForeColor = $script:UI.Colors.Text
-    }
-
-    $errorTextBox = New-Object System.Windows.Forms.TextBox -Property @{
-        Text       = $errorMessage
-        Dock       = 'Top'
-        Height     = 60
-        Multiline  = $true
-        ReadOnly   = $true
-        ScrollBars = 'Vertical'
-        Font       = $script:UI.Fonts.Default
-        BackColor  = [System.Drawing.Color]::FromArgb(245, 245, 245)
-    }
-
-    $suggestionLabel = New-Object System.Windows.Forms.Label -Property @{
-        Text      = "Suggested Solution:"
-        Dock      = 'Top'
-        Height    = 20
-        Font      = $script:UI.Fonts.Bold
-        ForeColor = $script:UI.Colors.Text
-    }
-
-    $suggestionTextBox = New-Object System.Windows.Forms.TextBox -Property @{
-        Text       = $suggestion
-        Dock       = 'Top'
-        Height     = 60
-        Multiline  = $true
-        ReadOnly   = $true
-        ScrollBars = 'Vertical'
-        Font       = $script:UI.Fonts.Default
-        BackColor  = [System.Drawing.Color]::FromArgb(230, 255, 230)
-    }
-
-    $buttonPanel = New-Object System.Windows.Forms.Panel -Property @{
-        Dock   = 'Bottom'
-        Height = 50
-    }
-
-    $retryButton = New-Object System.Windows.Forms.Button -Property @{
-        Text      = "RETRY"
-        Size      = New-Object System.Drawing.Size(100, 35)
-        Location  = New-Object System.Drawing.Point(10, 7)
-        Font      = $script:UI.Fonts.Bold
-        BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
-        ForeColor = [System.Drawing.Color]::White
-        FlatStyle = 'Flat'
-        Add_Click = {
-            $recoveryForm.DialogResult = [System.Windows.Forms.DialogResult]::Retry
-            $recoveryForm.Close()
-        }
-    }
-
-    $skipButton = New-Object System.Windows.Forms.Button -Property @{
-        Text      = "SKIP"
-        Size      = New-Object System.Drawing.Size(100, 35)
-        Location  = New-Object System.Drawing.Point(120, 7)
-        Font      = $script:UI.Fonts.Bold
-        BackColor = [System.Drawing.Color]::FromArgb(255, 152, 0)
-        ForeColor = [System.Drawing.Color]::White
-        FlatStyle = 'Flat'
-        Add_Click = {
-            $recoveryForm.DialogResult = [System.Windows.Forms.DialogResult]::Ignore
-            $recoveryForm.Close()
-        }
-    }
-
-    $cancelButton = New-Object System.Windows.Forms.Button -Property @{
-        Text      = "CANCEL ALL"
-        Size      = New-Object System.Drawing.Size(100, 35)
-        Location  = New-Object System.Drawing.Point(230, 7)
-        Font      = $script:UI.Fonts.Bold
-        BackColor = [System.Drawing.Color]::FromArgb(244, 67, 54)
-        ForeColor = [System.Drawing.Color]::White
-        FlatStyle = 'Flat'
-        Add_Click = {
-            $recoveryForm.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-            $recoveryForm.Close()
-        }
-    }
-
-    $buttonPanel.Controls.AddRange(@($retryButton, $skipButton, $cancelButton))
-    $mainPanel.Controls.AddRange(@($titleLabel, $errorLabel, $errorTextBox, $suggestionLabel, $suggestionTextBox, $buttonPanel))
-    $recoveryForm.Controls.Add($mainPanel)
-
-    return $recoveryForm.ShowDialog()
 }
 
 # ------------------------------
@@ -773,9 +583,6 @@ function CreateGroupedListView {
 }
 function RunSelectedItems {
     param(
-        [ValidateSet("Invoke", "Revoke")]
-        [string]$Action,
-        [array]$SelectedItems = $null
     )
     
     # Disable the invoke button while running
@@ -783,16 +590,10 @@ function RunSelectedItems {
     $InvokeButton.Text = "Running..."
 
     try {
-        # Get selected items - either from parameter or from ListViews
-        $selectedItems = if ($SelectedItems) { 
-            $SelectedItems 
-        }
-        else {
-            $items = @()
-            foreach ($listView in $script:ListViews.Values) {
-                $items += $listView.Items | Where-Object { $_.Checked }
-            }
-            $items
+        # Get all selected items from all ListViews
+        $selectedItems = @()
+        foreach ($listView in $script:ListViews.Values) {
+            $selectedItems += $listView.Items | Where-Object { $_.Checked }
         }
 
         if ($selectedItems.Count -eq 0) {
@@ -800,265 +601,166 @@ function RunSelectedItems {
             return
         }
 
-        # Create log file with timestamp
-        $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-        $logFileName = "WinUtil_Run_$timestamp.log"
-        $logFilePath = Join-Path -Path $script:LogsDirectory -ChildPath $logFileName
-        
-        # Initialize log file with simple header
-        $logHeader = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [INFO] Gray WinUtil execution started - Action: $Action, Items: $($selectedItems.Count)"
-        Set-Content -Path $logFilePath -Value $logHeader -Encoding UTF8
-
-        # Create progress form
-        $progressForm = New-Object System.Windows.Forms.Form -Property @{
-            Text            = "Running Commands"
-            Size            = New-Object System.Drawing.Size(500, 200)
-            StartPosition   = "CenterParent"
-            FormBorderStyle = "FixedDialog"
-            ControlBox      = $false
-            Font            = $script:UI.Fonts.Default
-        }
-
-        $progressLabel = New-Object System.Windows.Forms.Label -Property @{
-            Location = New-Object System.Drawing.Point(10, 20)
-            Size     = New-Object System.Drawing.Size(460, 60)
-            Font     = $script:UI.Fonts.Default
-            Text     = "Initializing..."
-        }
-
-        $progressBar = New-Object System.Windows.Forms.ProgressBar -Property @{
-            Location = New-Object System.Drawing.Point(10, 90)
-            Size     = New-Object System.Drawing.Size(460, 20)
-            Minimum  = 0
-            Maximum  = $selectedItems.Count
-            Value    = 0
-        }
-
-        $statusLabel = New-Object System.Windows.Forms.Label -Property @{
-            Location = New-Object System.Drawing.Point(10, 120)
-            Size     = New-Object System.Drawing.Size(460, 40)
-            Font     = $script:UI.Fonts.Default
-            Text     = "Ready to start..."
-        }
-
-        $progressForm.Controls.AddRange(@($progressLabel, $progressBar, $statusLabel))
-        $progressForm.Show()
-        $Form.Enabled = $false
-
-        # Track overall success
-        $successCount = 0
-        $failureCount = 0
-        $skippedCount = 0
-        $errorLog = @()
-        $userCancelled = $false
-
-        # Process each selected item with enhanced error handling
-        for ($i = 0; $i -lt $selectedItems.Count; $i++) {
-            if ($userCancelled) { break }
+        # Prepare ListView for execution mode
+        foreach ($listView in $script:ListViews.Values) {
+            $listView.CheckBoxes = $false  # Disable checkboxes during execution
             
+            # Hide non-selected items and style selected items for queue
+            $itemsToRemove = @()
+            foreach ($item in $listView.Items) {
+                if ($selectedItems -contains $item) {
+                    # Queue item - gray color and reset time to 0ms
+                    $item.BackColor = [System.Drawing.Color]::LightGray
+                    $item.ForeColor = [System.Drawing.Color]::DarkGray
+                    $item.SubItems[1].Text = "0ms"  # Reset TIME column to 0ms for queued items
+                }
+                else {
+                    # Mark non-selected items for removal
+                    $itemsToRemove += $item
+                }
+            }
+            # Remove non-selected items
+            foreach ($item in $itemsToRemove) {
+                $item.Remove()
+            }
+        }
+        
+        # Process each selected item
+        for ($i = 0; $i -lt $selectedItems.Count; $i++) {
             $item = $selectedItems[$i]
             $command = $item.SubItems[2].Text
             $name = $item.Text
 
-            $progressBar.Value = $i
-            $progressLabel.Text = "Running: $name ($($i + 1) of $($selectedItems.Count))"
-            $statusLabel.Text = "Executing command..."
+            # Highlight currently executing item
+            $item.BackColor = [System.Drawing.Color]::Yellow
+            $item.ForeColor = [System.Drawing.Color]::Black
+            $item.Font = $script:UI.Fonts.Bold
+            $item.SubItems[1].Text = "Running..."  # Update TIME column during execution
             [System.Windows.Forms.Application]::DoEvents()
-
-            # Log command execution start
-            $startLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [INFO] Starting [$($i + 1)/$($selectedItems.Count)] $name - Command: $command"
-            Add-Content -Path $logFilePath -Value $startLogEntry -Encoding UTF8
-
-            $retryCount = 0
-            $maxRetries = 2
-            $commandCompleted = $false
             
-            while ($retryCount -le $maxRetries -and -not $commandCompleted -and -not $userCancelled) {
-                try {
-                    $startTime = Get-Date
+            # Start timing the execution
+            $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+            $executionFailed = $false
+            $executionCancelled = $false
+            
+            try {
+                # Capture output and errors for better detection
+                $output = $null
+                $errorOutput = $null
+                
+                # Execute the command and capture output
+                if ($command -match 'winget') {
+                    # For winget commands, capture both output and check exit code
+                    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+                    $processInfo.FileName = "powershell.exe"
+                    $processInfo.Arguments = "-Command `"$command`""
+                    $processInfo.RedirectStandardOutput = $true
+                    $processInfo.RedirectStandardError = $true
+                    $processInfo.UseShellExecute = $false
+                    $processInfo.CreateNoWindow = $true
                     
-                    if ($retryCount -gt 0) {
-                        $statusLabel.Text = "Retrying... (Attempt $($retryCount + 1) of $($maxRetries + 1))"
-                        [System.Windows.Forms.Application]::DoEvents()
-                        Start-Sleep -Seconds 2  # Brief delay before retry
-                    }
-                    
-                    # Execute command and capture output
-                    $psi = New-Object System.Diagnostics.ProcessStartInfo
-                    $psi.FileName = "powershell.exe"
-                    $psi.Arguments = "-NoProfile -Command `"$command`""
-                    $psi.UseShellExecute = $false
-                    $psi.RedirectStandardOutput = $true
-                    $psi.RedirectStandardError = $true
-                    $psi.CreateNoWindow = $true
-                    
-                    $process = New-Object System.Diagnostics.Process
-                    $process.StartInfo = $psi
-                    
-                    # Start the process
-                    $process.Start() | Out-Null
-                    
-                    # Read output streams
+                    $process = [System.Diagnostics.Process]::Start($processInfo)
                     $output = $process.StandardOutput.ReadToEnd()
                     $errorOutput = $process.StandardError.ReadToEnd()
-                    
-                    # Wait for process to complete
                     $process.WaitForExit()
                     $exitCode = $process.ExitCode
-                    $endTime = Get-Date
-                    $duration = $endTime - $startTime
                     
-                    if ($exitCode -eq 0) {
-                        # Command succeeded
-                        $commandCompleted = $true
-                        # Filter out verbose progress information for winget commands
-                        $filteredOutput = $output
-                        if ($command -like "*winget*") {
-                            $outputLines = $output -split "`n"
-                            $filteredLines = $outputLines | Where-Object {
-                                $line = $_.Trim()
-                                -not ($line -match "^\s*[\[\]]+$") -and
-                                -not ($line -match "^\s*\d+%\s*$") -and
-                                -not ($line -match "^\s*[#+=\-_]{5,}") -and
-                                -not ($line -match "^\s*\.\.\.\s*$") -and
-                                -not ($line -match "^Downloading.*MB/.*MB") -and
-                                -not ($line -match "^\s*$")
-                            }
-                            $relevantLines = $filteredLines | Where-Object {
-                                $line = $_.Trim()
-                                $line -match "(Successfully|Found|Installing|Installed|Failed|Error|Warning|Agreement|License)" -or
-                                $line.Length -lt 100
-                            }
-                            
-                            $filteredOutput = if ($relevantLines.Count -gt 0) {
-                                ($relevantLines | Select-Object -First 10) -join "`n"
-                            }
-                            else {
-                                "Command completed (verbose output filtered)"
-                            }
-                        }
-                        
-                        # Log success
-                        $successLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [SUCCESS] $name - ExitCode: $exitCode, Duration: $([Math]::Round($duration.TotalSeconds, 2))s, Attempts: $($retryCount + 1)"
-                        Add-Content -Path $logFilePath -Value $successLogEntry -Encoding UTF8
-                        
-                        if ($filteredOutput.Trim()) {
-                            $outputLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [OUTPUT] $($filteredOutput.Trim())"
-                            Add-Content -Path $logFilePath -Value $outputLogEntry -Encoding UTF8
-                        }
-                        $successCount++
-                        $item.Checked = $false
-                        $statusLabel.Text = "Completed successfully"
+                    # Check for cancellation indicators first
+                    if ($errorOutput -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled" -or
+                        $output -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
+                        $executionCancelled = $true
                     }
-                    else {
-                        # Command failed, prepare error message
-                        $fullErrorMessage = if ($errorOutput.Trim()) { $errorOutput.Trim() } else { "Command exited with code $exitCode" }
-                        throw [System.Exception]::new($fullErrorMessage)
+                    # Then check for other failure indicators
+                    elseif ($exitCode -ne 0 -or 
+                        $errorOutput -match "access.*denied|permission.*denied|requires.*administrator|elevation.*required" -or
+                        $output -match "failed|error|denied") {
+                        $executionFailed = $true
                     }
                 }
-                catch {
-                    $endTime = Get-Date
-                    $duration = $endTime - $startTime
-                    $errorMessage = $_.Exception.Message
+                else {
+                    # For other commands, use regular execution but with error stream capture
+                    $ErrorActionPreference = 'Stop'
+                    $output = Invoke-Expression $command 2>&1
                     
-                    # Log the attempt
-                    $attemptLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [ATTEMPT] $name - Attempt $($retryCount + 1) failed - Duration: $([Math]::Round($duration.TotalSeconds, 2))s - Error: $errorMessage"
-                    Add-Content -Path $logFilePath -Value $attemptLogEntry -Encoding UTF8
-                    $retryCount++
-                    if ($retryCount -le $maxRetries) {
-                        # Show error recovery dialog
-                        $suggestion = Get-ErrorSuggestion -errorMessage $errorMessage -command $command
-                        
-                        $statusLabel.Text = "Error occurred - showing recovery options..."
-                        [System.Windows.Forms.Application]::DoEvents()
-                        
-                        # Temporarily hide progress form to show recovery dialog
-                        $progressForm.Hide()
-                        $Form.Enabled = $true
-                        
-                        $recoveryChoice = Show-ErrorRecoveryDialog -commandName $name -errorMessage $errorMessage -command $command -suggestion $suggestion
-                        
-                        # Restore progress form
-                        $Form.Enabled = $false
-                        $progressForm.Show()
-                        
-                        switch ($recoveryChoice) {
-                            'Retry' {
-                                # Continue the retry loop
-                                continue
-                            }                            'Ignore' {
-                                # Skip this command
-                                $skippedCount++
-                                $commandCompleted = $true
-                                $skipLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [SKIPPED] $name - User chose to skip after $($retryCount) attempts"
-                                Add-Content -Path $logFilePath -Value $skipLogEntry -Encoding UTF8
-                                $statusLabel.Text = "Skipped by user"
-                                break
-                            }
-                            'Cancel' {
-                                # Cancel all remaining commands
-                                $userCancelled = $true
-                                $cancelLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [CANCELLED] Execution cancelled by user at command: $name"
-                                Add-Content -Path $logFilePath -Value $cancelLogEntry -Encoding UTF8
-                                break
-                            }
-                        }
+                    # Check for cancellation indicators first
+                    if ($output -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
+                        $executionCancelled = $true
                     }
-                    else {
-                        # Max retries reached
-                        $failureCount++
-                        $commandCompleted = $true
-                        $errorLog += "Error running '$name' (after $($maxRetries + 1) attempts): $errorMessage"
-                        $failureLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [FAILED] $name - Max retries reached - Total Duration: $([Math]::Round($duration.TotalSeconds, 2))s - Final Error: $errorMessage"
-                        Add-Content -Path $logFilePath -Value $failureLogEntry -Encoding UTF8
-                        $statusLabel.Text = "Failed after $($maxRetries + 1) attempts"
+                    # Then check for other error indicators
+                    elseif ($output -match "access.*denied|permission.*denied|requires.*administrator|elevation.*required|failed|error") {
+                        $executionFailed = $true
                     }
                 }
                 
-                [System.Windows.Forms.Application]::DoEvents()
-                Start-Sleep -Milliseconds 500
+                # Stop timing and calculate execution time
+                $stopwatch.Stop()
+                $executionTimeMs = $stopwatch.ElapsedMilliseconds
+                
+                if ($executionCancelled) {
+                    # Mark as cancelled (orange/amber)
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 200)
+                    $item.ForeColor = [System.Drawing.Color]::FromArgb(205, 133, 0)
+                    $item.Font = $script:UI.Fonts.Default
+                    $item.SubItems[1].Text = "$($executionTimeMs)ms (Cancelled)"
+                }
+                elseif ($executionFailed) {
+                    # Mark as failed even if no exception was thrown
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
+                    $item.ForeColor = [System.Drawing.Color]::Red
+                    $item.Font = $script:UI.Fonts.Default
+                    $item.SubItems[1].Text = "$($executionTimeMs)ms (Failed)"
+                }
+                else {
+                    # Mark as completed (green) and show actual execution time
+                    $item.BackColor = [System.Drawing.Color]::LightGreen
+                    $item.ForeColor = [System.Drawing.Color]::DarkGreen
+                    $item.Font = $script:UI.Fonts.Default
+                    $item.SubItems[1].Text = "$($executionTimeMs)ms"
+                }
             }
-        }
-
-        # Log session summary
-        $summaryLogEntry = "$(Get-Date -Format "yyyy-MM-dd HH:mm:ss") [INFO] Execution completed - Total: $($selectedItems.Count), Success: $successCount, Failed: $failureCount, Skipped: $skippedCount, Cancelled: $userCancelled"
-        Add-Content -Path $logFilePath -Value $summaryLogEntry -Encoding UTF8        # Show final results
-        $progressForm.Close()
-        $Form.Enabled = $true
-
-        $resultMessage = "Execution complete.`n`n"
-        $resultMessage += "SUCCESS: $successCount`n"
-        if ($failureCount -gt 0) {
-            $resultMessage += "FAILED: $failureCount`n"
-        }
-        if ($skippedCount -gt 0) {
-            $resultMessage += "SKIPPED: $skippedCount`n"
-        }
-        if ($userCancelled) {
-            $resultMessage += "CANCELLED by user`n"
-        }
-        
-        if ($failureCount -gt 0) {
-            $resultMessage += "`nError Details:`n" + ($errorLog -join "`n")
-            $icon = [System.Windows.Forms.MessageBoxIcon]::Warning
-        }
-        elseif ($skippedCount -gt 0) {
-            $resultMessage += "`nSome commands were skipped."
-            $icon = [System.Windows.Forms.MessageBoxIcon]::Information
-        }
-        else {
-            $resultMessage += "`nAll commands completed successfully!"
-            $icon = [System.Windows.Forms.MessageBoxIcon]::Information
+            catch {
+                # Stop timing even on error
+                $stopwatch.Stop()
+                $executionTimeMs = $stopwatch.ElapsedMilliseconds
+                
+                # Check if exception message indicates cancellation
+                if ($_.Exception.Message -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
+                    # Mark as cancelled (orange/amber)
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 200)
+                    $item.ForeColor = [System.Drawing.Color]::FromArgb(205, 133, 0)
+                    $item.Font = $script:UI.Fonts.Default
+                    $item.SubItems[1].Text = "$($executionTimeMs)ms (Cancelled)"
+                }
+                else {
+                    # Mark as failed (red) and show execution time up to failure
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
+                    $item.ForeColor = [System.Drawing.Color]::Red
+                    $item.Font = $script:UI.Fonts.Default
+                    $item.SubItems[1].Text = "$($executionTimeMs)ms (Failed)"
+                }
+                
+                # Continue with next command without asking user
+            }
+            
+            # Brief pause between commands for UI updates
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 500
         }
         
-        $resultMessage += "`n`nDetailed log saved to:`n$logFilePath"
-
-        [System.Windows.Forms.MessageBox]::Show($resultMessage, "Execution Results", [System.Windows.Forms.MessageBoxButtons]::OK, $icon)
+        # Show completion message
+        [System.Windows.Forms.MessageBox]::Show("Execution completed!", "Complete", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     }
     finally {
-        # Re-enable the invoke button
-        $InvokeButton.Enabled = $true
-        $InvokeButton.Text = "Run"
+        # Redraw ListView by triggering profile selection using stored index
+        if ($script:CurrentProfileIndex -ge 0 -and $script:CurrentProfileIndex -lt $ProfileDropdown.Items.Count) {
+            $ProfileDropdown.SelectedIndex = $script:CurrentProfileIndex
+        }
+        
+        # Re-enable the invoke button and reset controls
+        $InvokeButton.Enabled = $ConsentCheckbox.Checked
+        $InvokeButton.Text = "RUN"
+        $SelectAllSwitch.Checked = $false
+        $SelectAllSwitch.Tag = $false
     }
 }
 
@@ -1094,8 +796,12 @@ if ([Environment]::OSVersion.Version.Major -ge 6) {
 # ------------------------------
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
+
+# Status Header Panel - Remove this entire section
+# Remove $StatusHeaderPanel, $StatusTitleLabel, $StatusProgressBarContainer, $StatusProgressBar, $StatusCounterLabel
+
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
-$FooterPanel = New-Object System.Windows.Forms.Panel -Property $FooterPanelProps
+$FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
 
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 $SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
@@ -1362,7 +1068,6 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
         $script:UpdatesForm.Show()  # Use Show() instead of ShowDialog() for non-blocking
     }
 }
-
 $HeaderPanel.Controls.AddRange(@($SearchBox, $SelectAllSwitch, $PaddingSpacerPanel, $ConsentCheckbox, $InvokeButton))
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $HelpLabel, $UpdatesLabel))
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
