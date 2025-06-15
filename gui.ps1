@@ -27,60 +27,62 @@ This script is a PowerShell GUI application for managing and executing scripts f
 # ------------------------------
 # Repository configuration - Update these variables for your own repository
 $script:Config = @{
-    GitHubOwner           = "mrdotkg"           # GitHub username
-    GitHubRepo            = "dotfiles"          # Repository name
-    GitHubBranch          = "main"              # Default branch
-    DatabaseFile          = "db.json"           # Database file name
-    ScriptsPath           = "$HOME\Documents\WinUtil Local Data"  # Local data directory (Profiles stored in subdirectory)
     AdminRequiredPatterns = @(
-        'Set-ItemProperty.*HKLM',
+        'Add-WindowsCapability',
+        'bcdedit',
+        'Clear-Disk',
+        'dism',
+        'Disable-Service',
+        'diskpart',
+        'Enable-Service',
+        'Format-Volume',
+        'netsh',
         'New-ItemProperty.*HKLM',
+        'New-NetFirewallRule',
         'reg add.*HKLM',
         'reg delete.*HKLM',
+        'Remove-NetFirewallRule',
+        'Remove-WindowsCapability',
+        'sc.exe',
+        'Set-ItemProperty.*HKLM',
+        'Set-NetFirewallRule',
         'Set-Service',
+        'sfc',
         'Start-Service',
         'Stop-Service',
-        'Enable-Service',
-        'Disable-Service',
-        'Add-WindowsCapability',
-        'Remove-WindowsCapability',
-        'Set-NetFirewallRule',
-        'New-NetFirewallRule',
-        'Remove-NetFirewallRule',
-        'bcdedit',
-        'diskpart',
-        'Format-Volume',
-        'Clear-Disk',
-        'netsh',
-        'sc.exe',
-        'dism',
-        'sfc',
         'winget'
     )
+    ApiUrl                = $null  # Will be generated below
+    DatabaseFile          = "db.json"           # Database file name
+    DatabaseUrl           = $null  # Will be generated below
+    GitHubBranch          = "main"              # Default branch
+    GitHubOwner           = "mrdotkg"           # GitHub username
+    GitHubRepo            = "dotfiles"          # Repository name
     HighRiskPatterns      = @(
-        'Remove-Item.*-Recurse',
-        'rm.*-rf',
-        'Format-Volume',
-        'Clear-Disk',
-        'Remove-Computer',
-        'Restart-Computer',
-        'Stop-Computer',
-        'shutdown',
         'bcdedit',
+        'Clear-Disk',
         'diskpart',
+        'Format-Volume',
         'reg delete.*HKLM',
-        'Set-ExecutionPolicy.*Unrestricted'
+        'Remove-Computer',
+        'Remove-Item.*-Recurse',
+        'Restart-Computer',
+        'rm.*-rf',
+        'Set-ExecutionPolicy.*Unrestricted',
+        'shutdown',
+        'Stop-Computer'
     )
     MediumRiskPatterns    = @(
-        'Set-ItemProperty.*HKLM',
+        'Disable-Service',
         'New-ItemProperty.*HKLM',
+        'New-NetFirewallRule',
+        'Set-ItemProperty.*HKLM',
+        'Set-NetFirewallRule',
         'Set-Service',
         'Stop-Service',
-        'Disable-Service',
-        'Set-NetFirewallRule',
-        'New-NetFirewallRule',
         'winget uninstall'
     )
+    ScriptsPath           = "$HOME\Documents\WinUtil Local Data"  # Local data directory
 }
 
 # ------------------------------
@@ -107,38 +109,57 @@ $script:UpdatesForm = $null
 
 # UI Theme and Constants
 $script:UI = @{
-    Colors = @{
-        Background = [System.Drawing.Color]::FromArgb(241, 243, 249)
-        Text       = [System.Drawing.Color]::Black
-        Disabled   = [System.Drawing.Color]::LightGray
+    Colors  = @{
         Accent     = $null  # Will be set from Windows theme
+        Background = [System.Drawing.Color]::FromArgb(241, 243, 249)
+        Disabled   = [System.Drawing.Color]::LightGray
+        Text       = [System.Drawing.Color]::Black
     }
-    Fonts  = @{
-        Default = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+    Fonts   = @{
         Bold    = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-        Small   = [System.Drawing.Font]::new("Segoe UI", 8, [System.Drawing.FontStyle]::Regular)  # Added smaller font
+        Default = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+        Small   = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
     }
-    Sizes  = @{
-        Window  = @{
-            Width  = 600
-            Height = 700
-        }
-        Header  = @{
-            Height = 40
+    Padding = @{
+        Button  = '0,0,0,0'         # Button padding - no padding for precise alignment
+        Content = "0,0,0,0"        # Content panel padding - enough top margin to clear 40px header + 10px buffer
+        Control = '0,0,0,0'         # Standard control margins - centered vertically
+        Footer  = '0,0,0,0'     # Footer panel padding - consistent padding all around
+        Form    = '0,0,0,0'         # Main form padding - no padding for full control
+        Header  = '0,0,0,0'         # Header panel padding - no padding for precise control
+        Help    = '15,15,15,15'     # Help window padding - generous padding for readability
+        Panel   = '0,0,0,0'         # Standard panel padding - no padding for alignment
+        Status  = '0,5,0,5'       # Status panel padding - left/right margin with minimal vertical
+        ToolBar = '5,8,0,8'       # ToolBar panel padding - consistent with control margins
+        Updates = '15,15,15,15'     # Updates panel padding - generous padding for readability
+    }
+    Sizes   = @{
+        Columns = @{
+            Command    = 100
+            Name       = 250
+            Permission = 100
+            Time       = 100
         }
         Footer  = @{
-            Height = 50
+            Height = 30
+        }
+        Header  = @{
+            # Height = 30
         }
         Input   = @{
-            Width       = 100
+            FooterWidth = 150
             Height      = 25
-            FooterWidth = 150        
+            Width       = 100
         }
-        Columns = @{
-            Name       = 250
-            Time       = 100
-            Command    = 100
-            Permission = 100
+        Status  = @{
+            Height = 30
+        }
+        ToolBar = @{
+            Height = 40
+        }
+        Window  = @{
+            Height = 700
+            Width  = 600
         }
     }
 }
@@ -161,24 +182,6 @@ else {
 # ------------------------------
 # Main Form
 $FormProps = @{
-    Width       = $script:UI.Sizes.Window.Width
-    Height      = $script:UI.Sizes.Window.Height
-    Text        = "GRAY WINUTIL"
-    BackColor   = $script:UI.Colors.Background
-    Font        = $script:UI.Fonts.Default
-    KeyPreview  = $true
-    Add_Shown   = { 
-        $Form.Activate()
-        # Load user provided profiles
-        Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
-            $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
-        }
-
-        if ($ProfileDropdown.Items.Count -gt 0) {
-            $ProfileDropdown.SelectedIndex = 0
-            $script:CurrentProfileIndex = 0  # Initialize the script variable
-        }
-    }
     Add_KeyDown = {
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::A) {
             # Ctrl+A: Select All
@@ -237,69 +240,86 @@ $FormProps = @{
             $_.Handled = $true
         }
     }
+    Add_Shown   = { 
+        $Form.Activate()
+        # Load user provided profiles
+        Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
+            $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
+        }
+
+        if ($ProfileDropdown.Items.Count -gt 0) {
+            $ProfileDropdown.SelectedIndex = 0
+            $script:CurrentProfileIndex = 0  # Initialize the script variable
+        }
+    }
+    BackColor   = $script:UI.Colors.Background
+    Font        = $script:UI.Fonts.Default
+    Height      = $script:UI.Sizes.Window.Height
+    KeyPreview  = $true
+    Padding     = $script:UI.Padding.Form
+    Text        = "GRAY WINUTIL"
+    Width       = $script:UI.Sizes.Window.Width
 }
 
 # Panels
 $HeaderPanelProps = @{
-    Height    = $script:UI.Sizes.Header.Height # Increased height for better alignment
-    Dock      = 'Top'
-    # BorderStyle = "FixedSingle"
-    Padding   = '10,8,10,3'  # More balanced padding for better alignment
     BackColor = $script:UI.Colors.Background
+    # BorderStyle = 'FixedSingle'
+    Dock      = 'Top'
+    Height    = $script:UI.Sizes.Header.Height
+    Padding   = $script:UI.Padding.Header
 }
 
 $ContentPanelProps = @{
-    Dock      = 'Fill'
-    Padding   = "0,$($script:UI.Sizes.Header.Height + 5),0,15"
     BackColor = $script:UI.Colors.Background
+    # BorderStyle = 'FixedSingle'
+    Dock      = 'Fill'
+    Padding   = $script:UI.Padding.Content
 }
 
 $FooterPanelProps = @{
-    Dock        = 'Bottom'
-    Height      = $script:UI.Sizes.Footer.Height
     BackColor   = $script:UI.Colors.Background
-    Padding     = '15,0,15,0'
     BorderStyle = 'None'
+    Dock        = 'Bottom'
     Font        = $script:UI.Fonts.Default
+    Height      = $script:UI.Sizes.Footer.Height
+    Padding     = $script:UI.Padding.Footer
 }
 
 # Spacer Panel between Header and Content
 $SpacerPanelProps = @{
-    Height    = 5
-    Dock      = 'Top'
     BackColor = $script:UI.Colors.Background
+    Dock      = 'Bottom'
+    Height    = 5
     Padding   = '0,0,0,0'  # Remove padding so progress bar fills entire panel
 }
 
 # List View and Split Container
 $ListViewProps = @{
-    CheckBoxes         = $true
-    Font               = $script:UI.Fonts.Default
-    Dock               = 'Fill'
-    View               = 'Details'
-    GridLines          = $true
-    FullRowSelect      = $true
-    MultiSelect        = $false  # Changed to false for better reordering experience
-    # BackColor          = $script:UI.Colors.Background
-    ShowItemToolTips   = $true
-    AllowColumnReorder = $true
-    AllowDrop          = $true   # Enable drag-drop
-    Sorting            = [System.Windows.Forms.SortOrder]::None
-    Forecolor          = $script:UI.Colors.Text
-    BorderStyle        = 'None'
-    Margin             = '5,5,5,5'
-    Add_ItemChecked    = {
-        $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
-        $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
-        $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
-        $InvokeButton.Text = "▶ Run ($anyChecked)"
-        $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
-        $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
-    }
-    Add_ItemDrag       = {
-        if ($this.SelectedItems.Count -gt 0) {
-            $this.DoDragDrop($this.SelectedItems[0], [System.Windows.Forms.DragDropEffects]::Move)
+    Add_DragDrop       = {
+        param($sender, $e)
+        $draggedItem = $e.Data.GetData([System.Windows.Forms.ListViewItem])
+        if ($draggedItem) {
+            $targetIndex = $sender.InsertionMark.Index
+            if ($targetIndex -ge 0) {
+                # Adjust target index based on AppearsAfterItem
+                if ($sender.InsertionMark.AppearsAfterItem) {
+                    $targetIndex++
+                }
+                Move-ListViewItem -ListView $sender -Item $draggedItem -TargetIndex $targetIndex
+            }
         }
+        # Clear the insertion mark
+        $sender.InsertionMark.Index = -1
+    }
+    Add_DragEnter      = {
+        if ($_.Data.GetDataPresent([System.Windows.Forms.ListViewItem])) {
+            $_.Effect = [System.Windows.Forms.DragDropEffects]::Move
+        }
+    }
+    Add_DragLeave      = {
+        # Clear insertion mark when drag leaves the control
+        $this.InsertionMark.Index = -1
     }
     Add_DragOver       = {
         param($sender, $e)
@@ -329,46 +349,37 @@ $ListViewProps = @{
             $sender.InsertionMark.AppearsAfterItem = $false
         }
     }
-    Add_DragDrop       = {
-        param($sender, $e)
-        $draggedItem = $e.Data.GetData([System.Windows.Forms.ListViewItem])
-        if ($draggedItem) {
-            $targetIndex = $sender.InsertionMark.Index
-            if ($targetIndex -ge 0) {
-                # Adjust target index based on AppearsAfterItem
-                if ($sender.InsertionMark.AppearsAfterItem) {
-                    $targetIndex++
-                }
-                Move-ListViewItem -ListView $sender -Item $draggedItem -TargetIndex $targetIndex
-            }
-        }
-        # Clear the insertion mark
-        $sender.InsertionMark.Index = -1
+    Add_ItemChecked    = {
+        $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
+        $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
+        $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
+        $InvokeButton.Text = "▶ Run ($anyChecked)"
+        $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
+        $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
     }
-    Add_DragEnter      = {
-        if ($_.Data.GetDataPresent([System.Windows.Forms.ListViewItem])) {
-            $_.Effect = [System.Windows.Forms.DragDropEffects]::Move
+    Add_ItemDrag       = {
+        if ($this.SelectedItems.Count -gt 0) {
+            $this.DoDragDrop($this.SelectedItems[0], [System.Windows.Forms.DragDropEffects]::Move)
         }
     }
-    Add_DragLeave      = {
-        # Clear insertion mark when drag leaves the control
-        $this.InsertionMark.Index = -1
-    }
+    AllowColumnReorder = $true
+    AllowDrop          = $true   # Enable drag-drop
+    # BorderStyle        = 'FixedSingle'
+    CheckBoxes         = $true
+    Dock               = 'Fill'
+    Font               = $script:UI.Fonts.Default
+    Forecolor          = $script:UI.Colors.Text
+    FullRowSelect      = $true
+    GridLines          = $true
+    # Margin             = $script:UI.Padding.Button
+    MultiSelect        = $false  # Changed to false for better reordering experience
+    ShowItemToolTips   = $true
+    Sorting            = [System.Windows.Forms.SortOrder]::None
+    View               = 'Details'
 }
 
-# Control Properties - Updated for dark theme
+# Control Properties
 $SelectAllSwitchProps = @{
-    Text      = "All Scripts"
-    Width     = $script:UI.Sizes.Input.Width
-    Height    = 16  # Match other controls
-    AutoSize  = $true
-    Dock      = 'Left'
-    Font      = $Script:UI.Fonts.Default  # Smaller font
-    Tag       = $false
-    # ForeColor = [System.Drawing.Color]::White  # White text for dark theme
-    # BackColor = $script:UI.Colors.Text  # Dark background
-    # FlatStyle = 'Flat'  # Match button style
-    Margin    = '5,4,5,4'  # Match other controls
     Add_Click = {
         $isChecked = -not $SelectAllSwitch.Tag
         $SelectAllSwitch.Tag = $isChecked
@@ -379,34 +390,30 @@ $SelectAllSwitchProps = @{
             }
         }
     }
+    AutoSize  = $true
+    Dock      = 'Left'
+    # Font      = $Script:UI.Fonts.Default
+    Height    = 16
+    Margin    = $script:UI.Padding.Control
+    Tag       = $false
+    Text      = "All"
+    Width     = $script:UI.Sizes.Input.Width
 }
 
 $SearchBoxProps = @{
-    Height          = $script:UI.Sizes.Input.Height
-    Dock            = 'Fill'
-    Font            = $script:UI.Fonts.Default
-    # ForeColor       = $script:UI.Colors.Text
-    Text            = " Type to filter scripts..."
-    TextAlign       = 'Left'
-    Multiline       = $false
-    BorderStyle     = 'FixedSingle'
-    BackColor       = $script:UI.Colors.Background
-    Margin          = '5,6,5,2'  # Adjusted: increased top margin to 6, reduced bottom to 2
-    Add_Enter       = { 
-        if ($this.Text -eq " Type to filter scripts...") { 
-            $this.Text = ""
-            # $this.ForeColor = [System.Drawing.Color]::White 
-        } 
-    }
-    Add_Leave       = { 
-        if ($this.Text -eq "") { 
-            $this.Text = " Type to filter scripts..."
-            # $this.ForeColor = $script:UI.Colors.Text
-        } 
-    }
+    # Add_Enter       = { 
+    #     if ($this.Text -eq " Type to filter scripts...") { 
+    #         $this.Text = ""
+    #     } 
+    # }
+    # Add_Leave       = { 
+    #     if ($this.Text -eq "") { 
+    #         $this.Text = " Type to filter scripts..."
+    #     } 
+    # }
     Add_TextChanged = {
         $searchText = $this.Text.Trim()
-        if ($searchText -eq "Type to filter scripts...") { return }
+        # if ($searchText -eq "Type to filter scripts...") { return }
         $listViews = @($script:ListViews.Values)
         foreach ($lv in $listViews) {
             $lv.BeginUpdate()
@@ -430,21 +437,19 @@ $SearchBoxProps = @{
             }
         }
     }
+    BackColor       = $script:UI.Colors.Background
+    # BorderStyle     = 'FixedSingle'
+    Dock            = 'Left'
+    # Font            = $script:UI.Fonts.Default
+    Height          = $script:UI.Sizes.Input.Height
+    Margin          = '10,7,10,7'  # Consistent margin for alignment with other controls
+    Multiline       = $false
+    PlaceholderText = "Search"
+    TextAlign       = 'Left'
+    Width           = $script:UI.Sizes.Input.FooterWidth
 }
 
 $InvokeButtonProps = @{
-    Width     = $script:UI.Sizes.Input.Width
-    Height    = 16  # Match SearchBox height
-    AutoSize  = $false
-    Text      = "▶ Run"
-    Dock      = 'Right'
-    Enabled   = $false
-    Font      = $script:UI.Fonts.Default  # Smaller font
-    FlatStyle = 'Flat'
-    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
-    ForeColor = [System.Drawing.Color]::White
-    Margin    = '5,4,5,4'  # Match SearchBox margin
-        
     Add_Click = { 
         if ($ConsentCheckbox.Checked) {
             RunSelectedItems -Action Invoke
@@ -453,25 +458,34 @@ $InvokeButtonProps = @{
             [System.Windows.Forms.MessageBox]::Show("Please check the consent checkbox to proceed with execution.", "Consent Required", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
         }
     }
+    AutoSize  = $false
+    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+    Dock      = 'Right'
+    Enabled   = $false
+    FlatStyle = 'Flat'
+    # Font      = $script:UI.Fonts.Default
+    ForeColor = [System.Drawing.Color]::White
+    Height    = 16
+    Margin    = $script:UI.Padding.Control
+    Text      = "▶ Run"
+    Width     = $script:UI.Sizes.Input.Width
 }
 
 $ConsentCheckboxProps = @{
-    Text               = "Admin Consent"
-    Width              = $script:UI.Sizes.Input.Width
-    Height             = 16  # Match other controls
-    AutoSize           = $true
-    Dock               = 'Right'
-    Font               = $script:UI.Fonts.Default  # Smaller font
-    Checked            = $false
-    # ForeColor          = [System.Drawing.Color]::White  # White text for dark theme
-    # BackColor          = $script:UI.Colors.Text  # Dark background
-    # FlatStyle          = 'Flat'  # Match button style
-    Margin             = '5,4,5,4'  # Match other controls
     Add_CheckedChanged = {
         # Enable/disable buttons based on consent and selection
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
     }
+    Appearance         = 'Button'
+    AutoSize           = $true
+    Checked            = $false
+    Dock               = 'Right'
+    # Font               = $script:UI.Fonts.Default
+    Height             = 16
+    Margin             = $script:UI.Padding.Control
+    Text               = "As Admin"
+    Width              = $script:UI.Sizes.Input.Width
 }
 function Read-Profile {
     param([string]$Path)
@@ -538,12 +552,6 @@ function Read-Profile {
 }
 
 $ProfileDropdownProps = @{
-    Width                    = $script:UI.Sizes.Input.FooterWidth
-    Height                   = $script:UI.Sizes.Input.Height
-    Dock                     = 'Left'
-    Font                     = $script:UI.Fonts.Default
-    ForeColor                = $script:UI.Colors.Text
-    DropDownStyle            = 'DropDownList'
     Add_SelectedIndexChanged = {
         # Update the script-scoped variable with current selection
         $script:CurrentProfileIndex = $ProfileDropdown.SelectedIndex
@@ -556,6 +564,13 @@ $ProfileDropdownProps = @{
             CreateGroupedListView -parentPanel $ScriptsPanel -groupedScripts $scriptsDict
         }
     }
+    Dock                     = 'Left'
+    DropDownStyle            = 'DropDownList'
+    Font                     = $script:UI.Fonts.Default
+    ForeColor                = $script:UI.Colors.Text
+    Height                   = $script:UI.Sizes.Input.Height
+    Margin                   = '10,10,10,10'  # Consistent margin all around for footer items
+    # Width                    = $script:UI.Sizes.Input.FooterWidth
 }
 
 # ------------------------------
@@ -960,7 +975,7 @@ function RunSelectedItems {
                     # For winget commands, capture both output and check exit code
                     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
                     $processInfo.FileName = "powershell.exe"
-                    $processInfo.Arguments = "-Command `"$command`""
+                    $processInfo.Arguments = "-Command `"$command`"" 
                     $processInfo.RedirectStandardOutput = $true
                     $processInfo.RedirectStandardError = $true
                     $processInfo.UseShellExecute = $false
@@ -1185,20 +1200,11 @@ $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDr
 
 # Create padding spacer between search area and consent checkbox
 $PaddingSpacerPanel = New-Object System.Windows.Forms.Panel -Property @{
-    Width = 15
     Dock  = 'Right'
-    # BackColor = $script:UI.Colors.Text  # Match dark theme
+    Width = 10  # Reduced from 15 to 10 for better alignment
 }
 
 $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
-    Text      = "HELP?"
-    Width     = $script:UI.Sizes.Input.FooterWidth
-    Height    = $script:UI.Sizes.Input.Height
-    Dock      = 'Right'
-    Font      = $script:UI.Fonts.Default
-    ForeColor = $script:UI.Colors.Text
-    TextAlign = 'MiddleCenter'
-    AutoSize  = $true
     Add_Click = {
         # Singleton pattern: Check if Help window already exists
         if ($script:HelpForm -and -not $script:HelpForm.IsDisposed) {
@@ -1209,16 +1215,16 @@ $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
         }        
         # Create Help Window
         $script:HelpForm = New-Object System.Windows.Forms.Form -Property @{
-            Text           = "HELP - Gray WinUtil"
-            Size           = New-Object System.Drawing.Size(350, 350)
-            Font           = $script:UI.Fonts.Default
+            Add_FormClosed = { $script:HelpForm = $null }  # Clear reference when closed
+            Add_Shown      = { $script:HelpForm.Activate() }
             BackColor      = $script:UI.Colors.Background
-            StartPosition  = "CenterParent"
+            Font           = $script:UI.Fonts.Default
             MaximizeBox    = $false
             MinimizeBox    = $false
-            Padding        = '10,10,10,10'
-            Add_Shown      = { $script:HelpForm.Activate() }
-            Add_FormClosed = { $script:HelpForm = $null }  # Clear reference when closed
+            Padding        = $script:UI.Padding.Help
+            Size           = New-Object System.Drawing.Size(350, 350)
+            StartPosition  = "CenterParent"
+            Text           = "HELP - Gray WinUtil"
         }         
         $HelpPanel = New-Object System.Windows.Forms.Panel -Property @{
             Dock       = 'Fill'
@@ -1324,14 +1330,6 @@ $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
 }
 
 $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
-    Text      = "UPDATES"
-    Width     = $script:UI.Sizes.Input.FooterWidth
-    Height    = $script:UI.Sizes.Input.Height
-    Dock      = 'Right'
-    Font      = $script:UI.Fonts.Default
-    ForeColor = $script:UI.Colors.Text
-    TextAlign = 'MiddleCenter'
-    AutoSize  = $true
     Add_Click = {
         # Singleton pattern: Check if Updates window already exists
         if ($script:UpdatesForm -and -not $script:UpdatesForm.IsDisposed) {
@@ -1354,35 +1352,35 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
 
         # Create UpdatesForm matching HelpForm design
         $script:UpdatesForm = New-Object System.Windows.Forms.Form -Property @{
-            Text           = "Updates - Gray WinUtil"
-            Size           = New-Object System.Drawing.Size(350, 350)
-            Font           = $script:UI.Fonts.Default
+            Add_FormClosed = { $script:UpdatesForm = $null }  # Clear reference when closed
+            Add_Shown      = { $script:UpdatesForm.Activate() }
             BackColor      = $script:UI.Colors.Background
-            StartPosition  = "CenterParent"
+            Font           = $script:UI.Fonts.Default
             MaximizeBox    = $false
             MinimizeBox    = $false
-            Padding        = '10,10,10,10'
-            Add_Shown      = { $script:UpdatesForm.Activate() }
-            Add_FormClosed = { $script:UpdatesForm = $null }  # Clear reference when closed
+            Padding        = $script:UI.Padding.Help
+            Size           = New-Object System.Drawing.Size(350, 350)
+            StartPosition  = "CenterParent"
+            Text           = "Updates - Gray WinUtil"
         }        
 
         # Main panel to hold ListView
         $UpdatesPanel = New-Object System.Windows.Forms.Panel -Property @{
             Dock    = 'Fill'
-            Padding = '15,15,15,15'  # Add padding around the Updates panel
+            Padding = $script:UI.Padding.Updates
         }        
         # Updates ListView with Details view (no checkboxes)
         $UpdatesListView = New-Object System.Windows.Forms.ListView -Property @{
-            Dock             = 'Fill'
-            View             = 'Details'
-            CheckBoxes       = $false
-            Font             = $script:UI.Fonts.Default
             BackColor        = $script:UI.Colors.Background
-            ForeColor        = $script:UI.Colors.Text
             BorderStyle      = 'None'
+            CheckBoxes       = $false
+            Dock             = 'Fill'
+            Font             = $script:UI.Fonts.Default
+            ForeColor        = $script:UI.Colors.Text
             FullRowSelect    = $true
             MultiSelect      = $false
             ShowItemToolTips = $true
+            View             = 'Details'
         }
 
         # Add columns: Updates, Status, Size
@@ -1444,54 +1442,44 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
 }
 
 # Create button panel for reorder controls and completion messages
-$script:ButtonPanel = New-Object System.Windows.Forms.Panel -Property @{
-    Height = 30  # Increased height to accommodate spacer panel
+$script:StatusPanel = New-Object System.Windows.Forms.Panel -Property @{
     Dock   = 'Top'
-    # BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    Font   = $script:UI.Fonts.Small
+    Height = $script:UI.Sizes.Status.Height
 }
-$script:ControlPanel = New-Object System.Windows.Forms.Panel -Property @{
-    Height  = 35  # Increased from 30 to 35 to accommodate 8pt font
+$script:ToolBarPanel = New-Object System.Windows.Forms.Panel -Property @{
+    # BorderStyle = 'FixedSingle'
     Dock    = 'Top'
-    # BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    Padding = '10,5,10,5'  # Add padding for consistent spacing
+    Font    = $script:UI.Fonts.Default
+    Height  = $script:UI.Sizes.ToolBar.Height
+    Padding = $script:UI.Padding.ToolBar
 }
 $script:ScriptsPanel = New-Object System.Windows.Forms.Panel -Property @{
     Dock    = 'Fill'
-    # BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
-    Padding = '10,5,10,5'  # Add padding for consistent spacing
+    Padding = '0,0,0,0'  # Consistent padding all around for scripts area
 }
     
 # Create spacer panel and dock to top of button panel
 $script:SpacerPanel = New-Object System.Windows.Forms.Panel -Property $SpacerPanelProps
-$script:ButtonPanel.Controls.Add($script:SpacerPanel)
+$script:StatusPanel.Controls.Add($script:SpacerPanel)
 
 # Create status panel to hold the status label and buttons
-$script:StatusPanel = New-Object System.Windows.Forms.Panel -Property @{
-    Height = 25
+$script:StatusContentPanel = New-Object System.Windows.Forms.Panel -Property @{
     Dock   = 'Fill'  # Fill remaining space in button panel
-    # BackColor = $script:UI.Colors.Text
+    Height = 25
 }
-    
+
 # Create single status label for all messages
 $script:StatusLabel = New-Object System.Windows.Forms.Label -Property @{
-    Text     = "Ready! Welcome to Gray WInUtil App. Select and runs cripts from below."
-    Dock     = 'Left'
     AutoSize = $true
-    # ForeColor = [System.Drawing.Color]::White
-    Padding  = '5,5,5,5'
+    Dock     = 'Left'
+    Padding  = $script:UI.Padding.Status
+    Text     = "Ready! Welcome to Gray WinUtil App. Select and run  scripts from below."
     Visible  = $true
 }
-    
+
 # Create action button (hidden by default)
 $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
-    Text      = "≡ Logs"
-    Width     = 70
-    Height    = 22
-    Dock      = 'Right'
-    Font      = $script:UI.Fonts.Default
-    FlatStyle = 'Flat'
-    # ForeColor = [System.Drawing.Color]::White
-    Visible   = $false
     Add_Click = {
         # Open the most recent log file
         if ($script:CurrentLogFile -and (Test-Path $script:CurrentLogFile)) {
@@ -1507,21 +1495,17 @@ $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
             [System.Windows.Forms.MessageBox]::Show("No log file found.", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
     }
+    Dock      = 'Right'
+    FlatStyle = 'Flat'
+    Font      = $script:UI.Fonts.Small
+    Height    = 22
+    Text      = "≡ Logs"
+    Visible   = $false
+    Width     = 70
 }
-    
-# Remove button border
-$script:ActionButton.FlatAppearance.BorderSize = 0
-    
+
 # Create retry button (hidden by default)
 $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
-    Text      = "↻ Retry"
-    Width     = 70
-    Height    = 22
-    Dock      = 'Right'
-    Font      = $script:UI.Fonts.Default
-    FlatStyle = 'Flat'
-    # ForeColor = [System.Drawing.Color]::White
-    Visible   = $false
     Add_Click = {
         # Store the failed/cancelled items to retry
         $script:RetryItems = @()
@@ -1538,25 +1522,39 @@ $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
             RunSelectedItems -RetryMode $true
         }
     }
+    Dock      = 'Right'
+    FlatStyle = 'Flat'
+    Font      = $script:UI.Fonts.Small
+    Height    = 22
+    Text      = "↻ Retry"
+    Visible   = $false
+    Width     = 70
 }
+    
+# Remove button border
+$script:ActionButton.FlatAppearance.BorderSize = 0
     
 # Remove retry button border
 $script:RetryButton.FlatAppearance.BorderSize = 0
 
 # Add controls to status panel first
-$script:StatusPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
+$script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
     
 # Add spacer panel first (top), then status panel (fill) to button panel
-$script:ButtonPanel.Controls.AddRange(@($script:SpacerPanel, $script:StatusPanel))
-$script:ControlPanel.Controls.AddRange(@($SearchBox, $SelectAllSwitch, $PaddingSpacerPanel, $ConsentCheckbox, $InvokeButton))
+$script:StatusPanel.Controls.AddRange(@($script:SpacerPanel, $script:StatusContentPanel))
+$p10left = New-Object System.Windows.Forms.Panel -Property @{
+    Dock  = 'Left'
+    Width = 2  # Reduced from 15 to 10 for better alignment
+}
+$script:ToolBarPanel.Controls.AddRange(@($SearchBox, $p10left, $ProfileDropdown, $SelectAllSwitch, $PaddingSpacerPanel, $InvokeButton, $ConsentCheckbox))
 
-$HeaderPanel.Controls.AddRange(@($script:ButtonPanel))
+# $HeaderPanel.Controls.AddRange(@($script:StatusPanel))
 $ContentPanel.Controls.Add($script:ScriptsPanel)
-$ContentPanel.Controls.Add($script:ControlPanel)
+$ContentPanel.Controls.Add($script:ToolBarPanel)
 
-$FooterPanel.Controls.AddRange(@($ProfileDropdown, $HelpLabel, $UpdatesLabel))
+$FooterPanel.Controls.AddRange(@($script:StatusPanel))
 # Remove SpacerPanel from main form controls
-$Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
+$Form.Controls.AddRange(@($HeaderPanel, $FooterPanel, $ContentPanel))
 
 # Initialize file system
 if (-not (Test-Path $script:DataDirectory)) {
