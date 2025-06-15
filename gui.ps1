@@ -264,10 +264,11 @@ $FooterPanelProps = @{
 
 # Spacer Panel between Header and Content
 $SpacerPanelProps = @{
-    Height    = 5
-    Dock      = 'Top'
-    BackColor = $script:UI.Colors.Background
-    Padding   = '15,0,15,0'
+    Height      = 5
+    Dock        = 'Top'
+    BackColor   = $script:UI.Colors.Background
+    BorderStyle = 'FixedSingle'
+    Padding     = '0,0,0,0'  # Remove padding so progress bar fills entire panel
 }
 
 # List View and Split Container
@@ -738,8 +739,19 @@ function CreateGroupedListView {
     
     # Create button panel for reorder controls and completion messages
     $script:ButtonPanel = New-Object System.Windows.Forms.Panel -Property @{
-        Height    = 25
+        Height    = 30  # Increased height to accommodate spacer panel
         Dock      = 'Top'
+        BackColor = $script:UI.Colors.Text
+    }
+    
+    # Create spacer panel and dock to top of button panel
+    $script:SpacerPanel = New-Object System.Windows.Forms.Panel -Property $SpacerPanelProps
+    $script:ButtonPanel.Controls.Add($script:SpacerPanel)
+
+    # Create status panel to hold the status label and buttons
+    $script:StatusPanel = New-Object System.Windows.Forms.Panel -Property @{
+        Height    = 25
+        Dock      = 'Fill'  # Fill remaining space in button panel
         BackColor = $script:UI.Colors.Text
     }
     
@@ -748,7 +760,6 @@ function CreateGroupedListView {
         Text      = "Drag & drop to reorder items"
         Dock      = 'Left'
         AutoSize  = $true
-        Font      = $script:UI.Fonts.Small
         ForeColor = [System.Drawing.Color]::White
         Padding   = '5,5,5,5'
         Visible   = $true
@@ -792,7 +803,6 @@ function CreateGroupedListView {
         Dock      = 'Right'
         Font      = $script:UI.Fonts.Default
         FlatStyle = 'Flat'
-        # BackColor = [System.Drawing.Color]::FromArgb(255, 152, 0)  # Orange for retry
         ForeColor = [System.Drawing.Color]::White
         Visible   = $false
         Add_Click = {
@@ -816,8 +826,11 @@ function CreateGroupedListView {
     # Remove retry button border
     $script:RetryButton.FlatAppearance.BorderSize = 0
 
-    # Add controls to button panel - only the single status label
-    $script:ButtonPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
+    # Add controls to status panel first
+    $script:StatusPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
+    
+    # Add spacer panel first (top), then status panel (fill) to button panel
+    $script:ButtonPanel.Controls.AddRange(@($script:SpacerPanel, $script:StatusPanel))
 
     # Create the main ListView with basic properties
     $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
@@ -908,7 +921,7 @@ function RunSelectedItems {
     if ($script:ActionButton) { $script:ActionButton.Visible = $false }
     if ($script:RetryButton) { $script:RetryButton.Visible = $false }
 
-    # Create and add progress bar to spacer panel
+    # Create and add progress bar to spacer panel (now inside button panel)
     $ProgressBar = New-Object System.Windows.Forms.ProgressBar -Property @{
         Dock      = 'Fill'
         Style     = 'Continuous'
@@ -917,7 +930,7 @@ function RunSelectedItems {
         Value     = 0
         ForeColor = $script:UI.Colors.Accent
     }
-    $SpacerPanel.Controls.Add($ProgressBar)
+    $script:SpacerPanel.Controls.Add($ProgressBar)
 
     try {
         # Get selected items
@@ -926,9 +939,9 @@ function RunSelectedItems {
             $selectedItems = $script:RetryItems
             # Reset the items for execution
             foreach ($item in $selectedItems) {
-                $item.BackColor = [System.Drawing.Color]::LightGray
-                $item.ForeColor = [System.Drawing.Color]::DarkGray
-                $item.SubItems[1].Text = "0ms"
+                $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  # Light blue for queued
+                $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     # Dark blue text
+                $item.SubItems[1].Text = "Queued"
             }
         }
         else {
@@ -952,28 +965,26 @@ function RunSelectedItems {
             $script:StatusLabel.Visible = $true
         }
 
-        # Prepare ListView for execution mode (only if not retry mode)
-        if (-not $RetryMode) {
-            foreach ($listView in $script:ListViews.Values) {
-                $listView.CheckBoxes = $false  # Disable checkboxes during execution
-                
-                # Hide non-selected items and style selected items for queue
-                $itemsToRemove = @()
-                foreach ($item in $listView.Items) {
-                    if ($selectedItems -contains $item) {
-                        # Queue item - gray color and reset time to 0ms
-                        $item.BackColor = [System.Drawing.Color]::LightGray
-                        $item.ForeColor = [System.Drawing.Color]::DarkGray
-                        $item.SubItems[1].Text = "0ms"  # Reset TIME column to 0ms for queued items
-                    }
-                    else {
-                        # Mark non-selected items for removal
-                        $itemsToRemove += $item
-                    }
+        # Prepare ListView for execution mode - keep checkboxes and all items visible
+        foreach ($listView in $script:ListViews.Values) {
+            # Keep checkboxes enabled during execution
+            # $listView.CheckBoxes = $true  # Keep checkboxes visible
+            
+            # Style all items based on selection status
+            foreach ($item in $listView.Items) {
+                if ($selectedItems -contains $item) {
+                    # Selected items - bright and ready for execution
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  # Light blue background
+                    $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     # Dark blue text
+                    $item.Font = $script:UI.Fonts.Bold                                 # Bold font
+                    $item.SubItems[1].Text = "Queued"                                  # Show as queued
                 }
-                # Remove non-selected items
-                foreach ($item in $itemsToRemove) {
-                    $item.Remove()
+                else {
+                    # Non-selected items - muted but visible
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 250)  # Very light gray
+                    $item.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)  # Muted gray text
+                    $item.Font = $script:UI.Fonts.Default                              # Normal font
+                    # Keep original time text for non-selected items
                 }
             }
         }
@@ -1215,9 +1226,9 @@ function RunSelectedItems {
         }
     }
     finally {
-        # Remove progress bar from spacer panel
-        $SpacerPanel.Controls.Remove($ProgressBar)
-        $ProgressBar.Dispose()
+        # Do NOT remove progress bar - keep it visible
+        # $script:SpacerPanel.Controls.Remove($ProgressBar)
+        # $ProgressBar.Dispose()
         
         # Re-enable the invoke button and reset controls
         $InvokeButton.Enabled = $ConsentCheckbox.Checked
@@ -1245,10 +1256,7 @@ if ([Environment]::OSVersion.Version.Major -ge 6) {
 # ------------------------------
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
-$SpacerPanel = New-Object System.Windows.Forms.Panel -Property $SpacerPanelProps
-
-# Status Header Panel - Remove this entire section
-# Remove $StatusHeaderPanel, $StatusTitleLabel, $StatusProgressBarContainer, $StatusProgressBar, $StatusCounterLabel
+# Remove SpacerPanel from main form - it's now created inside CreateGroupedListView
 
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
 $FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
@@ -1520,7 +1528,8 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
 }
 $HeaderPanel.Controls.AddRange(@($SearchBox, $SelectAllSwitch, $PaddingSpacerPanel, $ConsentCheckbox, $InvokeButton))
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $HelpLabel, $UpdatesLabel))
-$Form.Controls.AddRange(@($SpacerPanel, $HeaderPanel, $ContentPanel, $FooterPanel))
+# Remove SpacerPanel from main form controls
+$Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
 
 # Initialize file system
 if (-not (Test-Path $script:DataDirectory)) {
