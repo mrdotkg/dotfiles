@@ -124,14 +124,14 @@ $script:UI = @{
             Height = 700
         }
         Header  = @{
-            Height = 45
+            Height = 75
         }
         Footer  = @{
             Height = 50
         }
         Input   = @{
             Width       = 100
-            Height      = 30
+            Height      = 25
             FooterWidth = 150        
         }
         Columns = @{
@@ -241,9 +241,9 @@ $FormProps = @{
 
 # Panels
 $HeaderPanelProps = @{
-    Height    = $script:UI.Sizes.Header.Height
+    Height    = $script:UI.Sizes.Header.Height # Increased height for better alignment
     Dock      = 'Top'
-    Padding   = '20,8,20,8'  # More balanced padding for better alignment
+    Padding   = '10,8,10,3'  # More balanced padding for better alignment
     BackColor = $script:UI.Colors.Background
 }
 
@@ -264,11 +264,10 @@ $FooterPanelProps = @{
 
 # Spacer Panel between Header and Content
 $SpacerPanelProps = @{
-    Height      = 5
-    Dock        = 'Top'
-    BackColor   = $script:UI.Colors.Background
-    BorderStyle = 'FixedSingle'
-    Padding     = '0,0,0,0'  # Remove padding so progress bar fills entire panel
+    Height    = 5
+    Dock      = 'Top'
+    BackColor = $script:UI.Colors.Background
+    Padding   = '0,0,0,0'  # Remove padding so progress bar fills entire panel
 }
 
 # List View and Split Container
@@ -280,7 +279,7 @@ $ListViewProps = @{
     GridLines          = $true
     FullRowSelect      = $true
     MultiSelect        = $false  # Changed to false for better reordering experience
-    BackColor          = $script:UI.Colors.Background
+    # BackColor          = $script:UI.Colors.Background
     ShowItemToolTips   = $true
     AllowColumnReorder = $true
     AllowDrop          = $true   # Enable drag-drop
@@ -356,15 +355,19 @@ $ListViewProps = @{
     }
 }
 
-# Control Properties
+# Control Properties - Updated for dark theme
 $SelectAllSwitchProps = @{
-    Text      = "SELECT ALL"
+    Text      = "All Scripts"
     Width     = $script:UI.Sizes.Input.Width
-    Height    = $script:UI.Sizes.Input.Height
+    Height    = 16  # Match other controls
     AutoSize  = $true
     Dock      = 'Left'
-    Font      = $script:UI.Fonts.Default
+    Font      = $Script:UI.Fonts.Default  # Smaller font
     Tag       = $false
+    # ForeColor = [System.Drawing.Color]::White  # White text for dark theme
+    # BackColor = $script:UI.Colors.Text  # Dark background
+    # FlatStyle = 'Flat'  # Match button style
+    Margin    = '5,4,5,4'  # Match other controls
     Add_Click = {
         $isChecked = -not $SelectAllSwitch.Tag
         $SelectAllSwitch.Tag = $isChecked
@@ -381,15 +384,25 @@ $SearchBoxProps = @{
     Height          = $script:UI.Sizes.Input.Height
     Dock            = 'Fill'
     Font            = $script:UI.Fonts.Default
-    ForeColor       = $script:UI.Colors.Disabled  # Set initial placeholder color to be visible
+    # ForeColor       = $script:UI.Colors.Text
     Text            = " Type to filter scripts..."
     TextAlign       = 'Left'
     Multiline       = $false
-    BorderStyle     = 'FixedSingle'  # Add border for better visual definition
-    BackColor       = [System.Drawing.Color]::White  # Use white background for better contrast
-    Margin          = '3,3,3,3'  # Add margin for better spacing
-    Add_Enter       = { if ($this.Text -eq " Type to filter scripts...") { $this.Text = ""; $this.ForeColor = $script:UI.Colors.Text } }
-    Add_Leave       = { if ($this.Text -eq "") { $this.Text = " Type to filter scripts..."; $this.ForeColor = $script:UI.Colors.Disabled } }
+    BorderStyle     = 'FixedSingle'
+    BackColor       = $script:UI.Colors.Background
+    Margin          = '5,6,5,2'  # Adjusted: increased top margin to 6, reduced bottom to 2
+    Add_Enter       = { 
+        if ($this.Text -eq " Type to filter scripts...") { 
+            $this.Text = ""
+            # $this.ForeColor = [System.Drawing.Color]::White 
+        } 
+    }
+    Add_Leave       = { 
+        if ($this.Text -eq "") { 
+            $this.Text = " Type to filter scripts..."
+            # $this.ForeColor = $script:UI.Colors.Text
+        } 
+    }
     Add_TextChanged = {
         $searchText = $this.Text.Trim()
         if ($searchText -eq "Type to filter scripts...") { return }
@@ -420,16 +433,16 @@ $SearchBoxProps = @{
 
 $InvokeButtonProps = @{
     Width     = $script:UI.Sizes.Input.Width
-    Height    = 25
+    Height    = 16  # Match SearchBox height
     AutoSize  = $false
-        
-    Text      = "▶ Run"  # Added play icon
+    Text      = "▶ Run"
     Dock      = 'Right'
-    Enabled   = $false  # Initially disabled
-    Font      = $script:UI.Fonts.Default  # Changed from Bold to Default
+    Enabled   = $false
+    Font      = $script:UI.Fonts.Default  # Smaller font
     FlatStyle = 'Flat'
-    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)  # Keep green color
+    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
     ForeColor = [System.Drawing.Color]::White
+    Margin    = '5,4,5,4'  # Match SearchBox margin
         
     Add_Click = { 
         if ($ConsentCheckbox.Checked) {
@@ -442,13 +455,17 @@ $InvokeButtonProps = @{
 }
 
 $ConsentCheckboxProps = @{
-    Text               = "ALLOW"
+    Text               = "Admin Consent"
     Width              = $script:UI.Sizes.Input.Width
-    Height             = $script:UI.Sizes.Input.Height
+    Height             = 16  # Match other controls
     AutoSize           = $true
     Dock               = 'Right'
-    Font               = $script:UI.Fonts.Default
+    Font               = $script:UI.Fonts.Default  # Smaller font
     Checked            = $false
+    # ForeColor          = [System.Drawing.Color]::White  # White text for dark theme
+    # BackColor          = $script:UI.Colors.Text  # Dark background
+    # FlatStyle          = 'Flat'  # Match button style
+    Margin             = '5,4,5,4'  # Match other controls
     Add_CheckedChanged = {
         # Enable/disable buttons based on consent and selection
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
@@ -737,101 +754,6 @@ function CreateGroupedListView {
         Dock = 'Fill'
     }
     
-    # Create button panel for reorder controls and completion messages
-    $script:ButtonPanel = New-Object System.Windows.Forms.Panel -Property @{
-        Height    = 30  # Increased height to accommodate spacer panel
-        Dock      = 'Top'
-        BackColor = $script:UI.Colors.Text
-    }
-    
-    # Create spacer panel and dock to top of button panel
-    $script:SpacerPanel = New-Object System.Windows.Forms.Panel -Property $SpacerPanelProps
-    $script:ButtonPanel.Controls.Add($script:SpacerPanel)
-
-    # Create status panel to hold the status label and buttons
-    $script:StatusPanel = New-Object System.Windows.Forms.Panel -Property @{
-        Height    = 25
-        Dock      = 'Fill'  # Fill remaining space in button panel
-        BackColor = $script:UI.Colors.Text
-    }
-    
-    # Create single status label for all messages
-    $script:StatusLabel = New-Object System.Windows.Forms.Label -Property @{
-        Text      = "Drag & drop to reorder items"
-        Dock      = 'Left'
-        AutoSize  = $true
-        ForeColor = [System.Drawing.Color]::White
-        Padding   = '5,5,5,5'
-        Visible   = $true
-    }
-    
-    # Create action button (hidden by default)
-    $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
-        Text      = "≡ Logs"
-        Width     = 70
-        Height    = 22
-        Dock      = 'Right'
-        Font      = $script:UI.Fonts.Default
-        FlatStyle = 'Flat'
-        ForeColor = [System.Drawing.Color]::White
-        Visible   = $false
-        Add_Click = {
-            # Open the most recent log file
-            if ($script:CurrentLogFile -and (Test-Path $script:CurrentLogFile)) {
-                try {
-                    Start-Process -FilePath "notepad.exe" -ArgumentList $script:CurrentLogFile
-                }
-                catch {
-                    # Fallback to default text editor
-                    Start-Process -FilePath $script:CurrentLogFile
-                }
-            }
-            else {
-                [System.Windows.Forms.MessageBox]::Show("No log file found.", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-            }
-        }
-    }
-    
-    # Remove button border
-    $script:ActionButton.FlatAppearance.BorderSize = 0
-    
-    # Create retry button (hidden by default)
-    $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
-        Text      = "↻ Retry"
-        Width     = 70
-        Height    = 22
-        Dock      = 'Right'
-        Font      = $script:UI.Fonts.Default
-        FlatStyle = 'Flat'
-        ForeColor = [System.Drawing.Color]::White
-        Visible   = $false
-        Add_Click = {
-            # Store the failed/cancelled items to retry
-            $script:RetryItems = @()
-            foreach ($listView in $script:ListViews.Values) {
-                foreach ($item in $listView.Items) {
-                    if ($item.SubItems[1].Text -match "(Failed|Cancelled)") {
-                        $script:RetryItems += $item
-                    }
-                }
-            }
-            
-            # If we have items to retry, run them
-            if ($script:RetryItems.Count -gt 0) {
-                RunSelectedItems -RetryMode $true
-            }
-        }
-    }
-    
-    # Remove retry button border
-    $script:RetryButton.FlatAppearance.BorderSize = 0
-
-    # Add controls to status panel first
-    $script:StatusPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
-    
-    # Add spacer panel first (top), then status panel (fill) to button panel
-    $script:ButtonPanel.Controls.AddRange(@($script:SpacerPanel, $script:StatusPanel))
-
     # Create the main ListView with basic properties
     $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
     # Add columns
@@ -892,8 +814,8 @@ function CreateGroupedListView {
     $script:ListViews["MainList"] = $LV
     
     # Add ListView and button panel to container
-    $ContainerPanel.Controls.AddRange(@($LV, $script:ButtonPanel))
-    
+    $ContainerPanel.Controls.Add($LV)
+
     # Add container to the parent panel
     $parentPanel.Controls.Add($ContainerPanel)
 }
@@ -1238,7 +1160,7 @@ function RunSelectedItems {
         
         # Reset status label to default message if execution finished
         if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
-            $script:StatusLabel.Text = "Drag & drop to reorder items"
+            $script:StatusLabel.Text = "Ready! Welcome to Gray WInUtil App. Select and run scripts from below."
         }
     }
 }
@@ -1272,6 +1194,7 @@ $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDr
 $PaddingSpacerPanel = New-Object System.Windows.Forms.Panel -Property @{
     Width = 15
     Dock  = 'Right'
+    # BackColor = $script:UI.Colors.Text  # Match dark theme
 }
 
 $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
@@ -1526,7 +1449,110 @@ $UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
         $script:UpdatesForm.Show()  # Use Show() instead of ShowDialog() for non-blocking
     }
 }
-$HeaderPanel.Controls.AddRange(@($SearchBox, $SelectAllSwitch, $PaddingSpacerPanel, $ConsentCheckbox, $InvokeButton))
+
+# Create button panel for reorder controls and completion messages
+$script:ButtonPanel = New-Object System.Windows.Forms.Panel -Property @{
+    Height = 30  # Increased height to accommodate spacer panel
+    Dock   = 'Top'
+    # BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+}
+$script:ControlPanel = New-Object System.Windows.Forms.Panel -Property @{
+    Height  = 35  # Increased from 30 to 35 to accommodate 8pt font
+    Dock    = 'Bottom'
+    # BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    Padding = '10,5,10,5'  # Add padding for consistent spacing
+}
+    
+# Create spacer panel and dock to top of button panel
+$script:SpacerPanel = New-Object System.Windows.Forms.Panel -Property $SpacerPanelProps
+$script:ButtonPanel.Controls.Add($script:SpacerPanel)
+
+# Create status panel to hold the status label and buttons
+$script:StatusPanel = New-Object System.Windows.Forms.Panel -Property @{
+    Height = 25
+    Dock   = 'Fill'  # Fill remaining space in button panel
+    # BackColor = $script:UI.Colors.Text
+}
+    
+# Create single status label for all messages
+$script:StatusLabel = New-Object System.Windows.Forms.Label -Property @{
+    Text     = "Ready! Welcome to Gray WInUtil App. Select and runs cripts from below."
+    Dock     = 'Left'
+    AutoSize = $true
+    # ForeColor = [System.Drawing.Color]::White
+    Padding  = '5,5,5,5'
+    Visible  = $true
+}
+    
+# Create action button (hidden by default)
+$script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
+    Text      = "≡ Logs"
+    Width     = 70
+    Height    = 22
+    Dock      = 'Right'
+    Font      = $script:UI.Fonts.Default
+    FlatStyle = 'Flat'
+    # ForeColor = [System.Drawing.Color]::White
+    Visible   = $false
+    Add_Click = {
+        # Open the most recent log file
+        if ($script:CurrentLogFile -and (Test-Path $script:CurrentLogFile)) {
+            try {
+                Start-Process -FilePath "notepad.exe" -ArgumentList $script:CurrentLogFile
+            }
+            catch {
+                # Fallback to default text editor
+                Start-Process -FilePath $script:CurrentLogFile
+            }
+        }
+        else {
+            [System.Windows.Forms.MessageBox]::Show("No log file found.", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    }
+}
+    
+# Remove button border
+$script:ActionButton.FlatAppearance.BorderSize = 0
+    
+# Create retry button (hidden by default)
+$script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
+    Text      = "↻ Retry"
+    Width     = 70
+    Height    = 22
+    Dock      = 'Right'
+    Font      = $script:UI.Fonts.Default
+    FlatStyle = 'Flat'
+    # ForeColor = [System.Drawing.Color]::White
+    Visible   = $false
+    Add_Click = {
+        # Store the failed/cancelled items to retry
+        $script:RetryItems = @()
+        foreach ($listView in $script:ListViews.Values) {
+            foreach ($item in $listView.Items) {
+                if ($item.SubItems[1].Text -match "(Failed|Cancelled)") {
+                    $script:RetryItems += $item
+                }
+            }
+        }
+            
+        # If we have items to retry, run them
+        if ($script:RetryItems.Count -gt 0) {
+            RunSelectedItems -RetryMode $true
+        }
+    }
+}
+    
+# Remove retry button border
+$script:RetryButton.FlatAppearance.BorderSize = 0
+
+# Add controls to status panel first
+$script:StatusPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
+    
+# Add spacer panel first (top), then status panel (fill) to button panel
+$script:ButtonPanel.Controls.AddRange(@($script:SpacerPanel, $script:StatusPanel))
+$script:ControlPanel.Controls.AddRange(@($SearchBox, $SelectAllSwitch, $PaddingSpacerPanel, $ConsentCheckbox, $InvokeButton))
+
+$HeaderPanel.Controls.AddRange(@($script:ButtonPanel, $script:ControlPanel))
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $HelpLabel, $UpdatesLabel))
 # Remove SpacerPanel from main form controls
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
