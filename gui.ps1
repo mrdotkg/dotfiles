@@ -124,7 +124,7 @@ $script:UI = @{
             Height = 700
         }
         Header  = @{
-            Height = 75
+            Height = 40
         }
         Footer  = @{
             Height = 50
@@ -243,13 +243,14 @@ $FormProps = @{
 $HeaderPanelProps = @{
     Height    = $script:UI.Sizes.Header.Height # Increased height for better alignment
     Dock      = 'Top'
+    # BorderStyle = "FixedSingle"
     Padding   = '10,8,10,3'  # More balanced padding for better alignment
     BackColor = $script:UI.Colors.Background
 }
 
 $ContentPanelProps = @{
     Dock      = 'Fill'
-    Padding   = "15,$($script:UI.Sizes.Header.Height + 5),15,15"
+    Padding   = "0,$($script:UI.Sizes.Header.Height + 5),0,15"
     BackColor = $script:UI.Colors.Background
 }
 
@@ -285,7 +286,7 @@ $ListViewProps = @{
     AllowDrop          = $true   # Enable drag-drop
     Sorting            = [System.Windows.Forms.SortOrder]::None
     Forecolor          = $script:UI.Colors.Text
-    BorderStyle        = 'FixedSingle'
+    BorderStyle        = 'None'
     Margin             = '5,5,5,5'
     Add_ItemChecked    = {
         $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
@@ -552,7 +553,7 @@ $ProfileDropdownProps = @{
         $scriptsDict = Read-Profile -Path $selectedProfilePath
         if ($scriptsDict.Count -gt 0) {
             # Create or update the ListView with grouped scripts
-            CreateGroupedListView -parentPanel $ContentPanel -groupedScripts $scriptsDict
+            CreateGroupedListView -parentPanel $ScriptsPanel -groupedScripts $scriptsDict
         }
     }
 }
@@ -883,7 +884,6 @@ function RunSelectedItems {
         # Show initial progress in button panel
         if ($script:StatusLabel) {
             $script:StatusLabel.Text = "Initializing execution..."
-            $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
             $script:StatusLabel.Visible = $true
         }
 
@@ -933,7 +933,6 @@ function RunSelectedItems {
             if ($script:StatusLabel) {
                 $progressText = "Executing ($($i + 1)/$($selectedItems.Count)): $name"
                 $script:StatusLabel.Text = $progressText
-                $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
             }
             
             [System.Windows.Forms.Application]::DoEvents()
@@ -1035,7 +1034,6 @@ function RunSelectedItems {
                     # Update status in button panel
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Cancelled ($($i + 1)/$($selectedItems.Count)): $name"
-                        $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
                     }
                 }
                 elseif ($executionFailed) {
@@ -1049,7 +1047,6 @@ function RunSelectedItems {
                     # Update status in button panel
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Failed ($($i + 1)/$($selectedItems.Count)): $name"
-                        $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
                     }
                 }
                 else {
@@ -1063,7 +1060,6 @@ function RunSelectedItems {
                     # Update status in button panel
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Completed ($($i + 1)/$($selectedItems.Count)): $name"
-                        $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
                     }
                 }
             }
@@ -1097,7 +1093,6 @@ function RunSelectedItems {
                     # Update status in button panel
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Cancelled ($($i + 1)/$($selectedItems.Count)): $name"
-                        $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
                     }
                 }
                 else {
@@ -1111,7 +1106,6 @@ function RunSelectedItems {
                     # Update status in button panel
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Failed ($($i + 1)/$($selectedItems.Count)): $name"
-                        $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
                     }
                 }
                 
@@ -1137,7 +1131,6 @@ function RunSelectedItems {
             $statusText += " (Total: $totalItems)"
             
             $script:StatusLabel.Text = $statusText
-            $script:StatusLabel.ForeColor = [System.Drawing.Color]::White
             $script:StatusLabel.Visible = $true
             $script:ActionButton.Visible = $true
 
@@ -1458,7 +1451,12 @@ $script:ButtonPanel = New-Object System.Windows.Forms.Panel -Property @{
 }
 $script:ControlPanel = New-Object System.Windows.Forms.Panel -Property @{
     Height  = 35  # Increased from 30 to 35 to accommodate 8pt font
-    Dock    = 'Bottom'
+    Dock    = 'Top'
+    # BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    Padding = '10,5,10,5'  # Add padding for consistent spacing
+}
+$script:ScriptsPanel = New-Object System.Windows.Forms.Panel -Property @{
+    Dock    = 'Fill'
     # BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
     Padding = '10,5,10,5'  # Add padding for consistent spacing
 }
@@ -1552,7 +1550,10 @@ $script:StatusPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton
 $script:ButtonPanel.Controls.AddRange(@($script:SpacerPanel, $script:StatusPanel))
 $script:ControlPanel.Controls.AddRange(@($SearchBox, $SelectAllSwitch, $PaddingSpacerPanel, $ConsentCheckbox, $InvokeButton))
 
-$HeaderPanel.Controls.AddRange(@($script:ButtonPanel, $script:ControlPanel))
+$HeaderPanel.Controls.AddRange(@($script:ButtonPanel))
+$ContentPanel.Controls.Add($script:ScriptsPanel)
+$ContentPanel.Controls.Add($script:ControlPanel)
+
 $FooterPanel.Controls.AddRange(@($ProfileDropdown, $HelpLabel, $UpdatesLabel))
 # Remove SpacerPanel from main form controls
 $Form.Controls.AddRange(@($HeaderPanel, $ContentPanel, $FooterPanel))
