@@ -116,6 +116,7 @@ $script:UI = @{
         Text       = [System.Drawing.Color]::Black
     }
     Fonts   = @{
+        Big     = [System.Drawing.Font]::new("Segoe UI", 15, [System.Drawing.FontStyle]::Bold)
         Bold    = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
         Default = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
         Small   = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
@@ -302,11 +303,16 @@ $ListViewProps = @{
         if ($draggedItem) {
             $targetIndex = $sender.InsertionMark.Index
             if ($targetIndex -ge 0) {
-                # Adjust target index based on AppearsAfterItem
-                if ($sender.InsertionMark.AppearsAfterItem) {
-                    $targetIndex++
-                }
-                Move-ListViewItem -ListView $sender -Item $draggedItem -TargetIndex $targetIndex
+                # Debug output for drag and drop
+                Write-Host "=== DRAG DROP DEBUG ===" -ForegroundColor Yellow
+                Write-Host "Dragged Item: '$($draggedItem.Text)' (Index: $($draggedItem.Index))" -ForegroundColor Cyan
+                Write-Host "Target Index: $targetIndex" -ForegroundColor Cyan
+                Write-Host "Appears After: $($sender.InsertionMark.AppearsAfterItem)" -ForegroundColor Cyan
+                Write-Host "ListView Groups Count: $($sender.Groups.Count)" -ForegroundColor Cyan
+                Write-Host "========================" -ForegroundColor Yellow
+                
+                # Use unified logic for all ListView types
+                Move-ListViewItem -ListView $sender -Item $draggedItem -TargetIndex $targetIndex -AppearsAfter $sender.InsertionMark.AppearsAfterItem
             }
         }
         # Clear the insertion mark
@@ -316,6 +322,9 @@ $ListViewProps = @{
         if ($_.Data.GetDataPresent([System.Windows.Forms.ListViewItem])) {
             $_.Effect = [System.Windows.Forms.DragDropEffects]::Move
         }
+        else {
+            $_.Effect = [System.Windows.Forms.DragDropEffects]::None
+        }
     }
     Add_DragLeave      = {
         # Clear insertion mark when drag leaves the control
@@ -323,30 +332,65 @@ $ListViewProps = @{
     }
     Add_DragOver       = {
         param($sender, $e)
-        $_.Effect = [System.Windows.Forms.DragDropEffects]::Move
-        
-        # Calculate the target index based on mouse position
-        $pt = $sender.PointToClient([System.Windows.Forms.Cursor]::Position)
-        $targetItem = $sender.GetItemAt($pt.X, $pt.Y)
-        
-        if ($targetItem) {
-            $targetIndex = $targetItem.Index
-            # Determine if we should insert before or after the target item
-            $itemBounds = $targetItem.Bounds
-            $midPoint = $itemBounds.Top + ($itemBounds.Height / 2)
-            if ($pt.Y -gt $midPoint) {
-                $targetIndex++
-                $sender.InsertionMark.AppearsAfterItem = $true
+        # Only allow move effect for ListViewItem data
+        if ($e.Data.GetDataPresent([System.Windows.Forms.ListViewItem])) {
+            $e.Effect = [System.Windows.Forms.DragDropEffects]::Move
+            
+            # Calculate the target index based on mouse position
+            $pt = $sender.PointToClient([System.Windows.Forms.Cursor]::Position)
+            $targetItem = $sender.GetItemAt($pt.X, $pt.Y)
+            
+            if ($targetItem) {
+                $targetIndex = $targetItem.Index
+                # Determine if we should insert before or after the target item
+                $itemBounds = $targetItem.Bounds
+                $midPoint = $itemBounds.Top + ($itemBounds.Height / 2)
+                if ($pt.Y -gt $midPoint) {
+                    # Insert after this item
+                    $sender.InsertionMark.Index = $targetIndex
+                    $sender.InsertionMark.AppearsAfterItem = $true
+                    
+                    # Debug output for drag over
+                    Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT AFTER" -ForegroundColor Green
+                }
+                else {
+                    # Insert before this item
+                    $sender.InsertionMark.Index = $targetIndex
+                    $sender.InsertionMark.AppearsAfterItem = $false
+                    
+                    # Debug output for drag over
+                    Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT BEFORE" -ForegroundColor Green
+                }
             }
             else {
-                $sender.InsertionMark.AppearsAfterItem = $false
+                # If no item at cursor, determine insertion point based on position
+                if ($sender.Items.Count -eq 0) {
+                    # Empty list
+                    $sender.InsertionMark.Index = 0
+                    $sender.InsertionMark.AppearsAfterItem = $false
+                    Write-Host "DragOver: Empty list - INSERT AT INDEX 0" -ForegroundColor Magenta
+                }
+                else {
+                    # Check if we're at the end of the list
+                    $lastItem = $sender.Items[$sender.Items.Count - 1]
+                    if ($pt.Y -gt $lastItem.Bounds.Bottom) {
+                        # Insert at end
+                        $sender.InsertionMark.Index = $sender.Items.Count - 1
+                        $sender.InsertionMark.AppearsAfterItem = $true
+                        Write-Host "DragOver: END OF LIST - INSERT AFTER LAST ITEM (Index: $($sender.Items.Count - 1))" -ForegroundColor Magenta
+                    }
+                    else {
+                        # Insert at beginning
+                        $sender.InsertionMark.Index = 0
+                        $sender.InsertionMark.AppearsAfterItem = $false
+                        Write-Host "DragOver: BEGINNING OF LIST - INSERT BEFORE FIRST ITEM" -ForegroundColor Magenta
+                    }
+                }
             }
-            $sender.InsertionMark.Index = $targetIndex
         }
         else {
-            # If no item at cursor, insert at end
-            $sender.InsertionMark.Index = $sender.Items.Count
-            $sender.InsertionMark.AppearsAfterItem = $false
+            $e.Effect = [System.Windows.Forms.DragDropEffects]::None
+            $sender.InsertionMark.Index = -1
         }
     }
     Add_ItemChecked    = {
@@ -359,20 +403,31 @@ $ListViewProps = @{
     }
     Add_ItemDrag       = {
         if ($this.SelectedItems.Count -gt 0) {
-            $this.DoDragDrop($this.SelectedItems[0], [System.Windows.Forms.DragDropEffects]::Move)
+            $selectedItem = $this.SelectedItems[0]
+            # Start drag operation with the selected item
+            $this.DoDragDrop($selectedItem, [System.Windows.Forms.DragDropEffects]::Move)
+        }
+    }
+    Add_MouseDown      = {
+        # Capture mouse down for drag initiation
+        if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+            $hitTest = $this.HitTest($_.X, $_.Y)
+            if ($hitTest.Item -ne $null) {
+                $this.SelectedItems.Clear()
+                $hitTest.Item.Selected = $true
+                $this.Focus()
+            }
         }
     }
     AllowColumnReorder = $true
     AllowDrop          = $true   # Enable drag-drop
-    # BorderStyle        = 'FixedSingle'
     CheckBoxes         = $true
     Dock               = 'Fill'
     Font               = $script:UI.Fonts.Default
     Forecolor          = $script:UI.Colors.Text
     FullRowSelect      = $true
     GridLines          = $true
-    # Margin             = $script:UI.Padding.Button
-    MultiSelect        = $false  # Changed to false for better reordering experience
+    MultiSelect        = $false  # Keep false for better reordering experience
     ShowItemToolTips   = $true
     Sorting            = [System.Windows.Forms.SortOrder]::None
     View               = 'Details'
@@ -476,16 +531,41 @@ $ConsentCheckboxProps = @{
         # Enable/disable buttons based on consent and selection
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
+        
+        # Update text based on checked state
+        if ($ConsentCheckbox.Checked) {
+            # $ConsentCheckbox.Text = "✓ Admin"
+            $ConsentCheckbox.BackColor = [System.Drawing.Color]::FromArgb(40, 167, 69)  # Green when checked
+        }
+        else {
+            # $ConsentCheckbox.Text = "⚠ Admin"
+            $ConsentCheckbox.BackColor = [System.Drawing.Color]::FromArgb(220, 53, 69)  # Red when unchecked
+        }
+    }
+    Add_MouseEnter     = {
+        # Show status message when hovering
+        if ($script:StatusLabel) {
+            $script:StatusLabel.Text = "Check this box to run commands with administrator privileges. Required for system-level changes."
+        }
+    }
+    Add_MouseLeave     = {
+        # Restore original status message when not hovering
+        if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
+            $script:StatusLabel.Text = "Ready! Welcome to Gray WinUtil App. Select and run scripts from below."
+        }
     }
     Appearance         = 'Button'
-    AutoSize           = $true
+    AutoSize           = $false
+    BackColor          = [System.Drawing.Color]::FromArgb(220, 53, 69)
     Checked            = $false
     Dock               = 'Right'
-    # Font               = $script:UI.Fonts.Default
-    Height             = 16
+    FlatStyle          = 'Flat'
+    Font               = $script:UI.Fonts.Big
+    ForeColor          = [System.Drawing.Color]::White
+    Height             = $script:UI.Sizes.Input.Height
     Margin             = $script:UI.Padding.Control
-    Text               = "As Admin"
-    Width              = $script:UI.Sizes.Input.Width
+    Text               = "⛊"
+    Width              = $script:UI.Sizes.Input.Width / 2 - 14
 }
 function Read-Profile {
     param([string]$Path)
@@ -672,59 +752,121 @@ function Move-ListViewItem {
     param(
         [System.Windows.Forms.ListView]$ListView,
         [System.Windows.Forms.ListViewItem]$Item,
-        [int]$TargetIndex
+        [int]$TargetIndex,
+        [bool]$AppearsAfter = $false
     )
     
     # Get the current index before removing
     $currentIndex = $Item.Index
     
+    # Simple calculation: if AppearsAfter is true, we want to insert after the target
+    $insertIndex = if ($AppearsAfter) { $TargetIndex + 1 } else { $TargetIndex }
+    
+    # Debug output for move calculation
+    Write-Host "--- MOVE CALCULATION ---" -ForegroundColor Blue
+    Write-Host "Current Index: $currentIndex" -ForegroundColor White
+    Write-Host "Target Index: $TargetIndex" -ForegroundColor White
+    Write-Host "Appears After: $AppearsAfter" -ForegroundColor White
+    Write-Host "Calculated Insert Index (before adjustment): $insertIndex" -ForegroundColor White
+    
     # Don't move if dropping on the same position
-    if ($currentIndex -eq $TargetIndex -or ($currentIndex + 1) -eq $TargetIndex) {
+    if ($currentIndex -eq $insertIndex) {
+        Write-Host "MOVE CANCELLED - Same position" -ForegroundColor Red
         return
     }
     
-    # Adjust target index if moving item down
-    if ($TargetIndex > $currentIndex) {
-        $TargetIndex--
+    # Store all item properties including group membership
+    $itemData = @{
+        Text        = $Item.Text
+        SubItems    = @($Item.SubItems | ForEach-Object { $_.Text })
+        Checked     = $Item.Checked
+        BackColor   = $Item.BackColor
+        ForeColor   = $Item.ForeColor
+        Font        = $Item.Font
+        Group       = $Item.Group
+        Tag         = $Item.Tag
+        ToolTipText = $Item.ToolTipText
     }
     
-    # Store item properties
-    $itemText = $Item.Text
-    $subItems = @()
-    foreach ($subItem in $Item.SubItems) {
-        $subItems += $subItem.Text
+    # Begin update to prevent flickering
+    $ListView.BeginUpdate()
+    try {
+        # Remove item from current position
+        $ListView.Items.RemoveAt($currentIndex)
+        Write-Host "Item removed from index: $currentIndex" -ForegroundColor White
+        
+        # Adjust insert index if we removed an item before the target position
+        if ($insertIndex > $currentIndex) {
+            $insertIndex--
+            Write-Host "Insert index adjusted to: $insertIndex (removed item was before target)" -ForegroundColor White
+        }
+        
+        # Ensure we don't go beyond the list bounds
+        if ($insertIndex > $ListView.Items.Count) {
+            $insertIndex = $ListView.Items.Count
+            Write-Host "Insert index clamped to list end: $insertIndex" -ForegroundColor White
+        }
+        
+        Write-Host "Final insert index: $insertIndex" -ForegroundColor Yellow
+        
+        # Create new item with same properties
+        $newItem = New-Object System.Windows.Forms.ListViewItem($itemData.Text)
+        for ($i = 1; $i -lt $itemData.SubItems.Count; $i++) {
+            $newItem.SubItems.Add($itemData.SubItems[$i]) | Out-Null
+        }
+        $newItem.Checked = $itemData.Checked
+        $newItem.BackColor = $itemData.BackColor
+        $newItem.ForeColor = $itemData.ForeColor
+        $newItem.Font = $itemData.Font
+        $newItem.Tag = $itemData.Tag
+        $newItem.ToolTipText = $itemData.ToolTipText
+        
+        # Handle group assignment - determine target group based on final position
+        if ($ListView.Groups.Count -gt 0) {
+            if ($insertIndex -lt $ListView.Items.Count) {
+                # Insert in middle - use the group of the item at insert position
+                $targetItem = $ListView.Items[$insertIndex]
+                $newItem.Group = $targetItem.Group
+                Write-Host "Group assignment: Using group of item at insert position '$($targetItem.Group.Header)'" -ForegroundColor White
+            }
+            elseif ($ListView.Items.Count -gt 0) {
+                # Insert at end - use the group of the last item
+                $lastItem = $ListView.Items[$ListView.Items.Count - 1]
+                $newItem.Group = $lastItem.Group
+                Write-Host "Group assignment: Using group of last item '$($lastItem.Group.Header)'" -ForegroundColor White
+            }
+            else {
+                # Empty list - keep original group
+                $newItem.Group = $itemData.Group
+                Write-Host "Group assignment: Keeping original group '$($itemData.Group.Header)'" -ForegroundColor White
+            }
+        }
+        else {
+            $newItem.Group = $null
+            Write-Host "Group assignment: No groups" -ForegroundColor White
+        }
+        
+        # Insert at new position
+        if ($insertIndex -ge $ListView.Items.Count) {
+            $ListView.Items.Add($newItem) | Out-Null
+            Write-Host "Item added at end of list" -ForegroundColor Green
+        }
+        else {
+            $ListView.Items.Insert($insertIndex, $newItem) | Out-Null
+            Write-Host "Item inserted at index: $insertIndex" -ForegroundColor Green
+        }
+        
+        # Select the moved item
+        $ListView.SelectedItems.Clear()
+        $newItem.Selected = $true
+        $newItem.EnsureVisible()
+        
+        Write-Host "MOVE COMPLETED - Item '$($newItem.Text)' moved to index $($newItem.Index)" -ForegroundColor Green
+        Write-Host "------------------------" -ForegroundColor Blue
     }
-    $itemChecked = $Item.Checked
-    $itemBackColor = $Item.BackColor
-    $itemForeColor = $Item.ForeColor
-    $itemFont = $Item.Font
-    $itemGroup = $Item.Group
-    
-    # Remove item from current position
-    $ListView.Items.Remove($Item)
-    
-    # Create new item with same properties
-    $newItem = New-Object System.Windows.Forms.ListViewItem($itemText)
-    for ($i = 1; $i -lt $subItems.Count; $i++) {
-        $newItem.SubItems.Add($subItems[$i]) | Out-Null
+    finally {
+        $ListView.EndUpdate()
     }
-    $newItem.Checked = $itemChecked
-    $newItem.BackColor = $itemBackColor
-    $newItem.ForeColor = $itemForeColor
-    $newItem.Font = $itemFont
-    $newItem.Group = $itemGroup
-    
-    # Insert at new position
-    if ($TargetIndex -ge $ListView.Items.Count) {
-        $ListView.Items.Add($newItem) | Out-Null
-    }
-    else {
-        $ListView.Items.Insert($TargetIndex, $newItem) | Out-Null
-    }
-    
-    # Select the moved item
-    $newItem.Selected = $true
-    $ListView.Focus()
 }
 
 # Function to move selected item up
@@ -751,7 +893,7 @@ function Move-SelectedItemDown {
     $currentIndex = $selectedItem.Index
     
     if ($currentIndex -lt $ListView.Items.Count - 1) {
-        Move-ListViewItem -ListView $ListView -Item $selectedItem -TargetIndex ($currentIndex + 2)
+        Move-ListViewItem -ListView $ListView -Item $selectedItem -TargetIndex ($currentIndex + 1) -AppearsAfter $true
     }
 }
 
@@ -1546,7 +1688,30 @@ $p10left = New-Object System.Windows.Forms.Panel -Property @{
     Dock  = 'Left'
     Width = 2  # Reduced from 15 to 10 for better alignment
 }
-$script:ToolBarPanel.Controls.AddRange(@($SearchBox, $p10left, $ProfileDropdown, $SelectAllSwitch, $PaddingSpacerPanel, $InvokeButton, $ConsentCheckbox))
+$RevokeButtonProps = @{
+    Add_Click = { 
+        if ($ConsentCheckbox.Checked) {
+            RunSelectedItems -Action Invoke
+        }
+        else {
+            [System.Windows.Forms.MessageBox]::Show("Please check the consent checkbox to proceed with execution.", "Consent Required", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        }
+    }
+    AutoSize  = $false
+    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+    Dock      = 'Right'
+    Enabled   = $true
+    FlatStyle = 'Flat'
+    Font      = $script:UI.Fonts.Big
+    ForeColor = [System.Drawing.Color]::White
+    Height    = 16
+    Margin    = $script:UI.Padding.Control
+    Text      = "⏺ ▶ ⏹"
+    Width     = $script:UI.Sizes.Input.Width
+}
+$RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonProps
+
+$script:ToolBarPanel.Controls.AddRange(@($SearchBox, $p10left, $ProfileDropdown, $SelectAllSwitch, $PaddingSpacerPanel, $InvokeButton, $RevokeButton, $ConsentCheckbox))
 
 # $HeaderPanel.Controls.AddRange(@($script:StatusPanel))
 $ContentPanel.Controls.Add($script:ScriptsPanel)
