@@ -124,7 +124,7 @@ $script:UI = @{
     Padding = @{
         Button  = '0,0,0,0'         # Button padding - no padding for precise alignment
         Content = "0,0,0,35"        # Content panel padding - enough top margin to clear 40px header + 10px buffer
-        Control = '0,0,0,0'         # Standard control margins - centered vertically
+        Control = '2,2,2,2'         # Standard control margins - centered vertically
         Footer  = '0,0,0,0'     # Footer panel padding - consistent padding all around
         Form    = '5,0,5,0'         # Main form padding - no padding for full control
         Header  = '0,0,0,0'         # Header panel padding - no padding for precise control
@@ -514,7 +514,7 @@ $script:ToolbarButtons = @(
     @{
         Name      = "ScheduleButton"
         Text      = "⏰"
-        BackColor = [System.Drawing.Color]::FromArgb(23, 162, 184)  # Cyan/Blue
+        BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Schedule scripts to run later"
         Enabled   = $true
@@ -522,29 +522,30 @@ $script:ToolbarButtons = @(
             # TODO: Implement scheduling functionality
             [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
-        Width     = $script:UI.Sizes.Input.Width / 2 - 10
+        Width     = $script:UI.Sizes.Input.Width / 2 - 8
     }, 
-    @{
-        Name      = "StopButton"
-        Text      = "⏺"
-        BackColor = [System.Drawing.Color]::FromArgb(220, 53, 69)   # Red
-        ForeColor = [System.Drawing.Color]::White
-        ToolTip   = "Stop execution"
-        Enabled   = $false
-        Click     = { 
-            # TODO: Implement stop functionality
-            [System.Windows.Forms.MessageBox]::Show("Stop functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-        }
-        Width     = $script:UI.Sizes.Input.Width / 2 - 10
-    },
+    # @{
+    #     Name      = "StopButton"
+    #     Text      = "⏺"
+    #     BackColor = [System.Drawing.Color]::FromArgb(220, 53, 69)   # Red
+    #     ForeColor = [System.Drawing.Color]::White
+    #     ToolTip   = "Stop execution"
+    #     Enabled   = $false
+    #     Click     = { 
+    #         # TODO: Implement stop functionality
+    #         [System.Windows.Forms.MessageBox]::Show("Stop functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    #     }
+    #     Width     = $script:UI.Sizes.Input.Width / 2 - 10
+    # },
 
     @{
         Name      = "RunButton"
         Text      = "▶ Run (0)"
-        BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
+        BackColor = [System.Drawing.Color]::Green   # Green
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Run selected scripts"
         Enabled   = $false
+        Font      = $Script:UI.Fonts.Regular
         Click     = { 
             if ($ConsentCheckbox.Checked) {
                 RunSelectedItems -Action Invoke
@@ -557,7 +558,7 @@ $script:ToolbarButtons = @(
     @{
         Name      = "Reset List"
         Text      = "↻"
-        BackColor = [System.Drawing.Color]::Violet
+        BackColor = [System.Drawing.Color]::FromArgb(0, 114, 220)
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Toggle admin consent for execution"
         Dock      = "Left"
@@ -567,7 +568,7 @@ $script:ToolbarButtons = @(
             $SelectAllSwitch.Checked = -not $SelectAllSwitch.Checked
             $ProfileDropdown.SelectedIndex = $script:CurrentProfileIndex
         }
-        Width     = $script:UI.Sizes.Input.Width / 2 - 14
+        Width     = $script:UI.Sizes.Input.Width / 2 - 13
     }
 )
 
@@ -617,12 +618,12 @@ $ConsentCheckboxProps = @{
     Checked            = $false
     Dock               = 'Right'
     FlatStyle          = 'Flat'
-    Font               = $script:UI.Fonts.Bold
+    Font               = $script:UI.Fonts.Regular
     ForeColor          = [System.Drawing.Color]::White
     Height             = $script:UI.Sizes.Input.Height
     Padding            = $script:UI.Padding.Control
     Text               = "⛊"
-    Width              = $script:UI.Sizes.Input.Width / 2 - 14
+    Width              = $script:UI.Sizes.Input.Width / 2 - 10
 }
 function Read-Profile {
     param([string]$Path)
@@ -1777,7 +1778,7 @@ foreach ($buttonDef in $script:ToolbarButtons) {
         Dock      = if ($buttonDef.ContainsKey('Dock')) { $buttonDef.Dock } else { 'Right' }
         # Enabled   = $buttonDef.Enabled
         FlatStyle = 'Flat'
-        Font      = $script:UI.Fonts.Bold
+        Font      = if ($buttonDef.ContainsKey('Font')) { $buttonDef.Font } else { $script:UI.Fonts.Bold }
         ForeColor = $buttonDef.ForeColor
         Height    = 16
         Padding   = $script:UI.Padding.Control
@@ -1816,8 +1817,8 @@ foreach ($buttonDef in $script:ToolbarButtons) {
 
 # Update the toolbar panel controls - remove old button references
 $script:ToolBarPanel.Controls.AddRange(@(
-        $SearchBox
-        , $ConsentCheckbox    ) + $script:CreatedButtons.Values + @( $ProfileDropdown, $p10left   , $SelectAllSwitch))
+        $SearchBox, $ProfileDropdown
+        , $ConsentCheckbox    ) + $script:CreatedButtons.Values + @( $p10left   , $SelectAllSwitch))
 
 # $HeaderPanel.Controls.AddRange(@($script:StatusPanel))
 $ContentPanel.Controls.Add($script:ScriptsPanel)
