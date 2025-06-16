@@ -613,7 +613,7 @@ $ConsentCheckboxProps = @{
     }
     Appearance         = 'Button'
     AutoSize           = $false
-    BackColor          = [System.Drawing.Color]::Red
+    BackColor          = [System.Drawing.Color]::Green
     Checked            = $false
     Dock               = 'Right'
     FlatStyle          = 'Flat'
