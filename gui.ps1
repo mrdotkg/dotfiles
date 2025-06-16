@@ -435,7 +435,7 @@ $ListViewProps = @{
 
 # Control Properties
 $SelectAllSwitchProps = @{
-    Add_Click = {
+    Add_Click  = {
         $isChecked = -not $SelectAllSwitch.Tag
         $SelectAllSwitch.Tag = $isChecked
         $listViews = @($script:ListViews.Values)
@@ -445,14 +445,15 @@ $SelectAllSwitchProps = @{
             }
         }
     }
-    AutoSize  = $true
-    Dock      = 'Left'
+    Appearance = 'Button'
+    AutoSize   = $true
+    Dock       = 'Left'
     # Font      = $Script:UI.Fonts.Default
-    Height    = 16
-    Margin    = $script:UI.Padding.Control
-    Tag       = $false
-    Text      = "All"
-    Width     = $script:UI.Sizes.Input.Width
+    Height     = 16
+    Margin     = $script:UI.Padding.Control
+    Tag        = $false
+    Text       = "All"
+    Width      = $script:UI.Sizes.Input.Width
 }
 
 $SearchBoxProps = @{
@@ -1786,7 +1787,7 @@ foreach ($buttonDef in $script:ToolbarButtons) {
         AutoSize  = $false
         BackColor = $buttonDef.BackColor
         Dock      = 'Right'
-        Enabled   = $buttonDef.Enabled
+        # Enabled   = $buttonDef.Enabled
         FlatStyle = 'Flat'
         Font      = $script:UI.Fonts.Big
         ForeColor = $buttonDef.ForeColor
