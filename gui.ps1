@@ -126,7 +126,7 @@ $script:UI = @{
         Content = "0,0,0,0"        # Content panel padding - enough top margin to clear 40px header + 10px buffer
         Control = '0,0,0,0'         # Standard control margins - centered vertically
         Footer  = '0,0,0,0'     # Footer panel padding - consistent padding all around
-        Form    = '0,0,0,0'         # Main form padding - no padding for full control
+        Form    = '5,5,5,5'         # Main form padding - no padding for full control
         Header  = '0,0,0,0'         # Header panel padding - no padding for precise control
         Help    = '15,15,15,15'     # Help window padding - generous padding for readability
         Panel   = '0,0,0,0'         # Standard panel padding - no padding for alignment
@@ -150,7 +150,7 @@ $script:UI = @{
         Input   = @{
             FooterWidth = 150
             Height      = 25
-            Width       = 75
+            Width       = 80
         }
         Status  = @{
             Height = 30
@@ -499,7 +499,7 @@ $SearchBoxProps = @{
         }
     }
     BackColor       = $script:UI.Colors.Background
-    # BorderStyle     = 'FixedSingle'
+    BorderStyle     = 'FixedSingle'
     Dock            = 'Right'
     # Font            = $script:UI.Fonts.Default
     Height          = $script:UI.Sizes.Input.Height
@@ -514,7 +514,7 @@ $SearchBoxProps = @{
 $script:ToolbarButtons = @(
     @{
         Name      = "RunButton"
-        Text      = "▶"
+        Text      = "▶ Run (0)"
         BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Run selected scripts"
@@ -529,16 +529,15 @@ $script:ToolbarButtons = @(
         }
     },
     @{
-        Name      = "Reset List"
-        Text      = "↻ Reset"
-        BackColor = [System.Drawing.Color]::Violet
+        Name      = "ScheduleButton"
+        Text      = "⏰ Later"
+        BackColor = [System.Drawing.Color]::FromArgb(23, 162, 184)  # Cyan/Blue
         ForeColor = [System.Drawing.Color]::White
-        ToolTip   = "Toggle admin consent for execution"
+        ToolTip   = "Schedule scripts to run later"
         Enabled   = $true
         Click     = { 
-            # Toggle the consent checkbox
-            $SelectAllSwitch.Checked = -not $SelectAllSwitch.Checked
-            $ProfileDropdown.SelectedIndex = $script:CurrentProfileIndex
+            # TODO: Implement scheduling functionality
+            [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
     },
     @{
@@ -554,15 +553,16 @@ $script:ToolbarButtons = @(
         }
     },
     @{
-        Name      = "ScheduleButton"
-        Text      = "⏰ Later"
-        BackColor = [System.Drawing.Color]::FromArgb(23, 162, 184)  # Cyan/Blue
+        Name      = "Reset List"
+        Text      = "↻ Reset"
+        BackColor = [System.Drawing.Color]::Violet
         ForeColor = [System.Drawing.Color]::White
-        ToolTip   = "Schedule scripts to run later"
+        ToolTip   = "Toggle admin consent for execution"
         Enabled   = $true
         Click     = { 
-            # TODO: Implement scheduling functionality
-            [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            # Toggle the consent checkbox
+            $SelectAllSwitch.Checked = -not $SelectAllSwitch.Checked
+            $ProfileDropdown.SelectedIndex = $script:CurrentProfileIndex
         }
     }
 )
@@ -594,16 +594,6 @@ $ConsentCheckboxProps = @{
         # Enable/disable buttons based on consent and selection
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
-        
-        # Update text based on checked state
-        if ($ConsentCheckbox.Checked) {
-            # $ConsentCheckbox.Text = "✓ Admin"
-            $ConsentCheckbox.BackColor = [System.Drawing.Color]::FromArgb(40, 167, 69)  # Green when checked
-        }
-        else {
-            # $ConsentCheckbox.Text = "⚠ Admin"
-            $ConsentCheckbox.BackColor = [System.Drawing.Color]::FromArgb(220, 53, 69)  # Red when unchecked
-        }
     }
     Add_MouseEnter     = {
         # Show status message when hovering
@@ -619,7 +609,7 @@ $ConsentCheckboxProps = @{
     }
     Appearance         = 'Button'
     AutoSize           = $false
-    BackColor          = [System.Drawing.Color]::FromArgb(220, 53, 69)
+    BackColor          = [System.Drawing.Color]::Black
     Checked            = $false
     Dock               = 'Left'
     FlatStyle          = 'Flat'
@@ -1824,8 +1814,7 @@ foreach ($buttonDef in $script:ToolbarButtons) {
 $script:ToolBarPanel.Controls.AddRange(@(
         $ConsentCheckbox,
         $SearchBox
-    ) + $script:CreatedButtons.Values + @(
-        $InvokeButton, $ProfileDropdown, $SelectAllSwitch))
+    ) + $script:CreatedButtons.Values + @( $ProfileDropdown, $SelectAllSwitch))
 
 # $HeaderPanel.Controls.AddRange(@($script:StatusPanel))
 $ContentPanel.Controls.Add($script:ScriptsPanel)
