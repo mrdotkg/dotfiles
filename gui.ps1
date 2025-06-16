@@ -399,6 +399,7 @@ $ListViewProps = @{
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
         $InvokeButton.Text = "▶ Run ($anyChecked)"
         $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
+        $SelectAllSwitch.ForeColor = if ($SelectAllSwitch.Checked) { [System.Drawing.Color]::FromArgb(0, 95, 184) } else { [System.Drawing.Color]::White }
         $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
     }
     Add_ItemDrag       = {
@@ -438,6 +439,7 @@ $SelectAllSwitchProps = @{
     Add_Click  = {
         $isChecked = -not $SelectAllSwitch.Tag
         $SelectAllSwitch.Tag = $isChecked
+        $SelectAllSwitch.Forecolor = if ($isChecked) { [System.Drawing.Color]::FromArgb(0, 95, 184) } else { [System.Drawing.Color]::White }
         $listViews = @($script:ListViews.Values)
         foreach ($lv in $listViews) {
             foreach ($item in $lv.Items) {
@@ -452,7 +454,7 @@ $SelectAllSwitchProps = @{
     Tag        = $false
     Text       = "⏺"
     AutoSize   = $false
-    BackColor  = [System.Drawing.Color]::FromArgb(0, 95, 184)
+    BackColor  = $script:UI.Colors.Accent
     Checked    = $false
     FlatStyle  = 'Flat'
     Font       = $script:UI.Fonts.Bold
@@ -512,17 +514,20 @@ $SearchBoxProps = @{
 # Define toolbar buttons array
 $script:ToolbarButtons = @(
     @{
-        Name      = "ScheduleButton"
-        Text      = "⏰"
-        BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
-        ForeColor = [System.Drawing.Color]::White
-        ToolTip   = "Schedule scripts to run later"
-        Enabled   = $true
-        Click     = { 
+        Name        = "ScheduleButton"
+        Text        = "⏰"
+        BorderStyle = 'FixedSingle'
+        BorderColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
+        BackColor   = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
+        ForeColor   = [System.Drawing.Color]::White
+        Font        = $script:UI.Fonts.Regular
+        ToolTip     = "Schedule scripts to run later"
+        Enabled     = $true
+        Click       = { 
             # TODO: Implement scheduling functionality
             [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
-        Width     = $script:UI.Sizes.Input.Width / 2 - 8
+        Width       = $script:UI.Sizes.Input.Width / 2 - 8
     }, 
     # @{
     #     Name      = "StopButton"
@@ -600,6 +605,10 @@ $ConsentCheckboxProps = @{
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
     }
+    Add_Click          = {
+        $isChecked = $ConsentCheckbox.Checked
+        $ConsentCheckbox.ForeColor = if ($isChecked) { [System.Drawing.Color]::Red } else { [System.Drawing.Color]::White }
+    }
     Add_MouseEnter     = {
         # Show status message when hovering
         if ($script:StatusLabel) {
@@ -609,12 +618,12 @@ $ConsentCheckboxProps = @{
     Add_MouseLeave     = {
         # Restore original status message when not hovering
         if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
-            $script:StatusLabel.Text = "Ready! Welcome to Gray WinUtil App. Select and run scripts from below."
+            $script:StatusLabel.Text = "Gray Winutil is ready to run scripts."
         }
     }
     Appearance         = 'Button'
     AutoSize           = $false
-    BackColor          = [System.Drawing.Color]::DarkGreen
+    BackColor          = $script:UI.Colors.Accent
     Checked            = $false
     Dock               = 'Right'
     FlatStyle          = 'Flat'
@@ -1368,7 +1377,7 @@ function RunSelectedItems {
         
         # Reset status label to default message if execution finished
         if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
-            $script:StatusLabel.Text = "Ready! Welcome to Gray WInUtil App. Select and run scripts from below."
+            $script:StatusLabel.Text = "Gray Winutil is ready to run scripts."
         }
     }
 }
@@ -1674,7 +1683,7 @@ $script:StatusLabel = New-Object System.Windows.Forms.Label -Property @{
     AutoSize = $true
     Dock     = 'Left'
     Padding  = $script:UI.Padding.Status
-    Text     = "Ready! Welcome to Gray WinUtil App. Select and run  scripts from below."
+    Text     = "Gray Winutil is ready to run scripts."
     Visible  = $true
 }
 
@@ -1774,7 +1783,7 @@ $script:CreatedButtons = @{}
 foreach ($buttonDef in $script:ToolbarButtons) {
     $button = New-Object System.Windows.Forms.Button -Property @{
         AutoSize  = $false
-        BackColor = $buttonDef.BackColor
+        BackColor = $script:UI.Colors.Accent
         Dock      = if ($buttonDef.ContainsKey('Dock')) { $buttonDef.Dock } else { 'Right' }
         # Enabled   = $buttonDef.Enabled
         FlatStyle = 'Flat'
@@ -1801,7 +1810,7 @@ foreach ($buttonDef in $script:ToolbarButtons) {
     
     $button.Add_MouseLeave({
             if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
-                $script:StatusLabel.Text = "Ready! Welcome to Gray WinUtil App. Select and run scripts from below."
+                $script:StatusLabel.Text = "Gray Winutil is ready to run scripts."
             }
         })
     
