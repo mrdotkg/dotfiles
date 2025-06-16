@@ -504,6 +504,74 @@ $SearchBoxProps = @{
     Width           = $script:UI.Sizes.Input.FooterWidth
 }
 
+# Define toolbar buttons array
+$script:ToolbarButtons = @(
+    @{
+        Name      = "RunButton"
+        Text      = "▶"
+        BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
+        ForeColor = [System.Drawing.Color]::White
+        ToolTip   = "Run selected scripts"
+        Enabled   = $false
+        Click     = { 
+            if ($ConsentCheckbox.Checked) {
+                RunSelectedItems -Action Invoke
+            }
+            else {
+                [System.Windows.Forms.MessageBox]::Show("Please check the consent checkbox to proceed with execution.", "Consent Required", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            }
+        }
+    },
+    @{
+        Name      = "PauseButton"
+        Text      = "⏸"
+        BackColor = [System.Drawing.Color]::FromArgb(255, 193, 7)   # Amber/Yellow
+        ForeColor = [System.Drawing.Color]::Black
+        ToolTip   = "Pause execution"
+        Enabled   = $false
+        Click     = { 
+            # TODO: Implement pause functionality
+            [System.Windows.Forms.MessageBox]::Show("Pause functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    },
+    @{
+        Name      = "StopButton"
+        Text      = "⏹"
+        BackColor = [System.Drawing.Color]::FromArgb(220, 53, 69)   # Red
+        ForeColor = [System.Drawing.Color]::White
+        ToolTip   = "Stop execution"
+        Enabled   = $false
+        Click     = { 
+            # TODO: Implement stop functionality
+            [System.Windows.Forms.MessageBox]::Show("Stop functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    },
+    @{
+        Name      = "RunAsAdminButton"
+        Text      = "⛊"
+        BackColor = [System.Drawing.Color]::FromArgb(220, 53, 69)   # Red
+        ForeColor = [System.Drawing.Color]::White
+        ToolTip   = "Toggle admin consent for execution"
+        Enabled   = $true
+        Click     = { 
+            # Toggle the consent checkbox
+            $ConsentCheckbox.Checked = -not $ConsentCheckbox.Checked
+        }
+    },
+    @{
+        Name      = "ScheduleButton"
+        Text      = "⏰"
+        BackColor = [System.Drawing.Color]::FromArgb(23, 162, 184)  # Cyan/Blue
+        ForeColor = [System.Drawing.Color]::White
+        ToolTip   = "Schedule scripts to run later"
+        Enabled   = $true
+        Click     = { 
+            # TODO: Implement scheduling functionality
+            [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    }
+)
+
 $InvokeButtonProps = @{
     Add_Click = { 
         if ($ConsentCheckbox.Checked) {
@@ -1711,7 +1779,59 @@ $RevokeButtonProps = @{
 }
 $RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonProps
 
-$script:ToolBarPanel.Controls.AddRange(@($SearchBox, $p10left, $ProfileDropdown, $SelectAllSwitch, $PaddingSpacerPanel, $InvokeButton, $RevokeButton, $ConsentCheckbox))
+# Create toolbar buttons dynamically
+$script:CreatedButtons = @{}
+foreach ($buttonDef in $script:ToolbarButtons) {
+    $button = New-Object System.Windows.Forms.Button -Property @{
+        AutoSize  = $false
+        BackColor = $buttonDef.BackColor
+        Dock      = 'Right'
+        Enabled   = $buttonDef.Enabled
+        FlatStyle = 'Flat'
+        Font      = $script:UI.Fonts.Big
+        ForeColor = $buttonDef.ForeColor
+        Height    = 16
+        Margin    = $script:UI.Padding.Control
+        Text      = $buttonDef.Text
+        Width     = 35  # Smaller width for individual buttons
+    }
+    
+    # Add click event
+    $button.Add_Click($buttonDef.Click)
+    
+    # Add hover events for tooltip-like functionality
+    $button.Add_MouseEnter({
+            param($sender, $e)
+            $buttonName = $sender.Name
+            $buttonDef = $script:ToolbarButtons | Where-Object { $_.Name -eq $buttonName }
+            if ($buttonDef -and $script:StatusLabel) {
+                $script:StatusLabel.Text = $buttonDef.ToolTip
+            }
+        }.GetNewClosure())
+    
+    $button.Add_MouseLeave({
+            if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
+                $script:StatusLabel.Text = "Ready! Welcome to Gray WinUtil App. Select and run scripts from below."
+            }
+        })
+    
+    # Remove button border
+    $button.FlatAppearance.BorderSize = 0
+    
+    # Set button name for reference
+    $button.Name = $buttonDef.Name
+    
+    # Store button reference
+    $script:CreatedButtons[$buttonDef.Name] = $button
+}
+
+# Update the toolbar panel controls - remove old button references
+$script:ToolBarPanel.Controls.AddRange(@(
+        $SelectAllSwitch,
+        $ConsentCheckbox,
+        $SearchBox, 
+        $ProfileDropdown
+    ) + $script:CreatedButtons.Values + @($InvokeButton, $p10left))
 
 # $HeaderPanel.Controls.AddRange(@($script:StatusPanel))
 $ContentPanel.Controls.Add($script:ScriptsPanel)
