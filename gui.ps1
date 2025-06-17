@@ -1,108 +1,51 @@
-# Multiline doc comment
 <#
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
-TODO Features:
-- TODO Submit new collections and scripts to repository
-- TODO Write commands to PowerShell history
-- TODO Enable command scheduling
-- TODO Improve execution UI performance - sluttering
-- TODO Add native system notifications
-- TODO Show hotkey tooltips in help
-- TODO Maintain script execution order
-- TODO Use %Temp% directory by default
-- TODO Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
-- TODO Create Start Menu and Desktop shortcuts
+Features:
+- [ ] Submit new collections and scripts to repository
+- BUG only the first group, its actual name is being overridden by default
+- FIXME Write commands to PowerShell history
+- FIXME Improve execution UI performance - sluttering
+- FIXME Instead of showing status inside time, show it as a separate column
+- FIXME Fix Move List item down.
+- [x] Enable command scheduling
+- [ ] Add native system notifications
+- [ ] Show hotkey tooltips in help
+- [ ] Maintain script execution order
+- [ ] Use %Temp% directory by default
+- [ ] Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
+- [ ] Create Start Menu and Desktop shortcuts
+- [ ] Add context menu - reload scripts, move items up and down, Copy col1, col2..to clipboard, export selected commands to Clipboard
+- [ ] Add cancel action item to the status actions
+- [ ] Add the column sort on click of a column, update column header with these alt code chars ⬇, ⬆,↑↓, ↑↑, ↓↓
+- [ ] Read SSh Config, list remote machines execute on them.
 #>
-
-# ------------------------------
-# Configuration
-# ------------------------------
-# Repository configuration - Update these variables for your own repository
 $script:Config = @{
-    AdminRequiredPatterns = @(
-        'Add-WindowsCapability',
-        'bcdedit',
-        'Clear-Disk',
-        'dism',
-        'Disable-Service',
-        'diskpart',
-        'Enable-Service',
-        'Format-Volume',
-        'netsh',
-        'New-ItemProperty.*HKLM',
-        'New-NetFirewallRule',
-        'reg add.*HKLM',
-        'reg delete.*HKLM',
-        'Remove-NetFirewallRule',
-        'Remove-WindowsCapability',
-        'sc.exe',
-        'Set-ItemProperty.*HKLM',
-        'Set-NetFirewallRule',
-        'Set-Service',
-        'sfc',
-        'Start-Service',
-        'Stop-Service',
-        'winget'
-    )
-    ApiUrl                = $null  # Will be generated below
-    DatabaseFile          = "db.json"           # Database file name
-    DatabaseUrl           = $null  # Will be generated below
-    GitHubBranch          = "main"              # Default branch
-    GitHubOwner           = "mrdotkg"           # GitHub username
-    GitHubRepo            = "dotfiles"          # Repository name
-    HighRiskPatterns      = @(
-        'bcdedit',
-        'Clear-Disk',
-        'diskpart',
-        'Format-Volume',
-        'reg delete.*HKLM',
-        'Remove-Computer',
-        'Remove-Item.*-Recurse',
-        'Restart-Computer',
-        'rm.*-rf',
-        'Set-ExecutionPolicy.*Unrestricted',
-        'shutdown',
-        'Stop-Computer'
-    )
-    MediumRiskPatterns    = @(
-        'Disable-Service',
-        'New-ItemProperty.*HKLM',
-        'New-NetFirewallRule',
-        'Set-ItemProperty.*HKLM',
-        'Set-NetFirewallRule',
-        'Set-Service',
-        'Stop-Service',
-        'winget uninstall'
-    )
-    ScriptsPath           = "$HOME\Documents\WinUtil Local Data"  # Local data directory
+    ApiUrl       = $null  
+    DatabaseFile = "db.json"           
+    DatabaseUrl  = $null  
+    GitHubBranch = "main"              
+    GitHubOwner  = "mrdotkg"           
+    GitHubRepo   = "dotfiles"          
+    ScriptsPath  = "$HOME\Documents\WinUtil Local Data"  
 }
 
-# ------------------------------
-# Initialize Dependencies
-# ------------------------------
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
-# Generate URLs from configuration
 $script:Config.DatabaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/refs/heads/$($script:Config.GitHubBranch)/$($script:Config.DatabaseFile)"
 $script:Config.ApiUrl = "https://api.github.com/repos/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/contents"
 
-# ------------------------------
-# State Management
-# ------------------------------
-# Script-scoped variables
 $script:DataDirectory = "$HOME\Documents\WinUtil Local Data"
 $script:ProfilesDirectory = "$HOME\Documents\WinUtil Local Data\Profiles"
 $script:LogsDirectory = "$HOME\Documents\WinUtil Local Data\Logs"
 $script:ListViews = @{}
-$script:CurrentProfileIndex = -1  # Track currently selected profile index
-# Window management for singleton pattern
+$script:CurrentProfileIndex = -1  
+
 $script:HelpForm = $null
 $script:UpdatesForm = $null
 
-# UI Theme and Constants
 $script:UI = @{
     Colors  = @{
-        Accent     = $null  # Will be set from Windows theme
+        Accent     = $null  
         Background = [System.Drawing.Color]::FromArgb(241, 243, 249)
         Disabled   = [System.Drawing.Color]::LightGray
         Text       = [System.Drawing.Color]::Black
@@ -114,30 +57,29 @@ $script:UI = @{
         Small   = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
     }
     Padding = @{
-        Button  = '0,0,0,0'         # Button padding - no padding for precise alignment
-        Content = "0,0,0,35"        # Content panel padding - enough top margin to clear 40px header + 10px buffer
-        Control = '2,2,2,2'         # Standard control margins - centered vertically
-        Footer  = '0,0,0,0'     # Footer panel padding - consistent padding all around
-        Form    = '5,0,5,0'         # Main form padding - no padding for full control
-        Header  = '0,0,0,0'         # Header panel padding - no padding for precise control
-        Help    = '15,15,15,15'     # Help window padding - generous padding for readability
-        Panel   = '0,0,0,0'         # Standard panel padding - no padding for alignment
-        Status  = '0,2,0,2'       # Status panel padding - left/right margin with minimal vertical
-        ToolBar = '0,5,0,5'       # For consistent with Toolbar margins
-        Updates = '15,15,15,15'     # Updates panel padding - generous padding for readability
+        Button  = '0,0,0,0'         
+        Content = "0,0,0,35"        
+        Control = '2,2,2,2'         
+        Footer  = '0,0,0,0'     
+        Form    = '5,0,5,0'         
+        Header  = '0,0,0,0'         
+        Help    = '15,15,15,15'     
+        Panel   = '0,0,0,0'         
+        Status  = '0,2,0,2'       
+        ToolBar = '0,5,0,5'       
+        Updates = '15,15,15,15'     
     }
     Sizes   = @{
         Columns = @{
-            Command    = 100
-            Name       = 250
-            Permission = 100
-            Time       = 100
+            Command = 300
+            Name    = 350
+            Time    = 100
         }
         Footer  = @{
             Height = 30
         }
         Header  = @{
-            # Height = 30
+
         }
         Input   = @{
             FooterWidth = 150
@@ -157,7 +99,6 @@ $script:UI = @{
     }
 }
 
-# Initialize accent color from Windows theme
 $AccentColorValue = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AccentColor" -ErrorAction SilentlyContinue
 $script:UI.Colors.Accent = if ($AccentColorValue) {
     [System.Drawing.Color]::FromArgb(
@@ -170,14 +111,10 @@ else {
     [System.Drawing.Color]::FromArgb(44, 151, 222)
 }
 
-# ------------------------------
-# Component Properties
-# ------------------------------
-# Main Form
 $FormProps = @{
     Add_KeyDown = {
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::A) {
-            # Ctrl+A: Select All
+
             $SelectAllSwitch.Checked = $true
             $SelectAllSwitch.Tag = $true
             $listViews = @($script:ListViews.Values)
@@ -189,19 +126,19 @@ $FormProps = @{
             $_.Handled = $true
         }
         elseif ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::R) {
-            # Ctrl+R: Run
+
             if ($InvokeButton.Enabled) {
                 $InvokeButton.PerformClick()
             }
             $_.Handled = $true
         }
         elseif ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::C) {
-            # Ctrl+C: Copy Selected Commands to Clipboard
+
             Copy-SelectedCommandsToClipboard
             $_.Handled = $true
         }
         elseif ($_.Control -and ($_.KeyCode -eq [System.Windows.Forms.Keys]::Up -or $_.KeyCode -eq [System.Windows.Forms.Keys]::K)) {
-            # Ctrl+Up or Ctrl+K: Move selected item up
+
             $listView = $script:ListViews["MainList"]
             if ($listView) {
                 Move-SelectedItemUp -ListView $listView
@@ -209,7 +146,7 @@ $FormProps = @{
             $_.Handled = $true
         }
         elseif ($_.Control -and ($_.KeyCode -eq [System.Windows.Forms.Keys]::Down -or $_.KeyCode -eq [System.Windows.Forms.Keys]::J)) {
-            # Ctrl+Down or Ctrl+J: Move selected item down
+
             $listView = $script:ListViews["MainList"]
             if ($listView) {
                 Move-SelectedItemDown -ListView $listView
@@ -217,7 +154,7 @@ $FormProps = @{
             $_.Handled = $true
         }
         elseif ($_.KeyCode -eq [System.Windows.Forms.Keys]::H) {
-            # H: Move selected item up (Vim-style)
+
             $listView = $script:ListViews["MainList"]
             if ($listView) {
                 Move-SelectedItemUp -ListView $listView
@@ -225,7 +162,7 @@ $FormProps = @{
             $_.Handled = $true
         }
         elseif ($_.KeyCode -eq [System.Windows.Forms.Keys]::L) {
-            # L: Move selected item down (Vim-style)
+
             $listView = $script:ListViews["MainList"]
             if ($listView) {
                 Move-SelectedItemDown -ListView $listView
@@ -235,14 +172,14 @@ $FormProps = @{
     }
     Add_Shown   = { 
         $Form.Activate()
-        # Load user provided profiles
+
         Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
             $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
         }
 
         if ($ProfileDropdown.Items.Count -gt 0) {
             $ProfileDropdown.SelectedIndex = 0
-            $script:CurrentProfileIndex = 0  # Initialize the script variable
+            $script:CurrentProfileIndex = 0  
         }
     }
     BackColor   = $script:UI.Colors.Background
@@ -254,10 +191,9 @@ $FormProps = @{
     Width       = $script:UI.Sizes.Window.Width
 }
 
-# Panels
 $HeaderPanelProps = @{
     BackColor = $script:UI.Colors.Background
-    # BorderStyle = 'FixedSingle'
+
     Dock      = 'Top'
     Height    = $script:UI.Sizes.Header.Height
     Padding   = $script:UI.Padding.Header
@@ -265,7 +201,7 @@ $HeaderPanelProps = @{
 
 $ContentPanelProps = @{
     BackColor = $script:UI.Colors.Background
-    # BorderStyle = 'FixedSingle'
+
     Dock      = 'Fill'
     Padding   = $script:UI.Padding.Content
 }
@@ -279,15 +215,13 @@ $FooterPanelProps = @{
     Padding     = $script:UI.Padding.Footer
 }
 
-# Spacer Panel between Header and Content
-$SpacerPanelProps = @{
+$ProgressBarPanelProps = @{
     BackColor = $script:UI.Colors.Background
     Dock      = 'Bottom'
     Height    = 5
-    Padding   = '0,0,0,0'  # Remove padding so progress bar fills entire panel
+    Padding   = '0,0,0,0'  
 }
 
-# List View and Split Container
 $ListViewProps = @{
     Add_DragDrop       = {
         param($sender, $e)
@@ -295,19 +229,18 @@ $ListViewProps = @{
         if ($draggedItem) {
             $targetIndex = $sender.InsertionMark.Index
             if ($targetIndex -ge 0) {
-                # Debug output for drag and drop
+
                 Write-Host "=== DRAG DROP DEBUG ===" -ForegroundColor Yellow
                 Write-Host "Dragged Item: '$($draggedItem.Text)' (Index: $($draggedItem.Index))" -ForegroundColor Cyan
                 Write-Host "Target Index: $targetIndex" -ForegroundColor Cyan
                 Write-Host "Appears After: $($sender.InsertionMark.AppearsAfterItem)" -ForegroundColor Cyan
                 Write-Host "ListView Groups Count: $($sender.Groups.Count)" -ForegroundColor Cyan
                 Write-Host "========================" -ForegroundColor Yellow
-                
-                # Use unified logic for all ListView types
+
                 Move-ListViewItem -ListView $sender -Item $draggedItem -TargetIndex $targetIndex -AppearsAfter $sender.InsertionMark.AppearsAfterItem
             }
         }
-        # Clear the insertion mark
+
         $sender.InsertionMark.Index = -1
     }
     Add_DragEnter      = {
@@ -319,60 +252,56 @@ $ListViewProps = @{
         }
     }
     Add_DragLeave      = {
-        # Clear insertion mark when drag leaves the control
         $this.InsertionMark.Index = -1
     }
     Add_DragOver       = {
         param($sender, $e)
-        # Only allow move effect for ListViewItem data
+
         if ($e.Data.GetDataPresent([System.Windows.Forms.ListViewItem])) {
             $e.Effect = [System.Windows.Forms.DragDropEffects]::Move
-            
-            # Calculate the target index based on mouse position
+
             $pt = $sender.PointToClient([System.Windows.Forms.Cursor]::Position)
             $targetItem = $sender.GetItemAt($pt.X, $pt.Y)
-            
+
             if ($targetItem) {
                 $targetIndex = $targetItem.Index
-                # Determine if we should insert before or after the target item
+
                 $itemBounds = $targetItem.Bounds
                 $midPoint = $itemBounds.Top + ($itemBounds.Height / 2)
                 if ($pt.Y -gt $midPoint) {
-                    # Insert after this item
+
                     $sender.InsertionMark.Index = $targetIndex
                     $sender.InsertionMark.AppearsAfterItem = $true
-                    
-                    # Debug output for drag over
+
                     Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT AFTER" -ForegroundColor Green
                 }
                 else {
-                    # Insert before this item
+
                     $sender.InsertionMark.Index = $targetIndex
                     $sender.InsertionMark.AppearsAfterItem = $false
-                    
-                    # Debug output for drag over
+
                     Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT BEFORE" -ForegroundColor Green
                 }
             }
             else {
-                # If no item at cursor, determine insertion point based on position
+
                 if ($sender.Items.Count -eq 0) {
-                    # Empty list
+
                     $sender.InsertionMark.Index = 0
                     $sender.InsertionMark.AppearsAfterItem = $false
                     Write-Host "DragOver: Empty list - INSERT AT INDEX 0" -ForegroundColor Magenta
                 }
                 else {
-                    # Check if we're at the end of the list
+
                     $lastItem = $sender.Items[$sender.Items.Count - 1]
                     if ($pt.Y -gt $lastItem.Bounds.Bottom) {
-                        # Insert at end
+
                         $sender.InsertionMark.Index = $sender.Items.Count - 1
                         $sender.InsertionMark.AppearsAfterItem = $true
                         Write-Host "DragOver: END OF LIST - INSERT AFTER LAST ITEM (Index: $($sender.Items.Count - 1))" -ForegroundColor Magenta
                     }
                     else {
-                        # Insert at beginning
+
                         $sender.InsertionMark.Index = 0
                         $sender.InsertionMark.AppearsAfterItem = $false
                         Write-Host "DragOver: BEGINNING OF LIST - INSERT BEFORE FIRST ITEM" -ForegroundColor Magenta
@@ -397,12 +326,12 @@ $ListViewProps = @{
     Add_ItemDrag       = {
         if ($this.SelectedItems.Count -gt 0) {
             $selectedItem = $this.SelectedItems[0]
-            # Start drag operation with the selected item
+
             $this.DoDragDrop($selectedItem, [System.Windows.Forms.DragDropEffects]::Move)
         }
     }
     Add_MouseDown      = {
-        # Capture mouse down for drag initiation
+
         if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
             $hitTest = $this.HitTest($_.X, $_.Y)
             if ($hitTest.Item -ne $null) {
@@ -413,20 +342,19 @@ $ListViewProps = @{
         }
     }
     AllowColumnReorder = $true
-    AllowDrop          = $true   # Enable drag-drop
+    AllowDrop          = $true   
     CheckBoxes         = $true
     Dock               = 'Fill'
     Font               = $script:UI.Fonts.Default
     Forecolor          = $script:UI.Colors.Text
     FullRowSelect      = $true
     GridLines          = $true
-    MultiSelect        = $false  # Keep false for better reordering experience
+    MultiSelect        = $false  
     ShowItemToolTips   = $true
     Sorting            = [System.Windows.Forms.SortOrder]::None
     View               = 'Details'
 }
 
-# Control Properties
 $SelectAllSwitchProps = @{
     Add_Click  = {
         $isChecked = -not $SelectAllSwitch.Tag
@@ -441,8 +369,7 @@ $SelectAllSwitchProps = @{
     }
     Appearance = 'Button'
     Dock       = 'Left'
-    # Font      = $Script:UI.Fonts.Default
-    # Padding    = $script:UI.Padding.Control
+
     Tag        = $false
     Text       = "⏹"
     AutoSize   = $false
@@ -456,31 +383,16 @@ $SelectAllSwitchProps = @{
 }
 
 $SearchBoxProps = @{
-    # Add_Enter       = { 
-    #     if ($this.Text -eq " Type to filter scripts...") { 
-    #         $this.Text = ""
-    #     } 
-    # }
-    # Add_Leave       = { 
-    #     if ($this.Text -eq "") { 
-    #         $this.Text = " Type to filter scripts..."
-    #     } 
-    # }
     Add_TextChanged = {
         $searchText = $this.Text.Trim()
-        # if ($searchText -eq "Type to filter scripts...") { return }
         $listViews = @($script:ListViews.Values)
         foreach ($lv in $listViews) {
             $lv.BeginUpdate()
             try {
-                # Collect all items and separate matched from non-matched
                 $allItems = @($lv.Items)                
                 foreach ($item in $allItems) {
                     if ($item.Text -like "*$searchText*") {
-                        # instead of setting this Forecolor use the existing ForeColor
-                        $command = $item.SubItems[2].Text
-                        $Color = if (Test-RequiresAdminPrivileges -command $command) { "Red" } else { $script:UI.Colors.Text }
-                        $item.ForeColor = $Color
+                        $item.ForeColor = $script:UI.Colors.Text
                     }
                     else {
                         $item.ForeColor = $script:UI.Colors.Disabled
@@ -495,7 +407,6 @@ $SearchBoxProps = @{
     BackColor       = $script:UI.Colors.Background
     BorderStyle     = 'FixedSingle'
     Dock            = 'Fill'
-    # Font            = $script:UI.Fonts.Default
     Height          = $script:UI.Sizes.Input.Height
     Multiline       = $false
     PlaceholderText = "👓 Search ..."
@@ -503,42 +414,28 @@ $SearchBoxProps = @{
     Width           = $script:UI.Sizes.Input.FooterWidth
 }
 
-# Define toolbar buttons array
 $script:ToolbarButtons = @(
     @{
         Name        = "ScheduleButton"
         Text        = "⏰"
         BorderStyle = 'FixedSingle'
-        BorderColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
-        BackColor   = [System.Drawing.Color]::FromArgb(76, 175, 80)   # Green
+        BorderColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   
+        BackColor   = [System.Drawing.Color]::FromArgb(76, 175, 80)   
         ForeColor   = [System.Drawing.Color]::White
         Font        = $script:UI.Fonts.Regular
         ToolTip     = "Schedule scripts to run later"
         Enabled     = $true
         Click       = { 
-            # TODO: Implement scheduling functionality
+
             [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
         Width       = $script:UI.Sizes.Input.Width / 2 - 8
     }, 
-    # @{
-    #     Name      = "StopButton"
-    #     Text      = "⏺"
-    #     BackColor = [System.Drawing.Color]::FromArgb(220, 53, 69)   # Red
-    #     ForeColor = [System.Drawing.Color]::White
-    #     ToolTip   = "Stop execution"
-    #     Enabled   = $false
-    #     Click     = { 
-    #         # TODO: Implement stop functionality
-    #         [System.Windows.Forms.MessageBox]::Show("Stop functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-    #     }
-    #     Width     = $script:UI.Sizes.Input.Width / 2 - 10
-    # },
 
     @{
         Name      = "RunButton"
         Text      = "▶ Run (0)"
-        BackColor = [System.Drawing.Color]::Green   # Green
+        BackColor = [System.Drawing.Color]::Green   
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Run selected scripts"
         Enabled   = $false
@@ -562,7 +459,7 @@ $script:ToolbarButtons = @(
         Dock      = "Left"
         Enabled   = $true
         Click     = { 
-            # Toggle the consent checkbox
+
             $SelectAllSwitch.Checked = -not $SelectAllSwitch.Checked
             $ProfileDropdown.SelectedIndex = $script:CurrentProfileIndex
         }
@@ -584,7 +481,7 @@ $InvokeButtonProps = @{
     Dock      = 'Left'
     Enabled   = $false
     FlatStyle = 'Flat'
-    # Font      = $script:UI.Fonts.Default
+
     ForeColor = [System.Drawing.Color]::White
     Height    = 16
     Margin    = $script:UI.Padding.Control
@@ -594,7 +491,6 @@ $InvokeButtonProps = @{
 
 $ConsentCheckboxProps = @{
     Add_CheckedChanged = {
-        # Enable/disable buttons based on consent and selection
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
     }
@@ -603,13 +499,11 @@ $ConsentCheckboxProps = @{
         $ConsentCheckbox.ForeColor = if ($isChecked) { [System.Drawing.Color]::Red } else { [System.Drawing.Color]::White }
     }
     Add_MouseEnter     = {
-        # Show status message when hovering
         if ($script:StatusLabel) {
-            $script:StatusLabel.Text = "Check this box to run commands with administrator privileges. Required for system-level changes."
+            $script:StatusLabel.Text = "Check this box to enable script execution."
         }
     }
     Add_MouseLeave     = {
-        # Restore original status message when not hovering
         if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
             $script:StatusLabel.Text = "Gray Winutil is ready to run scripts."
         }
@@ -630,7 +524,7 @@ $ConsentCheckboxProps = @{
 function Read-Profile {
     param([string]$Path)
     if (Test-Path $Path) {
-        # Load the selected profile
+
         $ProfileLines = Get-Content -Path $Path -ErrorAction SilentlyContinue
         if (-not $ProfileLines) {
             Write-Warning "Selected profile '$Path' is empty or does not exist."
@@ -645,14 +539,13 @@ function Read-Profile {
                 return @{
                 }
             }
-            
-            # Create an ordered dictionary to maintain group order
+
             $groupedScripts = New-Object Collections.Specialized.OrderedDictionary
-            $currentGroupName = "Group #1"  # Default group name
-            
+            $currentGroupName = "Group #1"  
+
             foreach ($line in $ProfileLines) {
                 if ($line -eq "") {
-                    # If we hit an empty line, start a new group
+
                     $currentGroupName = "Group#$($groupedScripts.Count + 1)"
                     continue
                 }
@@ -693,14 +586,14 @@ function Read-Profile {
 
 $ProfileDropdownProps = @{
     Add_SelectedIndexChanged = {
-        # Update the script-scoped variable with current selection
+
         $script:CurrentProfileIndex = $ProfileDropdown.SelectedIndex
-        
+
         $selectedProfile = $ProfileDropdown.SelectedItem
         $selectedProfilePath = Join-Path -Path $script:ProfilesDirectory -ChildPath "$selectedProfile.txt"
         $scriptsDict = Read-Profile -Path $selectedProfilePath
         if ($scriptsDict.Count -gt 0) {
-            # Create or update the ListView with grouped scripts
+
             CreateGroupedListView -parentPanel $ScriptsPanel -groupedScripts $scriptsDict
         }
     }
@@ -709,30 +602,13 @@ $ProfileDropdownProps = @{
     Font                     = $script:UI.Fonts.Default
     ForeColor                = $script:UI.Colors.Text
     Height                   = $script:UI.Sizes.Input.Height
-    Margin                   = '10,10,10,10'  # Consistent margin all around for footer items
-    # Width                    = $script:UI.Sizes.Input.FooterWidth
-}
+    Margin                   = '10,10,10,10'  
 
-# ------------------------------
-# Enhanced RUN Button Functions
-# ------------------------------
-function Get-CommandRiskLevel {
-    param([string]$command)
-    
-    foreach ($pattern in $script:Config.HighRiskPatterns) {
-        if ($command -match $pattern) { return "HIGH" }
-    }
-    
-    foreach ($pattern in $script:Config.MediumRiskPatterns) {
-        if ($command -match $pattern) { return "MEDIUM" }
-    }
-    
-    return "LOW"
 }
 
 function Get-EstimatedExecutionTime {
     param([string]$command)
-    
+
     if ($command -match 'winget install') { return "2-5 minutes" }
     if ($command -match 'winget uninstall') { return "1-3 minutes" }
     if ($command -match 'Add-WindowsCapability') { return "3-10 minutes" }
@@ -740,21 +616,12 @@ function Get-EstimatedExecutionTime {
     if ($command -match 'Set-Service|Start-Service|Stop-Service') { return "10-30 seconds" }
     if ($command -match 'New-NetFirewallRule') { return "10-30 seconds" }
     if ($command -match 'Restart-Computer|Stop-Computer') { return "1-2 minutes" }
-    
+
     return "< 30 seconds"
-}
-function Test-RequiresAdminPrivileges {
-    param([string]$command)
-    
-    foreach ($pattern in $script:Config.AdminRequiredPatterns) {
-        if ($command -match $pattern) { return $true }
-    }
-    
-    return $false
 }
 
 function Copy-SelectedCommandsToClipboard {
-    # Get all selected items from all ListViews
+
     $selectedItems = @()
     foreach ($listView in $script:ListViews.Values) {
         $selectedItems += $listView.Items | Where-Object { $_.Checked }
@@ -764,21 +631,18 @@ function Copy-SelectedCommandsToClipboard {
         [System.Windows.Forms.MessageBox]::Show("No items selected to copy.", "Warning", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
         return
     }
-    
+
     $commandsText = "# Gray WinUtil - Selected Commands`n"
     $commandsText += "# Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n"
     $commandsText += "# Total Commands: $($selectedItems.Count)`n`n"
-    
+
     foreach ($item in $selectedItems) {
 
         $command = $item.SubItems[2].Text
-
-        $risk = Get-CommandRiskLevel -command $command
         $timeEst = Get-EstimatedExecutionTime -command $command
-        $requiresAdmin = Test-RequiresAdminPrivileges -command $command
         
         $commandsText += "# $($item.Text)`n"
-        $commandsText += "# Risk: $risk | Time: $timeEst | Admin Required: $requiresAdmin`n"
+        $commandsText += "# Time: $timeEst`n"
         $commandsText += "$command`n`n"
     }
 
@@ -792,7 +656,7 @@ function Get-ScriptFromId {
         [Parameter(Mandatory)]
         $DbData
     )
-    
+
     $scriptData = $DbData | Where-Object { $_.id -eq $Id }
     if ($scriptData) {
         return @{
@@ -804,10 +668,6 @@ function Get-ScriptFromId {
     return $null
 }
 
-# ------------------------------
-# Functions
-# ------------------------------
-# Function to move ListView items
 function Move-ListViewItem {
     param(
         [System.Windows.Forms.ListView]$ListView,
@@ -815,27 +675,22 @@ function Move-ListViewItem {
         [int]$TargetIndex,
         [bool]$AppearsAfter = $false
     )
-    
-    # Get the current index before removing
+
     $currentIndex = $Item.Index
-    
-    # Simple calculation: if AppearsAfter is true, we want to insert after the target
+
     $insertIndex = if ($AppearsAfter) { $TargetIndex + 1 } else { $TargetIndex }
-    
-    # Debug output for move calculation
+
     Write-Host "--- MOVE CALCULATION ---" -ForegroundColor Blue
     Write-Host "Current Index: $currentIndex" -ForegroundColor White
     Write-Host "Target Index: $TargetIndex" -ForegroundColor White
     Write-Host "Appears After: $AppearsAfter" -ForegroundColor White
     Write-Host "Calculated Insert Index (before adjustment): $insertIndex" -ForegroundColor White
-    
-    # Don't move if dropping on the same position
+
     if ($currentIndex -eq $insertIndex) {
         Write-Host "MOVE CANCELLED - Same position" -ForegroundColor Red
         return
     }
-    
-    # Store all item properties including group membership
+
     $itemData = @{
         Text        = $Item.Text
         SubItems    = @($Item.SubItems | ForEach-Object { $_.Text })
@@ -847,29 +702,25 @@ function Move-ListViewItem {
         Tag         = $Item.Tag
         ToolTipText = $Item.ToolTipText
     }
-    
-    # Begin update to prevent flickering
+
     $ListView.BeginUpdate()
     try {
-        # Remove item from current position
+
         $ListView.Items.RemoveAt($currentIndex)
         Write-Host "Item removed from index: $currentIndex" -ForegroundColor White
-        
-        # Adjust insert index if we removed an item before the target position
+
         if ($insertIndex > $currentIndex) {
             $insertIndex--
             Write-Host "Insert index adjusted to: $insertIndex (removed item was before target)" -ForegroundColor White
         }
-        
-        # Ensure we don't go beyond the list bounds
+
         if ($insertIndex > $ListView.Items.Count) {
             $insertIndex = $ListView.Items.Count
             Write-Host "Insert index clamped to list end: $insertIndex" -ForegroundColor White
         }
-        
+
         Write-Host "Final insert index: $insertIndex" -ForegroundColor Yellow
-        
-        # Create new item with same properties
+
         $newItem = New-Object System.Windows.Forms.ListViewItem($itemData.Text)
         for ($i = 1; $i -lt $itemData.SubItems.Count; $i++) {
             $newItem.SubItems.Add($itemData.SubItems[$i]) | Out-Null
@@ -880,23 +731,22 @@ function Move-ListViewItem {
         $newItem.Font = $itemData.Font
         $newItem.Tag = $itemData.Tag
         $newItem.ToolTipText = $itemData.ToolTipText
-        
-        # Handle group assignment - determine target group based on final position
+
         if ($ListView.Groups.Count -gt 0) {
             if ($insertIndex -lt $ListView.Items.Count) {
-                # Insert in middle - use the group of the item at insert position
+
                 $targetItem = $ListView.Items[$insertIndex]
                 $newItem.Group = $targetItem.Group
                 Write-Host "Group assignment: Using group of item at insert position '$($targetItem.Group.Header)'" -ForegroundColor White
             }
             elseif ($ListView.Items.Count -gt 0) {
-                # Insert at end - use the group of the last item
+
                 $lastItem = $ListView.Items[$ListView.Items.Count - 1]
                 $newItem.Group = $lastItem.Group
                 Write-Host "Group assignment: Using group of last item '$($lastItem.Group.Header)'" -ForegroundColor White
             }
             else {
-                # Empty list - keep original group
+
                 $newItem.Group = $itemData.Group
                 Write-Host "Group assignment: Keeping original group '$($itemData.Group.Header)'" -ForegroundColor White
             }
@@ -905,8 +755,7 @@ function Move-ListViewItem {
             $newItem.Group = $null
             Write-Host "Group assignment: No groups" -ForegroundColor White
         }
-        
-        # Insert at new position
+
         if ($insertIndex -ge $ListView.Items.Count) {
             $ListView.Items.Add($newItem) | Out-Null
             Write-Host "Item added at end of list" -ForegroundColor Green
@@ -915,12 +764,11 @@ function Move-ListViewItem {
             $ListView.Items.Insert($insertIndex, $newItem) | Out-Null
             Write-Host "Item inserted at index: $insertIndex" -ForegroundColor Green
         }
-        
-        # Select the moved item
+
         $ListView.SelectedItems.Clear()
         $newItem.Selected = $true
         $newItem.EnsureVisible()
-        
+
         Write-Host "MOVE COMPLETED - Item '$($newItem.Text)' moved to index $($newItem.Index)" -ForegroundColor Green
         Write-Host "------------------------" -ForegroundColor Blue
     }
@@ -929,112 +777,82 @@ function Move-ListViewItem {
     }
 }
 
-# Function to move selected item up
 function Move-SelectedItemUp {
     param([System.Windows.Forms.ListView]$ListView)
-    
+
     if ($ListView.SelectedItems.Count -eq 0) { return }
-    
+
     $selectedItem = $ListView.SelectedItems[0]
     $currentIndex = $selectedItem.Index
-    
+
     if ($currentIndex -gt 0) {
         Move-ListViewItem -ListView $ListView -Item $selectedItem -TargetIndex ($currentIndex - 1)
     }
 }
 
-# Function to move selected item down
 function Move-SelectedItemDown {
     param([System.Windows.Forms.ListView]$ListView)
-    
+
     if ($ListView.SelectedItems.Count -eq 0) { return }
-    
+
     $selectedItem = $ListView.SelectedItems[0]
     $currentIndex = $selectedItem.Index
-    
+
     if ($currentIndex -lt $ListView.Items.Count - 1) {
         Move-ListViewItem -ListView $ListView -Item $selectedItem -TargetIndex ($currentIndex + 1) -AppearsAfter $true
     }
 }
 
-# Function to create a single ListView with groups
 function CreateGroupedListView {
     param (
         $parentPanel,
         [System.Collections.Specialized.OrderedDictionary]$groupedScripts
     )
-    
-    # Clear existing controls
+
     $parentPanel.Controls.Clear()
-    
-    # Create container panel for ListView and buttons
+
     $ContainerPanel = New-Object System.Windows.Forms.Panel -Property @{
         Dock = 'Fill'
     }
-    
-    # Create the main ListView with basic properties
+
     $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
-    # Add columns
+
     $LV.Columns.Add("SCRIPT", $script:UI.Sizes.Columns.Name) | Out-Null
     $LV.Columns.Add("TIME", $script:UI.Sizes.Columns.Time) | Out-Null
     $LV.Columns.Add("COMMAND", $script:UI.Sizes.Columns.Command) | Out-Null
-    $LV.Columns.Add("PERMISSION", $script:UI.Sizes.Columns.Permission) | Out-Null
 
-    # Create and add groups, then add items to each group
     foreach ($groupName in $groupedScripts.Keys) {
-        # do not create groups is there is just one group
+
         if ($groupedScripts.Count -gt 1) {
-            # Create ListView group
+
             $group = New-Object System.Windows.Forms.ListViewGroup($groupName, $groupName)
             $LV.Groups.Add($group) | Out-Null
         }
-        # Add items to this group
+
         foreach ($script in $groupedScripts[$groupName]) {
             $listItem = New-Object System.Windows.Forms.ListViewItem($script.content)
 
-            # Get time estimate and risk assessment
             $timeEst = Get-EstimatedExecutionTime -command $script.command
-            $risk = Get-CommandRiskLevel -command $script.command
-            $requiresAdmin = Test-RequiresAdminPrivileges -command $script.command
             
             $listItem.SubItems.Add($timeEst)
             $listItem.SubItems.Add($script.command)
-            $privilege = if ($requiresAdmin) { "Admin" } else { "User" }
-            $listItem.SubItems.Add($privilege)
             
-            # Color code by risk level
-            switch ($risk) {
-                "HIGH" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(255, 230, 230) }
-                "MEDIUM" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230) }
-                "LOW" { $listItem.BackColor = [System.Drawing.Color]::FromArgb(230, 255, 230) }
-            }
-            
-            # Bold font for admin-required commands
-            if ($requiresAdmin) {
-                $listItem.ForeColor = [System.Drawing.Color]::Red
-            }
-            
-            # Assign item to the group only if there are more than 1 groups
             if ($LV.Groups.Count -gt 1) {
                 $listItem.Group = $group
             }
             else {
-                # If there's only one group, we don't need to set the group
                 $listItem.Group = $null
             }
-            # Add item to ListView
+
             $LV.Items.Add($listItem) | Out-Null
         }
     }
-    
-    # Store the ListView in script scope
+
     $script:ListViews.Clear()
     $script:ListViews["MainList"] = $LV
-    
-    # Add ListView and button panel to container
+
     $ContainerPanel.Controls.Add($LV)
 
-    # Add container to the parent panel
     $parentPanel.Controls.Add($ContainerPanel)
 }
 
@@ -1042,26 +860,21 @@ function RunSelectedItems {
     param(
         [bool]$RetryMode = $false
     )
-    
-    # Always create a new log file for each execution
+
     $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
     $logFileName = "GrayWinUtil_Execution_$timestamp.log"
     $script:CurrentLogFile = Join-Path -Path $script:LogsDirectory -ChildPath $logFileName
-    
-    # Initialize log file with standard format
+
     $startTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
     Add-Content -Path $script:CurrentLogFile -Value "$startTime INFO Gray WinUtil execution started"
-    
-    # Disable the invoke button while running
+
     $InvokeButton.Enabled = $false
     $InvokeButton.Text = "Running..."
 
-    # Hide buttons and update status during execution
     if ($script:StatusLabel) { $script:StatusLabel.Text = "Initializing execution..." }
     if ($script:ActionButton) { $script:ActionButton.Visible = $false }
     if ($script:RetryButton) { $script:RetryButton.Visible = $false }
 
-    # Create and add progress bar to spacer panel (now inside button panel)
     $ProgressBar = New-Object System.Windows.Forms.ProgressBar -Property @{
         Dock      = 'Fill'
         Style     = 'Continuous'
@@ -1070,17 +883,17 @@ function RunSelectedItems {
         Value     = 0
         ForeColor = $script:UI.Colors.Accent
     }
-    $script:SpacerPanel.Controls.Add($ProgressBar)
+    $script:ProgressBarPanel.Controls.Add($ProgressBar)
 
     try {
-        # Get selected items
+
         $selectedItems = @()
         if ($RetryMode -and $script:RetryItems) {
             $selectedItems = $script:RetryItems
-            # Reset the items for execution
+
             foreach ($item in $selectedItems) {
-                $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  # Light blue for queued
-                $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     # Dark blue text
+                $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  
+                $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     
                 $item.SubItems[1].Text = "Queued"
             }
         }
@@ -1095,86 +908,72 @@ function RunSelectedItems {
             return
         }
 
-        # Set progress bar maximum to number of selected items
         $ProgressBar.Maximum = $selectedItems.Count
 
-        # Show initial progress in button panel
         if ($script:StatusLabel) {
             $script:StatusLabel.Text = "Initializing execution..."
             $script:StatusLabel.Visible = $true
         }
 
-        # Prepare ListView for execution mode - keep checkboxes and all items visible
         foreach ($listView in $script:ListViews.Values) {
-            # Keep checkboxes enabled during execution
-            # $listView.CheckBoxes = $true  # Keep checkboxes visible
-            
-            # Style all items based on selection status
+
             foreach ($item in $listView.Items) {
                 if ($selectedItems -contains $item) {
-                    # Selected items - bright and ready for execution
-                    $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  # Light blue background
-                    $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     # Dark blue text
-                    $item.Font = $script:UI.Fonts.Bold                                 # Bold font
-                    $item.SubItems[1].Text = "Queued"                                  # Show as queued
+
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  
+                    $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     
+                    $item.Font = $script:UI.Fonts.Bold                                 
+                    $item.SubItems[1].Text = "Queued"                                  
                 }
                 else {
-                    # Non-selected items - muted but visible
-                    $item.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 250)  # Very light gray
-                    $item.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)  # Muted gray text
-                    $item.Font = $script:UI.Fonts.Default                              # Normal font
-                    # Keep original time text for non-selected items
+
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 250)  
+                    $item.ForeColor = [System.Drawing.Color]::FromArgb(160, 160, 160)  
+                    $item.Font = $script:UI.Fonts.Default                              
+
                 }
             }
         }
-        
-        # Track execution statistics
+
         $completedCount = 0
         $failedCount = 0
         $cancelledCount = 0
-        
-        # Process each selected item
+
         for ($i = 0; $i -lt $selectedItems.Count; $i++) {
             $item = $selectedItems[$i]
             $command = $item.SubItems[2].Text
             $name = $item.Text
 
-            # Log the current item being executed in standard format
             $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
             Add-Content -Path $script:CurrentLogFile -Value "$timestamp INFO Starting execution of '$name' - Command: $command"
 
-            # Update progress bar
             $ProgressBar.Value = $i + 1
-            
-            # Update progress message in button panel
+
             if ($script:StatusLabel) {
                 $progressText = "Executing ($($i + 1)/$($selectedItems.Count)): $name"
                 $script:StatusLabel.Text = $progressText
             }
-            
+
             [System.Windows.Forms.Application]::DoEvents()
 
-            # Highlight currently executing item
             $item.BackColor = [System.Drawing.Color]::Yellow
             $item.ForeColor = [System.Drawing.Color]::Black
             $item.Font = $script:UI.Fonts.Bold
-            $item.SubItems[1].Text = "Running..."  # Update TIME column during execution
+            $item.SubItems[1].Text = "Running..."  
             [System.Windows.Forms.Application]::DoEvents()
-            
-            # Start timing the execution
+
             $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             $executionFailed = $false
             $executionCancelled = $false
             $executionOutput = ""
-            
+
             try {
-                # Capture output and errors for better detection
+
                 $output = $null
                 $errorOutput = $null
-                
-                # Execute the command and capture output
+
                 if ($command -match 'winget') {
-                    # For winget commands, capture both output and check exit code
+
                     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
                     $processInfo.FileName = "powershell.exe"
                     $processInfo.Arguments = "-Command `"$command`"" 
@@ -1182,22 +981,20 @@ function RunSelectedItems {
                     $processInfo.RedirectStandardError = $true
                     $processInfo.UseShellExecute = $false
                     $processInfo.CreateNoWindow = $true
-                    
+
                     $process = [System.Diagnostics.Process]::Start($processInfo)
                     $output = $process.StandardOutput.ReadToEnd()
                     $errorOutput = $process.StandardError.ReadToEnd()
                     $process.WaitForExit()
                     $exitCode = $process.ExitCode
-                    
-                    # Store execution output for display
+
                     $executionOutput = if ($output) { $output.Trim() } else { $errorOutput.Trim() }
-                    
-                    # Check for cancellation indicators first
+
                     if ($errorOutput -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled" -or
                         $output -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
                         $executionCancelled = $true
                     }
-                    # Then check for other failure indicators
+
                     elseif ($exitCode -ne 0 -or 
                         $errorOutput -match "access.*denied|permission.*denied|requires.*administrator|elevation.*required" -or
                         $output -match "failed|error|denied") {
@@ -1205,29 +1002,25 @@ function RunSelectedItems {
                     }
                 }
                 else {
-                    # For other commands, use regular execution but with error stream capture
+
                     $ErrorActionPreference = 'Stop'
                     $output = Invoke-Expression $command 2>&1
-                    
-                    # Store execution output for display
+
                     $executionOutput = if ($output) { $output.ToString().Trim() } else { "No output" }
-                    
-                    # Check for cancellation indicators first
+
                     if ($output -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
                         $executionCancelled = $true
                     }
-                    # Then check for other error indicators
+
                     elseif ($output -match "access.*denied|permission.*denied|requires.*administrator|elevation.*required|failed|error") {
                         $executionFailed = $true
                     }
                 }
-                
-                # Stop timing and calculate execution time
+
                 $stopwatch.Stop()
                 $ms = $stopwatch.ElapsedMilliseconds
                 $executionTime = if ($ms -gt 1000) { "{0:N2} s" -f ($ms / 1000) } else { "$($ms) ms" }
-                
-                # Log execution result in standard format
+
                 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
                 if ($executionCancelled) {
                     Add-Content -Path $script:CurrentLogFile -Value "$timestamp WARN Execution cancelled for '$name' - Time: $executionTime - Output: $executionOutput"
@@ -1238,58 +1031,52 @@ function RunSelectedItems {
                 else {
                     Add-Content -Path $script:CurrentLogFile -Value "$timestamp INFO Execution completed for '$name' - Time: $executionTime - Output: $executionOutput"
                 }
-                
-                # Update button panel with execution result
+
                 if ($executionCancelled) {
-                    # Mark as cancelled (orange/amber)
+
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 200)
                     $item.ForeColor = [System.Drawing.Color]::FromArgb(205, 133, 0)
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Cancelled)"
                     $cancelledCount++
-                    
-                    # Update status in button panel
+
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Cancelled ($($i + 1)/$($selectedItems.Count)): $name"
                     }
                 }
                 elseif ($executionFailed) {
-                    # Mark as failed even if no exception was thrown
+
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
                     $item.ForeColor = [System.Drawing.Color]::Red
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Failed)"
                     $failedCount++
-                    
-                    # Update status in button panel
+
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Failed ($($i + 1)/$($selectedItems.Count)): $name"
                     }
                 }
                 else {
-                    # Mark as completed (green) and show actual execution time
+
                     $item.BackColor = [System.Drawing.Color]::FromArgb(200, 255, 200)
                     $item.ForeColor = [System.Drawing.Color]::DarkGreen
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Completed)"
                     $completedCount++
-                    
-                    # Update status in button panel
+
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Completed ($($i + 1)/$($selectedItems.Count)): $name"
                     }
                 }
             }
             catch {
-                # Stop timing even on error
+
                 $stopwatch.Stop()
                 $ms = $stopwatch.ElapsedMilliseconds
                 $executionTime = if ($ms -gt 1000) { "{0:N2} s" -f ($ms / 1000) } else { "$($ms) ms" }
 
-                # Store exception message
                 $executionOutput = $_.Exception.Message
-                
-                # Log exception in standard format
+
                 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
                 if ($_.Exception.Message -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
                     Add-Content -Path $script:CurrentLogFile -Value "$timestamp WARN Execution cancelled with exception for '$name' - Time: $executionTime - Error: $executionOutput"
@@ -1297,98 +1084,78 @@ function RunSelectedItems {
                 else {
                     Add-Content -Path $script:CurrentLogFile -Value "$timestamp ERROR Execution failed with exception for '$name' - Time: $executionTime - Error: $executionOutput"
                 }
-                
-                # Check if exception message indicates cancellation
+
                 if ($_.Exception.Message -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
-                    # Mark as cancelled (orange/amber)
+
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 200)
                     $item.ForeColor = [System.Drawing.Color]::FromArgb(205, 133, 0)
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Cancelled)"
                     $cancelledCount++
-                    
-                    # Update status in button panel
+
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Cancelled ($($i + 1)/$($selectedItems.Count)): $name"
                     }
                 }
                 else {
-                    # Mark as failed (red) and show execution time up to failure
+
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
                     $item.ForeColor = [System.Drawing.Color]::Red
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Failed)"
                     $failedCount++
-                    
-                    # Update status in button panel
+
                     if ($script:StatusLabel) {
                         $script:StatusLabel.Text = "Failed ($($i + 1)/$($selectedItems.Count)): $name"
                     }
                 }
-                
-                # Continue with next command without asking user
+
             }
-            
-            # Brief pause between commands for UI updates
+
             [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 1000  # Increased to 1 second to better see the status updates
+            Start-Sleep -Milliseconds 1000  
         }
-        
-        # Write execution summary to log in standard format
+
         $endTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
         $totalItems = $selectedItems.Count
         Add-Content -Path $script:CurrentLogFile -Value "$endTime INFO Execution completed - Total: $totalItems, Completed: $completedCount, Failed: $failedCount, Cancelled: $cancelledCount"
-        
-        # Show final completion message in button panel
+
         if ($script:StatusLabel -and $script:ActionButton) {
             $totalItems = $selectedItems.Count
             $statusText = "Execution completed: $completedCount succeeded"
             if ($failedCount -gt 0) { $statusText += ", $failedCount failed" }
             if ($cancelledCount -gt 0) { $statusText += ", $cancelledCount cancelled" }
             $statusText += " (Total: $totalItems)"
-            
+
             $script:StatusLabel.Text = $statusText
             $script:StatusLabel.Visible = $true
             $script:ActionButton.Visible = $true
 
-            # Show retry button only if there were failures or cancellations
             if (($failedCount -gt 0 -or $cancelledCount -gt 0) -and $script:RetryButton) {
                 $script:RetryButton.Visible = $true
             }
         }
     }
     finally {
-        # Do NOT remove progress bar - keep it visible
-        # $script:SpacerPanel.Controls.Remove($ProgressBar)
-        # $ProgressBar.Dispose()
-        
-        # Re-enable the invoke button and reset controls
+
         $InvokeButton.Enabled = $ConsentCheckbox.Checked
         $InvokeButton.Text = "▶ Run"
         $SelectAllSwitch.Checked = $false
         $SelectAllSwitch.Tag = $false
-        
-        # Reset status label to default message if execution finished
+
         if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
             $script:StatusLabel.Text = "Gray Winutil is ready to run scripts."
         }
     }
 }
 
-# ------------------------------
-# Application Initialization
-# ------------------------------
 if ([Environment]::OSVersion.Version.Major -ge 6) {
     try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
 }
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# ------------------------------
-# GUI Initialization
-# ------------------------------
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
-# Remove SpacerPanel from main form - it's now created inside CreateGroupedListView
 
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
 $FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
@@ -1400,24 +1167,23 @@ $InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonPr
 
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 
-# Create padding spacer between search area and consent checkbox
-$PaddingSpacerPanel = New-Object System.Windows.Forms.Panel -Property @{
+$PaddingProgressBarPanel = New-Object System.Windows.Forms.Panel -Property @{
     Dock  = 'Right'
-    Width = 10  # Reduced from 15 to 10 for better alignment
+    Width = 10  
 }
 
 $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
     Add_Click = {
-        # Singleton pattern: Check if Help window already exists
+
         if ($script:HelpForm -and -not $script:HelpForm.IsDisposed) {
-            # Window exists, bring it to front
+
             $script:HelpForm.BringToFront()
             $script:HelpForm.Activate()
             return
-        }        
-        # Create Help Window
+        }
+
         $script:HelpForm = New-Object System.Windows.Forms.Form -Property @{
-            Add_FormClosed = { $script:HelpForm = $null }  # Clear reference when closed
+            Add_FormClosed = { $script:HelpForm = $null }  
             Add_Shown      = { $script:HelpForm.Activate() }
             BackColor      = $script:UI.Colors.Background
             Font           = $script:UI.Fonts.Default
@@ -1432,225 +1198,18 @@ $HelpLabel = New-Object System.Windows.Forms.Label -Property @{
             Dock       = 'Fill'
             AutoScroll = $true
         }
-        
-        $yPosition = 10
-        
-        $KeyboardShortcutsLabel = New-Object System.Windows.Forms.Label -Property @{
-            Text      = "Hotkeys:`n• Ctrl+A - Select All Scripts`n• Ctrl+R - Run Selected Scripts`n• Ctrl+C - Copy Selected Scripts"
-            Location  = New-Object System.Drawing.Point(10, $yPosition)
-            Size      = New-Object System.Drawing.Size(300, 70)
-            ForeColor = $script:UI.Colors.Text
-            Font      = $script:UI.Fonts.Default
-            TextAlign = 'TopLeft'
-            AutoSize  = $false
-        }
-        $yPosition += 80
-
-        $LowRiskLabel = New-Object System.Windows.Forms.Label -Property @{
-            Text      = "Color Codes:`n• This action is marked as a low risk item"
-            Location  = New-Object System.Drawing.Point(10, $yPosition)
-            Size      = New-Object System.Drawing.Size(300, 40)
-            Font      = $script:UI.Fonts.Default
-            BackColor = [System.Drawing.Color]::FromArgb(230, 255, 230)
-            ForeColor = $script:UI.Colors.Text
-            TextAlign = 'MiddleLeft'
-            AutoSize  = $true
-        }
-        $yPosition += 40
-
-        $MediumRiskLabel = New-Object System.Windows.Forms.Label -Property @{
-            Text      = "• This action is marked as a medium risk item"
-            Location  = New-Object System.Drawing.Point(10, $yPosition)
-            Size      = New-Object System.Drawing.Size(300, 20)
-            Font      = $script:UI.Fonts.Default
-            BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
-            ForeColor = $script:UI.Colors.Text
-            TextAlign = 'MiddleLeft'
-            AutoSize  = $true
-        }
-        $yPosition += 20
-
-        $AdminLabel = New-Object System.Windows.Forms.Label -Property @{
-            Text      = "• This action requires admin privileges"
-            Location  = New-Object System.Drawing.Point(10, $yPosition)
-            Size      = New-Object System.Drawing.Size(300, 20)
-            Font      = $script:UI.Fonts.Bold
-            BackColor = $script:UI.Colors.Background
-            ForeColor = $script:UI.Colors.Text
-            TextAlign = 'MiddleLeft'
-            AutoSize  = $true
-        }
-        $yPosition += 20
-
-        $HighRiskLabel = New-Object System.Windows.Forms.Label -Property @{
-            Text      = "• This action is marked as a high risk item"
-            Location  = New-Object System.Drawing.Point(10, $yPosition)
-            Size      = New-Object System.Drawing.Size(300, 20)
-            Font      = $script:UI.Fonts.Default
-            BackColor = [System.Drawing.Color]::FromArgb(255, 230, 230)
-            ForeColor = $script:UI.Colors.Text
-            TextAlign = 'MiddleLeft'
-            AutoSize  = $true
-        }
-
-        $yPosition += 30
-        
-        $DiscordHelpLabel = New-Object System.Windows.Forms.Label -Property @{
-            Text      = "Links:`n• Ask for help on Discord: discord.gg/GT4fac2u"
-            Location  = New-Object System.Drawing.Point(10, $yPosition)
-            Size      = New-Object System.Drawing.Size(300, 40)
-            Font      = $script:UI.Fonts.Default
-            BackColor = [System.Drawing.Color]::FromArgb(240, 242, 245)
-            ForeColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-            AutoSize  = $false
-            Cursor    = [System.Windows.Forms.Cursors]::Hand
-            Add_Click = {
-                Start-Process -FilePath "https://discord.gg/GT4fac2u"
-            }
-        }
-        $yPosition += 35
-
-        $RepoHelpLabel = New-Object System.Windows.Forms.Label -Property @{
-            Text      = "• View Source code: github.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)"
-            Location  = New-Object System.Drawing.Point(10, $yPosition)
-            Font      = $script:UI.Fonts.Default
-            Size      = New-Object System.Drawing.Size(300, 20)
-            BackColor = [System.Drawing.Color]::FromArgb(240, 242, 245)
-            ForeColor = [System.Drawing.Color]::FromArgb(88, 101, 242)
-            AutoSize  = $false
-            Cursor    = [System.Windows.Forms.Cursors]::Hand
-            Add_Click = {
-                $url = "https://github.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)"
-                Start-Process -FilePath $url
-            }
-        }
-
-        $HelpPanel.Controls.AddRange(@( $KeyboardShortcutsLabel, $LowRiskLabel, $MediumRiskLabel, $HighRiskLabel, $AdminLabel, $DiscordHelpLabel, $RepoHelpLabel))
         $script:HelpForm.Controls.Add($HelpPanel)
-        $script:HelpForm.Show()  # Use Show() instead of ShowDialog() for non-blocking
+        $script:HelpForm.Show()  
     }
 }
 
-$UpdatesLabel = New-Object System.Windows.Forms.Label -Property @{
-    Add_Click = {
-        # Singleton pattern: Check if Updates window already exists
-        if ($script:UpdatesForm -and -not $script:UpdatesForm.IsDisposed) {
-            # Window exists, bring it to front
-            $script:UpdatesForm.BringToFront()
-            $script:UpdatesForm.Activate()
-            return
-        }
-
-        # Fetch repository profiles
-        $repoUrl = "$($script:Config.ApiUrl)/Profiles"
-        try {
-            $response = Invoke-WebRequest -Uri $repoUrl -UseBasicParsing
-            $content = ConvertFrom-Json $response.Content
-        }
-        catch {
-            [System.Windows.Forms.MessageBox]::Show("Error accessing repository: $_", "Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
-            return
-        }
-
-        # Create UpdatesForm matching HelpForm design
-        $script:UpdatesForm = New-Object System.Windows.Forms.Form -Property @{
-            Add_FormClosed = { $script:UpdatesForm = $null }  # Clear reference when closed
-            Add_Shown      = { $script:UpdatesForm.Activate() }
-            BackColor      = $script:UI.Colors.Background
-            Font           = $script:UI.Fonts.Default
-            MaximizeBox    = $false
-            MinimizeBox    = $false
-            Padding        = $script:UI.Padding.Help
-            Size           = New-Object System.Drawing.Size(350, 350)
-            StartPosition  = "CenterParent"
-            Text           = "Updates - Gray WinUtil"
-        }        
-
-        # Main panel to hold ListView
-        $UpdatesPanel = New-Object System.Windows.Forms.Panel -Property @{
-            Dock    = 'Fill'
-            Padding = $script:UI.Padding.Updates
-        }        
-        # Updates ListView with Details view (no checkboxes)
-        $UpdatesListView = New-Object System.Windows.Forms.ListView -Property @{
-            BackColor        = $script:UI.Colors.Background
-            BorderStyle      = 'None'
-            CheckBoxes       = $false
-            Dock             = 'Fill'
-            Font             = $script:UI.Fonts.Default
-            ForeColor        = $script:UI.Colors.Text
-            FullRowSelect    = $true
-            MultiSelect      = $false
-            ShowItemToolTips = $true
-            View             = 'Details'
-        }
-
-        # Add columns: Updates, Status, Size
-        $UpdatesListView.Columns.Add("Updates", 160) | Out-Null
-        $UpdatesListView.Columns.Add("Status", 50) | Out-Null
-        $UpdatesListView.Columns.Add("Size", 70) | Out-Null
-
-        # Get local profiles for comparison
-        $localProfiles = @()
-        if (Test-Path $script:ProfilesDirectory) {
-            $localProfiles = Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object { $_.Name }
-        }
-
-        # Populate ListView with repository profiles
-        foreach ($repoItem in $content) {
-            if ($repoItem.type -eq "file" -and $repoItem.name -like "*.txt") {
-                $listItem = New-Object System.Windows.Forms.ListViewItem($repoItem.name)
-                
-                # Format file size
-                $fileSizeKB = [Math]::Round($repoItem.size / 1024, 1)
-                $sizeText = if ($fileSizeKB -lt 1) { "$($repoItem.size) B" } else { "$fileSizeKB KB" }
-                if ($localProfiles -contains $repoItem.name) {
-                    # Update candidate - locally available
-                    $listItem.SubItems.Add("🔃")
-                    $listItem.SubItems.Add($sizeText)
-                    $listItem.ForeColor = [System.Drawing.Color]::FromArgb(230, 126, 34) # Orange
-                    $listItem.ToolTipText = "To be updated"                
-                }
-                else {
-                    # Download candidate - not locally available
-                    $listItem.SubItems.Add("⏬")
-                    $listItem.SubItems.Add($sizeText)
-                    $listItem.ForeColor = [System.Drawing.Color]::FromArgb(76, 175, 80) # Green
-                    $listItem.ToolTipText = "To be downloaded"
-                }
-                
-                $UpdatesListView.Items.Add($listItem) | Out-Null
-            }
-        }        # Add a button to download selected files into the user's personal scripts folder
-        $DownloadButton = New-Object System.Windows.Forms.Button -Property @{
-            Text      = "DOWNLOAD"
-            Height    = 25
-            Width     = $script:UI.Sizes.Input.FooterWidth
-            Font      = $script:UI.Fonts.Bold
-            FlatStyle = 'Flat'
-            BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
-            ForeColor = [System.Drawing.Color]::White
-            Dock      = 'Bottom'
-            Add_Click = {
-                [System.Windows.Forms.MessageBox]::Show("Download functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-            }
-        }
-        $UpdatesPanel.Controls.Add($UpdatesListView)
-        $UpdatesPanel.Controls.Add($DownloadButton)
-        $script:UpdatesForm.Controls.Add($UpdatesPanel)
-        
-        $script:UpdatesForm.Show()  # Use Show() instead of ShowDialog() for non-blocking
-    }
-}
-
-# Create button panel for reorder controls and completion messages
 $script:StatusPanel = New-Object System.Windows.Forms.Panel -Property @{
     Dock   = 'Top'
     Font   = $script:UI.Fonts.Small
     Height = $script:UI.Sizes.Status.Height
 }
 $script:ToolBarPanel = New-Object System.Windows.Forms.Panel -Property @{
-    # BorderStyle = 'FixedSingle'
+
     Dock    = 'Top'
     Font    = $script:UI.Fonts.Default
     Height  = $script:UI.Sizes.ToolBar.Height
@@ -1658,20 +1217,17 @@ $script:ToolBarPanel = New-Object System.Windows.Forms.Panel -Property @{
 }
 $script:ScriptsPanel = New-Object System.Windows.Forms.Panel -Property @{
     Dock    = 'Fill'
-    Padding = '0,0,0,0'  # Consistent padding all around for scripts area
+    Padding = '0,0,0,0'  
 }
-    
-# Create spacer panel and dock to top of button panel
-$script:SpacerPanel = New-Object System.Windows.Forms.Panel -Property $SpacerPanelProps
-$script:StatusPanel.Controls.Add($script:SpacerPanel)
 
-# Create status panel to hold the status label and buttons
+$script:ProgressBarPanel = New-Object System.Windows.Forms.Panel -Property $ProgressBarPanelProps
+$script:StatusPanel.Controls.Add($script:ProgressBarPanel)
+
 $script:StatusContentPanel = New-Object System.Windows.Forms.Panel -Property @{
-    Dock   = 'Fill'  # Fill remaining space in button panel
+    Dock   = 'Fill'  
     Height = 25
 }
 
-# Create single status label for all messages
 $script:StatusLabel = New-Object System.Windows.Forms.Label -Property @{
     AutoSize = $true
     Dock     = 'Left'
@@ -1680,16 +1236,15 @@ $script:StatusLabel = New-Object System.Windows.Forms.Label -Property @{
     Visible  = $true
 }
 
-# Create action button (hidden by default)
 $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
     Add_Click = {
-        # Open the most recent log file
+
         if ($script:CurrentLogFile -and (Test-Path $script:CurrentLogFile)) {
             try {
                 Start-Process -FilePath "notepad.exe" -ArgumentList $script:CurrentLogFile
             }
             catch {
-                # Fallback to default text editor
+
                 Start-Process -FilePath $script:CurrentLogFile
             }
         }
@@ -1706,10 +1261,9 @@ $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
     Width     = 70
 }
 
-# Create retry button (hidden by default)
 $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
     Add_Click = {
-        # Store the failed/cancelled items to retry
+
         $script:RetryItems = @()
         foreach ($listView in $script:ListViews.Values) {
             foreach ($item in $listView.Items) {
@@ -1718,8 +1272,7 @@ $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
                 }
             }
         }
-            
-        # If we have items to retry, run them
+
         if ($script:RetryItems.Count -gt 0) {
             RunSelectedItems -RetryMode $true
         }
@@ -1732,21 +1285,17 @@ $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
     Visible   = $false
     Width     = 70
 }
-    
-# Remove button border
+
 $script:ActionButton.FlatAppearance.BorderSize = 0
-    
-# Remove retry button border
+
 $script:RetryButton.FlatAppearance.BorderSize = 0
 
-# Add controls to status panel first
 $script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
-    
-# Add spacer panel first (top), then status panel (fill) to button panel
-$script:StatusPanel.Controls.AddRange(@($script:SpacerPanel, $script:StatusContentPanel))
+
+$script:StatusPanel.Controls.AddRange(@($script:ProgressBarPanel, $script:StatusContentPanel))
 $p10left = New-Object System.Windows.Forms.Panel -Property @{
     Dock  = 'Left'
-    Width = 2  # Reduced from 15 to 10 for better alignment
+    Width = 2  
 }
 $RevokeButtonProps = @{
     Add_Click = { 
@@ -1771,14 +1320,13 @@ $RevokeButtonProps = @{
 }
 $RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonProps
 
-# Create toolbar buttons dynamically
 $script:CreatedButtons = @{}
 foreach ($buttonDef in $script:ToolbarButtons) {
     $button = New-Object System.Windows.Forms.Button -Property @{
         AutoSize  = $false
         BackColor = $script:UI.Colors.Accent
         Dock      = if ($buttonDef.ContainsKey('Dock')) { $buttonDef.Dock } else { 'Right' }
-        # Enabled   = $buttonDef.Enabled
+
         FlatStyle = 'Flat'
         Font      = if ($buttonDef.ContainsKey('Font')) { $buttonDef.Font } else { $script:UI.Fonts.Bold }
         ForeColor = $buttonDef.ForeColor
@@ -1788,10 +1336,8 @@ foreach ($buttonDef in $script:ToolbarButtons) {
         Width     = if ($buttonDef.ContainsKey('Width')) { $buttonDef.Width } else { $script:UI.Sizes.Input.Width }
     }
 
-    # Add click event
     $button.Add_Click($buttonDef.Click)
-    
-    # Add hover events for tooltip-like functionality
+
     $button.Add_MouseEnter({
             param($sender, $e)
             $buttonName = $sender.Name
@@ -1800,37 +1346,31 @@ foreach ($buttonDef in $script:ToolbarButtons) {
                 $script:StatusLabel.Text = $buttonDef.ToolTip
             }
         }.GetNewClosure())
-    
+
     $button.Add_MouseLeave({
             if ($script:StatusLabel -and -not $script:ActionButton.Visible) {
                 $script:StatusLabel.Text = "Gray Winutil is ready to run scripts."
             }
         })
-    
-    # Remove button border
+
     $button.FlatAppearance.BorderSize = 0
-    
-    # Set button name for reference
+
     $button.Name = $buttonDef.Name
-    
-    # Store button reference
+    # for example $script:CreatedButtons['RunButton']
     $script:CreatedButtons[$buttonDef.Name] = $button
 }
 
-# Update the toolbar panel controls - remove old button references
 $script:ToolBarPanel.Controls.AddRange(@(
         $SearchBox, $ProfileDropdown
         , $ConsentCheckbox    ) + $script:CreatedButtons.Values + @( $p10left   , $SelectAllSwitch))
 
-# $HeaderPanel.Controls.AddRange(@($script:StatusPanel))
 $ContentPanel.Controls.Add($script:ScriptsPanel)
 $ContentPanel.Controls.Add($script:ToolBarPanel)
 
 $FooterPanel.Controls.AddRange(@($script:StatusPanel))
-# Remove SpacerPanel from main form controls
+
 $Form.Controls.AddRange(@($HeaderPanel, $FooterPanel, $ContentPanel))
 
-# Initialize file system
 if (-not (Test-Path $script:DataDirectory)) {
     New-Item -ItemType Directory -Path $script:DataDirectory | Out-Null
 }
@@ -1847,18 +1387,16 @@ $defaultProfile = Join-Path -Path $script:ProfilesDirectory -ChildPath "Default 
 if (-not (Test-Path $defaultProfile)) {
     New-Item -ItemType File -Path $defaultProfile | Out-Null
 
-    # Fetch from GitHub instead of looking for local db.json
     try {
         $dbData = Invoke-WebRequest $script:Config.DatabaseUrl | ConvertFrom-Json
         $allIds = @()
-        
-        # Extract all IDs from the database
+
         $dbData | ForEach-Object {
             if ($_.id) {
                 $allIds += $_.id
             }
         }
-        
+
         if ($allIds.Count -gt 0) {
             $allIds | Set-Content -Path $defaultProfile -Force
             Write-Host "Created default profile with $($allIds.Count) scripts from GitHub database"
@@ -1866,10 +1404,9 @@ if (-not (Test-Path $defaultProfile)) {
     }
     catch {
         Write-Warning "Failed to create default profile from GitHub database: $_"
-        # Create an empty default profile as fallback
+
         "# Default Profile" | Set-Content -Path $defaultProfile -Force
     }
 }
 
-# Start application
 [void]$Form.ShowDialog()
