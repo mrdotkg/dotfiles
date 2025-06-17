@@ -71,9 +71,8 @@ $script:UI = @{
     }
     Sizes   = @{
         Columns = @{
-            Command = 300
-            Name    = 350
-            Time    = 100
+            Command = -2
+            Name    = -2
         }
         Footer  = @{
             Height = 30
@@ -127,8 +126,8 @@ $FormProps = @{
         }
         elseif ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::R) {
 
-            if ($InvokeButton.Enabled) {
-                $InvokeButton.PerformClick()
+            if ($script:CreatedButtons['RunButton'].Enabled) {
+                $script:CreatedButtons['RunButton'].PerformClick()
             }
             $_.Handled = $true
         }
@@ -317,8 +316,8 @@ $ListViewProps = @{
     Add_ItemChecked    = {
         $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
-        $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
-        $InvokeButton.Text = "▶ Run ($anyChecked)"
+        $script:CreatedButtons['RunButton'].Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
+        $script:CreatedButtons['RunButton'].Text = "▶ Run ($anyChecked)"
         $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
         $SelectAllSwitch.ForeColor = if ($SelectAllSwitch.Checked) { [System.Drawing.Color]::FromArgb(0, 95, 184) } else { [System.Drawing.Color]::White }
         $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
@@ -467,32 +466,10 @@ $script:ToolbarButtons = @(
     }
 )
 
-$InvokeButtonProps = @{
-    Add_Click = { 
-        if ($ConsentCheckbox.Checked) {
-            RunSelectedItems -Action Invoke
-        }
-        else {
-            [System.Windows.Forms.MessageBox]::Show("Please check the consent checkbox to proceed with execution.", "Consent Required", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-        }
-    }
-    AutoSize  = $false
-    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
-    Dock      = 'Left'
-    Enabled   = $false
-    FlatStyle = 'Flat'
-
-    ForeColor = [System.Drawing.Color]::White
-    Height    = 16
-    Margin    = $script:UI.Padding.Control
-    Text      = "▶ Run"
-    Width     = $script:UI.Sizes.Input.Width
-}
-
 $ConsentCheckboxProps = @{
     Add_CheckedChanged = {
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
-        $InvokeButton.Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
+        $script:CreatedButtons['RunButton'].Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
     }
     Add_Click          = {
         $isChecked = $ConsentCheckbox.Checked
@@ -608,20 +585,28 @@ $ProfileDropdownProps = @{
 
 function Get-EstimatedExecutionTime {
     param([string]$command)
+    # Define command patterns and their estimated execution times in order
+    $timeEstimates = [ordered]@{
+        'winget install'                         = "2-5 minutes"
+        'winget uninstall'                       = "1-3 minutes"
+        'Add-WindowsCapability'                  = "3-10 minutes"
+        'Restart-Computer|Stop-Computer'         = "1-2 minutes"
+        'Set-Service|Start-Service|Stop-Service' = "10-30 seconds"
+        'New-NetFirewallRule'                    = "10-30 seconds"
+        'Set-ItemProperty|New-ItemProperty'      = "< 10 seconds"
+    }
 
-    if ($command -match 'winget install') { return "2-5 minutes" }
-    if ($command -match 'winget uninstall') { return "1-3 minutes" }
-    if ($command -match 'Add-WindowsCapability') { return "3-10 minutes" }
-    if ($command -match 'Set-ItemProperty|New-ItemProperty') { return "< 10 seconds" }
-    if ($command -match 'Set-Service|Start-Service|Stop-Service') { return "10-30 seconds" }
-    if ($command -match 'New-NetFirewallRule') { return "10-30 seconds" }
-    if ($command -match 'Restart-Computer|Stop-Computer') { return "1-2 minutes" }
+    # Loop through patterns and return first match
+    foreach ($pattern in $timeEstimates.Keys) {
+        if ($command -match $pattern) {
+            return $timeEstimates[$pattern]
+        }
+    }
 
     return "< 30 seconds"
 }
 
 function Copy-SelectedCommandsToClipboard {
-
     $selectedItems = @()
     foreach ($listView in $script:ListViews.Values) {
         $selectedItems += $listView.Items | Where-Object { $_.Checked }
@@ -637,12 +622,9 @@ function Copy-SelectedCommandsToClipboard {
     $commandsText += "# Total Commands: $($selectedItems.Count)`n`n"
 
     foreach ($item in $selectedItems) {
-
-        $command = $item.SubItems[2].Text
-        $timeEst = Get-EstimatedExecutionTime -command $command
+        $command = $item.SubItems[1].Text
         
         $commandsText += "# $($item.Text)`n"
-        $commandsText += "# Time: $timeEst`n"
         $commandsText += "$command`n`n"
     }
 
@@ -818,7 +800,6 @@ function CreateGroupedListView {
     $LV = New-Object System.Windows.Forms.ListView -Property $ListViewProps
 
     $LV.Columns.Add("SCRIPT", $script:UI.Sizes.Columns.Name) | Out-Null
-    $LV.Columns.Add("TIME", $script:UI.Sizes.Columns.Time) | Out-Null
     $LV.Columns.Add("COMMAND", $script:UI.Sizes.Columns.Command) | Out-Null
 
     foreach ($groupName in $groupedScripts.Keys) {
@@ -831,10 +812,7 @@ function CreateGroupedListView {
 
         foreach ($script in $groupedScripts[$groupName]) {
             $listItem = New-Object System.Windows.Forms.ListViewItem($script.content)
-
-            $timeEst = Get-EstimatedExecutionTime -command $script.command
             
-            $listItem.SubItems.Add($timeEst)
             $listItem.SubItems.Add($script.command)
             
             if ($LV.Groups.Count -gt 1) {
@@ -855,7 +833,14 @@ function CreateGroupedListView {
 
     $parentPanel.Controls.Add($ContainerPanel)
 }
-
+$ProgressBarProps = @{
+    Dock      = 'Fill'
+    Style     = 'Continuous'
+    Minimum   = 0
+    Maximum   = 100
+    Value     = 0
+    ForeColor = $script:UI.Colors.Accent
+}
 function RunSelectedItems {
     param(
         [bool]$RetryMode = $false
@@ -868,21 +853,14 @@ function RunSelectedItems {
     $startTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
     Add-Content -Path $script:CurrentLogFile -Value "$startTime INFO Gray WinUtil execution started"
 
-    $InvokeButton.Enabled = $false
-    $InvokeButton.Text = "Running..."
+    $script:CreatedButtons['RunButton'].Enabled = $false
+    $script:CreatedButtons['RunButton'].Text = "Running..."
 
     if ($script:StatusLabel) { $script:StatusLabel.Text = "Initializing execution..." }
     if ($script:ActionButton) { $script:ActionButton.Visible = $false }
     if ($script:RetryButton) { $script:RetryButton.Visible = $false }
 
-    $ProgressBar = New-Object System.Windows.Forms.ProgressBar -Property @{
-        Dock      = 'Fill'
-        Style     = 'Continuous'
-        Minimum   = 0
-        Maximum   = 100
-        Value     = 0
-        ForeColor = $script:UI.Colors.Accent
-    }
+    $ProgressBar = New-Object System.Windows.Forms.ProgressBar -Property $ProgressBarPanelProps
     $script:ProgressBarPanel.Controls.Add($ProgressBar)
 
     try {
@@ -941,7 +919,7 @@ function RunSelectedItems {
 
         for ($i = 0; $i -lt $selectedItems.Count; $i++) {
             $item = $selectedItems[$i]
-            $command = $item.SubItems[2].Text
+            $command = $item.SubItems[1].Text
             $name = $item.Text
 
             $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
@@ -959,7 +937,6 @@ function RunSelectedItems {
             $item.BackColor = [System.Drawing.Color]::Yellow
             $item.ForeColor = [System.Drawing.Color]::Black
             $item.Font = $script:UI.Fonts.Bold
-            $item.SubItems[1].Text = "Running..."  
             [System.Windows.Forms.Application]::DoEvents()
 
             $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -1138,8 +1115,8 @@ function RunSelectedItems {
     }
     finally {
 
-        $InvokeButton.Enabled = $ConsentCheckbox.Checked
-        $InvokeButton.Text = "▶ Run"
+        $script:CreatedButtons['RunButton'].Enabled = $ConsentCheckbox.Checked
+        $script:CreatedButtons['RunButton'].Text = "▶ Run"
         $SelectAllSwitch.Checked = $false
         $SelectAllSwitch.Tag = $false
 
@@ -1163,7 +1140,6 @@ $FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 $SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
 $ConsentCheckbox = New-Object System.Windows.Forms.CheckBox -Property $ConsentCheckboxProps
-$InvokeButton = New-Object System.Windows.Forms.Button -Property $InvokeButtonProps
 
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 
@@ -1263,11 +1239,11 @@ $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
 
 $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
     Add_Click = {
-
         $script:RetryItems = @()
         foreach ($listView in $script:ListViews.Values) {
             foreach ($item in $listView.Items) {
-                if ($item.SubItems[1].Text -match "(Failed|Cancelled)") {
+                if ($item.BackColor -eq [System.Drawing.Color]::FromArgb(255, 200, 200) -or 
+                    $item.BackColor -eq [System.Drawing.Color]::FromArgb(255, 235, 200)) {
                     $script:RetryItems += $item
                 }
             }
@@ -1287,40 +1263,11 @@ $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
 }
 
 $script:ActionButton.FlatAppearance.BorderSize = 0
-
 $script:RetryButton.FlatAppearance.BorderSize = 0
-
 $script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
-
 $script:StatusPanel.Controls.AddRange(@($script:ProgressBarPanel, $script:StatusContentPanel))
-$p10left = New-Object System.Windows.Forms.Panel -Property @{
-    Dock  = 'Left'
-    Width = 2  
-}
-$RevokeButtonProps = @{
-    Add_Click = { 
-        if ($ConsentCheckbox.Checked) {
-            RunSelectedItems -Action Invoke
-        }
-        else {
-            [System.Windows.Forms.MessageBox]::Show("Please check the consent checkbox to proceed with execution.", "Consent Required", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-        }
-    }
-    AutoSize  = $false
-    BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
-    Dock      = 'Right'
-    Enabled   = $true
-    FlatStyle = 'Flat'
-    Font      = $script:UI.Fonts.Big
-    ForeColor = [System.Drawing.Color]::White
-    Height    = 16
-    Margin    = $script:UI.Padding.Control
-    Text      = "⏺ ▶ ⏹"
-    Width     = $script:UI.Sizes.Input.Width
-}
-$RevokeButton = New-Object System.Windows.Forms.Button -Property $RevokeButtonProps
-
 $script:CreatedButtons = @{}
+
 foreach ($buttonDef in $script:ToolbarButtons) {
     $button = New-Object System.Windows.Forms.Button -Property @{
         AutoSize  = $false
@@ -1361,14 +1308,11 @@ foreach ($buttonDef in $script:ToolbarButtons) {
 }
 
 $script:ToolBarPanel.Controls.AddRange(@(
-        $SearchBox, $ProfileDropdown
-        , $ConsentCheckbox    ) + $script:CreatedButtons.Values + @( $p10left   , $SelectAllSwitch))
+        $SearchBox) + $script:CreatedButtons.Values + @( $ProfileDropdown, $SelectAllSwitch, $ConsentCheckbox))
 
 $ContentPanel.Controls.Add($script:ScriptsPanel)
 $ContentPanel.Controls.Add($script:ToolBarPanel)
-
 $FooterPanel.Controls.AddRange(@($script:StatusPanel))
-
 $Form.Controls.AddRange(@($HeaderPanel, $FooterPanel, $ContentPanel))
 
 if (-not (Test-Path $script:DataDirectory)) {
