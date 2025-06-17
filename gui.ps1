@@ -383,8 +383,22 @@ $SelectAllSwitchProps = @{
 }
 
 $SearchBoxProps = @{
+    Add_Enter       = {
+        if ($this.Text -eq "👓 Search ...") {
+            $this.Text = ""
+            $this.ForeColor = $script:UI.Colors.Text
+        }
+    }
+    Add_Leave       = {
+        if ($this.Text.Trim() -eq "") {
+            $this.Text = "👓 Search ..."
+            $this.ForeColor = $script:UI.Colors.Accent
+        }
+    }
     Add_TextChanged = {
         $searchText = $this.Text.Trim()
+        if ($searchText -eq "👓 Search ...") { return }
+        
         $listViews = @($script:ListViews.Values)
         foreach ($lv in $listViews) {
             $lv.BeginUpdate()
@@ -407,9 +421,10 @@ $SearchBoxProps = @{
     BackColor       = $script:UI.Colors.Background
     BorderStyle     = 'FixedSingle'
     Dock            = 'Fill'
+    ForeColor       = $script:UI.Colors.Accent
     Height          = $script:UI.Sizes.Input.Height
     Multiline       = $false
-    PlaceholderText = "👓 Search ..."
+    Text            = "👓 Search ..."
     TextAlign       = 'Left'
     Width           = $script:UI.Sizes.Input.FooterWidth
 }
@@ -583,6 +598,7 @@ $ProfileDropdownProps = @{
     Margin                   = '10,10,10,10'  
 
 }
+
 
 function Copy-SelectedCommandsToClipboard {
     $selectedItems = @()
@@ -1213,7 +1229,7 @@ $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
     Dock      = 'Right'
     FlatStyle = 'Flat'
     ForeColor = $script:UI.Colors.Accent
-    Font      = $script:UI.Fonts.SmallBold
+    Font      = $script:UI.Fonts.Small 
     Height    = 22
     Text      = "≡ Logs"
     Visible   = $false
@@ -1239,7 +1255,7 @@ $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
     Dock      = 'Right'
     FlatStyle = 'Flat'
     ForeColor = $script:UI.Colors.Accent
-    Font      = $script:UI.Fonts.SmallBold
+    Font      = $script:UI.Fonts.Small
     Height    = 22
     Text      = "↻ Retry"
     Visible   = $false
@@ -1265,7 +1281,7 @@ $script:CancelButton = New-Object System.Windows.Forms.Button -Property @{
     Dock      = 'Right'
     FlatStyle = 'Flat'
     ForeColor = $script:UI.Colors.Accent
-    Font      = $script:UI.Fonts.SmallBold
+    Font      = $script:UI.Fonts.Small
     Height    = 22
     Text      = "✕ Cancel"
     Visible   = $false
