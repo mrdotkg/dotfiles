@@ -1,23 +1,23 @@
 <#
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
 Features:
-- [ ] Submit new collections and scripts to repository
+- TODO Submit new collections and scripts to repository
 - BUG only the first group, its actual name is being overridden by default
 - FIXME Write commands to PowerShell history
 - FIXME Improve execution UI performance - sluttering
 - FIXME Instead of showing status inside time, show it as a separate column
 - FIXME Fix Move List item down.
-- [x] Enable command scheduling
-- [ ] Add native system notifications
-- [ ] Show hotkey tooltips in help
-- [ ] Maintain script execution order
-- [ ] Use %Temp% directory by default
-- [ ] Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
-- [ ] Create Start Menu and Desktop shortcuts
-- [ ] Add context menu - reload scripts, move items up and down, Copy col1, col2..to clipboard, export selected commands to Clipboard
-- [ ] Add cancel action item to the status actions
-- [ ] Add the column sort on click of a column, update column header with these alt code chars ⬇, ⬆,↑↓, ↑↑, ↓↓
-- [ ] Read SSh Config, list remote machines execute on them.
+- TODO Enable command scheduling
+- TODO Add native system notifications
+- TODO Show hotkey tooltips in help
+- TODO Maintain script execution order
+- TODO Use %Temp% directory by default
+- TODO Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
+- TODO Create Start Menu and Desktop shortcuts
+- TODO Add context menu - reload scripts, move items up and down, Copy col1, col2..to clipboard, export selected commands to Clipboard
+- TODO Add cancel action item to the status actions
+- TODO Add the column sort on click of a column, update column header with these alt code chars ⬇, ⬆,↑↓, ↑↑, ↓↓
+- TODO Read SSh Config, list remote machines execute on them.
 #>
 $script:Config = @{
     ApiUrl       = $null  
@@ -72,7 +72,7 @@ $script:UI = @{
     }
     Sizes   = @{
         Columns = @{
-            Command = -2
+            Command = 200
             Name    = -2
         }
         Footer  = @{
@@ -382,6 +382,12 @@ $SelectAllSwitchProps = @{
     Width      = $script:UI.Sizes.Input.Width / 2 - 14
 }
 
+$SearchBoxContainerProps = @{
+    # BackColor = $script:UI.Colors.Accent  # This becomes the "border" color
+    Dock    = 'Fill'
+    Padding = '5,3,5,5'  # This creates the border width
+}
+
 $SearchBoxProps = @{
     Add_Enter       = {
         if ($this.Text -eq "👓 Search ...") {
@@ -419,7 +425,7 @@ $SearchBoxProps = @{
         }
     }
     BackColor       = $script:UI.Colors.Background
-    BorderStyle     = 'FixedSingle'
+    BorderStyle     = 'None'  # Remove the default border
     Dock            = 'Fill'
     ForeColor       = $script:UI.Colors.Accent
     Height          = $script:UI.Sizes.Input.Height
@@ -579,24 +585,22 @@ function Read-Profile {
 
 $ProfileDropdownProps = @{
     Add_SelectedIndexChanged = {
-
         $script:CurrentProfileIndex = $ProfileDropdown.SelectedIndex
-
         $selectedProfile = $ProfileDropdown.SelectedItem
         $selectedProfilePath = Join-Path -Path $script:ProfilesDirectory -ChildPath "$selectedProfile.txt"
         $scriptsDict = Read-Profile -Path $selectedProfilePath
         if ($scriptsDict.Count -gt 0) {
-
             CreateGroupedListView -parentPanel $ScriptsPanel -groupedScripts $scriptsDict
         }
     }
+    # BackColor                = $script:UI.Colors.Accent  # ✅ This works
+    ForeColor                = $script:UI.Colors.Accent        # ✅ This works
+    # FlatStyle                = 'Flat'                        # ✅ This works - makes it look more modern
     Dock                     = 'Left'
     DropDownStyle            = 'DropDownList'
     Font                     = $script:UI.Fonts.Default
-    ForeColor                = $script:UI.Colors.Text
     Height                   = $script:UI.Sizes.Input.Height
-    Margin                   = '10,10,10,10'  
-
+    Width                    = $script:UI.Sizes.Input.FooterWidth
 }
 
 
@@ -1133,6 +1137,7 @@ $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
 $FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
 
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
+$SearchBoxContainer = New-Object System.Windows.Forms.Panel -Property $SearchBoxContainerProps
 $SearchBox = New-Object System.Windows.Forms.TextBox -Property $SearchBoxProps
 $ConsentCheckbox = New-Object System.Windows.Forms.CheckBox -Property $ConsentCheckboxProps
 
@@ -1333,9 +1338,9 @@ foreach ($buttonDef in $script:ToolbarButtons) {
     # for example $script:CreatedButtons['RunButton']
     $script:CreatedButtons[$buttonDef.Name] = $button
 }
-
+$SearchBoxContainer.Controls.Add($SearchBox)
 $script:ToolBarPanel.Controls.AddRange(
-    @($SearchBox) + 
+    @($SearchBoxContainer) + 
     $script:CreatedButtons.Values + 
     @( $ProfileDropdown, $SelectAllSwitch, $ConsentCheckbox))
 
