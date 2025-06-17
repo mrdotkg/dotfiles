@@ -51,10 +51,11 @@ $script:UI = @{
         Text       = [System.Drawing.Color]::Black
     }
     Fonts   = @{
-        Big     = [System.Drawing.Font]::new("Segoe UI", 15, [System.Drawing.FontStyle]::Bold)
-        Bold    = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-        Default = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-        Small   = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
+        Big       = [System.Drawing.Font]::new("Segoe UI", 15, [System.Drawing.FontStyle]::Bold)
+        Bold      = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+        Default   = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+        Small     = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
+        SmallBold = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     }
     Padding = @{
         Button  = '0,0,0,0'         
@@ -65,8 +66,8 @@ $script:UI = @{
         Header  = '0,0,0,0'         
         Help    = '15,15,15,15'     
         Panel   = '0,0,0,0'         
-        Status  = '0,2,0,2'       
-        ToolBar = '0,5,0,5'       
+        Status  = '0,5,0,5'       
+        ToolBar = '5,5,0,5'       
         Updates = '15,15,15,15'     
     }
     Sizes   = @{
@@ -583,29 +584,6 @@ $ProfileDropdownProps = @{
 
 }
 
-function Get-EstimatedExecutionTime {
-    param([string]$command)
-    # Define command patterns and their estimated execution times in order
-    $timeEstimates = [ordered]@{
-        'winget install'                         = "2-5 minutes"
-        'winget uninstall'                       = "1-3 minutes"
-        'Add-WindowsCapability'                  = "3-10 minutes"
-        'Restart-Computer|Stop-Computer'         = "1-2 minutes"
-        'Set-Service|Start-Service|Stop-Service' = "10-30 seconds"
-        'New-NetFirewallRule'                    = "10-30 seconds"
-        'Set-ItemProperty|New-ItemProperty'      = "< 10 seconds"
-    }
-
-    # Loop through patterns and return first match
-    foreach ($pattern in $timeEstimates.Keys) {
-        if ($command -match $pattern) {
-            return $timeEstimates[$pattern]
-        }
-    }
-
-    return "< 30 seconds"
-}
-
 function Copy-SelectedCommandsToClipboard {
     $selectedItems = @()
     foreach ($listView in $script:ListViews.Values) {
@@ -859,6 +837,7 @@ function RunSelectedItems {
     if ($script:StatusLabel) { $script:StatusLabel.Text = "Initializing execution..." }
     if ($script:ActionButton) { $script:ActionButton.Visible = $false }
     if ($script:RetryButton) { $script:RetryButton.Visible = $false }
+    if ($script:CancelButton) { $script:CancelButton.Visible = $true }
 
     $ProgressBar = New-Object System.Windows.Forms.ProgressBar -Property $ProgressBarPanelProps
     $script:ProgressBarPanel.Controls.Add($ProgressBar)
@@ -1143,14 +1122,17 @@ $ConsentCheckbox = New-Object System.Windows.Forms.CheckBox -Property $ConsentCh
 
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 
-$PaddingProgressBarPanel = New-Object System.Windows.Forms.Panel -Property @{
-    Dock  = 'Right'
-    Width = 10  
-}
-
-$HelpLabel = New-Object System.Windows.Forms.Label -Property @{
-    Add_Click = {
-
+$HelpLabel = New-Object System.Windows.Forms.Button -Property @{
+    Text      = "ℹ"
+    Dock      = 'Left'
+    FlatStyle = 'Flat'
+    Height    = $script:UI.Sizes.Input.Height - 5
+    Width     = $script:UI.Sizes.Input.Width / 2 - 10
+    BackColor = $script:UI.Colors.Accent
+    ForeColor = [System.Drawing.Color]::White
+    Font      = $Script:UI.Fonts.Regular
+    Enabled   = $true
+    Add_Click = { 
         if ($script:HelpForm -and -not $script:HelpForm.IsDisposed) {
 
             $script:HelpForm.BringToFront()
@@ -1230,7 +1212,8 @@ $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
     }
     Dock      = 'Right'
     FlatStyle = 'Flat'
-    Font      = $script:UI.Fonts.Small
+    ForeColor = $script:UI.Colors.Accent
+    Font      = $script:UI.Fonts.SmallBold
     Height    = 22
     Text      = "≡ Logs"
     Visible   = $false
@@ -1255,17 +1238,45 @@ $script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
     }
     Dock      = 'Right'
     FlatStyle = 'Flat'
-    Font      = $script:UI.Fonts.Small
+    ForeColor = $script:UI.Colors.Accent
+    Font      = $script:UI.Fonts.SmallBold
     Height    = 22
     Text      = "↻ Retry"
     Visible   = $false
     Width     = 70
 }
 
+$script:CancelButton = New-Object System.Windows.Forms.Button -Property @{
+    Add_Click = {
+        $script:RetryItems = @()
+        foreach ($listView in $script:ListViews.Values) {
+            foreach ($item in $listView.Items) {
+                if ($item.BackColor -eq [System.Drawing.Color]::FromArgb(255, 200, 200) -or 
+                    $item.BackColor -eq [System.Drawing.Color]::FromArgb(255, 235, 200)) {
+                    $script:RetryItems += $item
+                }
+            }
+        }
+
+        if ($script:RetryItems.Count -gt 0) {
+            RunSelectedItems -RetryMode $true
+        }
+    }
+    Dock      = 'Right'
+    FlatStyle = 'Flat'
+    ForeColor = $script:UI.Colors.Accent
+    Font      = $script:UI.Fonts.SmallBold
+    Height    = 22
+    Text      = "✕ Cancel"
+    Visible   = $false
+    Width     = 70
+}
 $script:ActionButton.FlatAppearance.BorderSize = 0
 $script:RetryButton.FlatAppearance.BorderSize = 0
-$script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton))
+$script:CancelButton.FlatAppearance.BorderSize = 0
+$script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton, $script:CancelButton))
 $script:StatusPanel.Controls.AddRange(@($script:ProgressBarPanel, $script:StatusContentPanel))
+
 $script:CreatedButtons = @{}
 
 foreach ($buttonDef in $script:ToolbarButtons) {
@@ -1307,29 +1318,24 @@ foreach ($buttonDef in $script:ToolbarButtons) {
     $script:CreatedButtons[$buttonDef.Name] = $button
 }
 
-$script:ToolBarPanel.Controls.AddRange(@(
-        $SearchBox) + $script:CreatedButtons.Values + @( $ProfileDropdown, $SelectAllSwitch, $ConsentCheckbox))
+$script:ToolBarPanel.Controls.AddRange(
+    @($SearchBox) + 
+    $script:CreatedButtons.Values + 
+    @( $ProfileDropdown, $SelectAllSwitch, $ConsentCheckbox))
 
 $ContentPanel.Controls.Add($script:ScriptsPanel)
 $ContentPanel.Controls.Add($script:ToolBarPanel)
-$FooterPanel.Controls.AddRange(@($script:StatusPanel))
+$FooterPanel.Controls.AddRange(@($script:StatusPanel, $HelpLabel))
 $Form.Controls.AddRange(@($HeaderPanel, $FooterPanel, $ContentPanel))
 
-if (-not (Test-Path $script:DataDirectory)) {
-    New-Item -ItemType Directory -Path $script:DataDirectory | Out-Null
-}
-
-if (-not (Test-Path $script:ProfilesDirectory)) {
-    New-Item -ItemType Directory -Path $script:ProfilesDirectory | Out-Null
-}
-
-if (-not (Test-Path $script:LogsDirectory)) {
-    New-Item -ItemType Directory -Path $script:LogsDirectory | Out-Null
+@($script:DataDirectory, $script:ProfilesDirectory, $script:LogsDirectory) | ForEach-Object {
+    if (-not (Test-Path $_)) {
+        New-Item -ItemType Directory -Path $_ -Force | Out-Null
+    }
 }
 
 $defaultProfile = Join-Path -Path $script:ProfilesDirectory -ChildPath "Default Profile.txt"
 if (-not (Test-Path $defaultProfile)) {
-    New-Item -ItemType File -Path $defaultProfile | Out-Null
 
     try {
         $dbData = Invoke-WebRequest $script:Config.DatabaseUrl | ConvertFrom-Json
