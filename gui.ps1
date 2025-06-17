@@ -1,25 +1,18 @@
 # Multiline doc comment
 <#
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
+TODO Submit a new collection to repository/Profiles
+TODO Submit a new script to repository/db.json
+TODO Make Sure Commands get written to system powershell history
+TODO Enable scheduling of commands to run at specific times.
+TODO Make sure the windows dont slutter while executing scripts
+TODO Native system notification on completion
+TODO Help - Hotkeys Show hotkeys below buttons via tooltip
 
-### TODO **Command History & Last Selected Profile System**
-# - Implement a system to track frequently used commands.
-# - Add a "Favorites" tab to quickly access most-used scripts.
-# - Store usage statistics in a JSON file for persistence.
-
-### TODO **Command Scheduling**
-# - Enable scheduling of commands to run at specific times.
-# - Implement background task execution for scheduled commands.
-# - Add a notification system to inform users when scheduled tasks are completed.
-
-### TODO **Help**
-# - Help Shows relevant info and action buttons on the footer panel aligned to right side.
-
-### TODO **Local Data Storage**
-# - Store local data in the %Temp% directory by default.
-# - Provide an option for users to store data locally.
-# - Create a PowerShell script file executing this script from github url
-# - Create a startmenu and desktop shortcut for the script
+TODO Store local data in the %Temp% directory by default.
+TODO Choose storage location default to Documents.
+TODO Create subdirectory Winutil\Owner\Repo\Profiles
+TODO Create a startmenu and desktop shortcut for running this app
 #>
 
 # ------------------------------
@@ -258,7 +251,7 @@ $FormProps = @{
     Height      = $script:UI.Sizes.Window.Height
     KeyPreview  = $true
     Padding     = $script:UI.Padding.Form
-    Text        = "GRAY WINUTIL"
+    Text        = "($($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)) - Winutil"
     Width       = $script:UI.Sizes.Window.Width
 }
 
@@ -450,9 +443,9 @@ $SelectAllSwitchProps = @{
     Appearance = 'Button'
     Dock       = 'Left'
     # Font      = $Script:UI.Fonts.Default
-    Margin     = $script:UI.Padding.Control
+    # Padding    = $script:UI.Padding.Control
     Tag        = $false
-    Text       = "⏺"
+    Text       = "◼"
     AutoSize   = $false
     BackColor  = $script:UI.Colors.Accent
     Checked    = $false
@@ -506,7 +499,7 @@ $SearchBoxProps = @{
     # Font            = $script:UI.Fonts.Default
     Height          = $script:UI.Sizes.Input.Height
     Multiline       = $false
-    PlaceholderText = "Search"
+    PlaceholderText = "👓 Search ..."
     TextAlign       = 'Left'
     Width           = $script:UI.Sizes.Input.FooterWidth
 }
@@ -562,10 +555,11 @@ $script:ToolbarButtons = @(
     },
     @{
         Name      = "Reset List"
-        Text      = "↻"
+        Text      = "⸙ Reload"
         BackColor = [System.Drawing.Color]::FromArgb(0, 114, 220)
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Toggle admin consent for execution"
+        Font      = $Script:UI.Fonts.Regular
         Dock      = "Left"
         Enabled   = $true
         Click     = { 
@@ -573,7 +567,7 @@ $script:ToolbarButtons = @(
             $SelectAllSwitch.Checked = -not $SelectAllSwitch.Checked
             $ProfileDropdown.SelectedIndex = $script:CurrentProfileIndex
         }
-        Width     = $script:UI.Sizes.Input.Width / 2 - 13
+        Width     = $script:UI.Sizes.Input.Width
     }
 )
 
