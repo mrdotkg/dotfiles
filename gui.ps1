@@ -322,6 +322,29 @@ $ListViewProps = @{
         $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
         $SelectAllSwitch.ForeColor = if ($SelectAllSwitch.Checked) { [System.Drawing.Color]::FromArgb(0, 95, 184) } else { [System.Drawing.Color]::White }
         $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
+        
+        # Apply styling to checked/unchecked items
+        foreach ($listView in $script:ListViews.Values) {
+            foreach ($item in $listView.Items) {
+                if ($item.Checked) {
+                    # Apply queued styling for checked items
+                    $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  # Light blue
+                    $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     # Dark blue
+                    $item.Font = $script:UI.Fonts.Bold
+                }
+                else {
+                    # Restore original alternating row colors for unchecked items (swapped)
+                    if ($item.Index % 2 -eq 0) {
+                        $item.BackColor = [System.Drawing.Color]::FromArgb(240, 242, 245)  # Darker light gray
+                    }
+                    else {
+                        $item.BackColor = [System.Drawing.Color]::White
+                    }
+                    $item.ForeColor = $script:UI.Colors.Text
+                    $item.Font = $script:UI.Fonts.Default
+                }
+            }
+        }
     }
     Add_ItemDrag       = {
         if ($this.SelectedItems.Count -gt 0) {
@@ -800,6 +823,8 @@ function CreateGroupedListView {
     $LV.Columns.Add("SCRIPT", $script:UI.Sizes.Columns.Name) | Out-Null
     $LV.Columns.Add("COMMAND", $script:UI.Sizes.Columns.Command) | Out-Null
 
+    $itemIndex = 0  # Track item index for alternating colors
+    
     foreach ($groupName in $groupedScripts.Keys) {
 
         if ($groupedScripts.Count -gt 1) {
@@ -813,6 +838,14 @@ function CreateGroupedListView {
             
             $listItem.SubItems.Add($script.command)
             
+            # Set alternating row colors (swapped so darker gray comes first)
+            if ($itemIndex % 2 -eq 0) {
+                $listItem.BackColor = [System.Drawing.Color]::FromArgb(240, 242, 245)  # Darker light gray
+            }
+            else {
+                $listItem.BackColor = [System.Drawing.Color]::White
+            }
+            
             if ($LV.Groups.Count -gt 1) {
                 $listItem.Group = $group
             }
@@ -821,6 +854,7 @@ function CreateGroupedListView {
             }
 
             $LV.Items.Add($listItem) | Out-Null
+            $itemIndex++
         }
     }
 
@@ -831,6 +865,7 @@ function CreateGroupedListView {
 
     $parentPanel.Controls.Add($ContainerPanel)
 }
+
 $ProgressBarProps = @{
     Dock      = 'Fill'
     Style     = 'Continuous'
@@ -896,7 +931,7 @@ function RunSelectedItems {
 
             foreach ($item in $listView.Items) {
                 if ($selectedItems -contains $item) {
-
+                    # Apply the same queued styling immediately for selected items
                     $item.BackColor = [System.Drawing.Color]::FromArgb(220, 240, 255)  
                     $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 130)     
                     $item.Font = $script:UI.Fonts.Bold                                 
@@ -927,7 +962,7 @@ function RunSelectedItems {
             $ProgressBar.Value = $i + 1
 
             if ($script:StatusLabel) {
-                $progressText = "Executing ($($i + 1)/$($selectedItems.Count)): $name"
+                $progressText = "Executing ($($i + 1) / $($selectedItems.Count)): $name"
                 $script:StatusLabel.Text = $progressText
             }
 
