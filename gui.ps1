@@ -93,8 +93,8 @@ $script:UI = @{
             Height = 35
         }
         Window  = @{
-            Height = 550
-            Width  = 850
+            Height = 600
+            Width  = 600
         }
     }
 }
