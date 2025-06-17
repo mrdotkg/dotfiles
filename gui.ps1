@@ -1,18 +1,17 @@
 # Multiline doc comment
 <#
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
-TODO Submit a new collection to repository/Profiles
-TODO Submit a new script to repository/db.json
-TODO Make Sure Commands get written to system powershell history
-TODO Enable scheduling of commands to run at specific times.
-TODO Make sure the windows dont slutter while executing scripts
-TODO Native system notification on completion
-TODO Help - Hotkeys Show hotkeys below buttons via tooltip
-
-TODO Store local data in the %Temp% directory by default.
-TODO Choose storage location default to Documents.
-TODO Create subdirectory Winutil\Owner\Repo\Profiles
-TODO Create a startmenu and desktop shortcut for running this app
+TODO Features:
+- TODO Submit new collections and scripts to repository
+- TODO Write commands to PowerShell history
+- TODO Enable command scheduling
+- TODO Improve execution UI performance - sluttering
+- TODO Add native system notifications
+- TODO Show hotkey tooltips in help
+- TODO Maintain script execution order
+- TODO Use %Temp% directory by default
+- TODO Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
+- TODO Create Start Menu and Desktop shortcuts
 #>
 
 # ------------------------------
@@ -135,7 +134,7 @@ $script:UI = @{
             Time       = 100
         }
         Footer  = @{
-            Height = 35
+            Height = 30
         }
         Header  = @{
             # Height = 30
@@ -251,7 +250,7 @@ $FormProps = @{
     Height      = $script:UI.Sizes.Window.Height
     KeyPreview  = $true
     Padding     = $script:UI.Padding.Form
-    Text        = "($($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)) - Winutil"
+    Text        = "WINUTIL-$($script:Config.GitHubOwner.toUpper()) / $($script:Config.GitHubRepo.toUpper())"
     Width       = $script:UI.Sizes.Window.Width
 }
 
