@@ -18,6 +18,9 @@ Features:
 - TODO Add cancel action item to the status actions
 - TODO Add the column sort on click of a column, update column header with these alt code chars ⬇, ⬆,↑↓, ↑↑, ↓↓
 - TODO Read SSh Config, list remote machines execute on them.
+- TODO Make Group items look distinct by setting up a different background color
+- TODO Do not make list item bold on select, make them bold only if Run as Admin is checked
+- FIXME The list view is updating when it should not been eg seaerch box click and leave. get rid of all such.
 #>
 $script:Config = @{
     ApiUrl       = $null  
@@ -58,17 +61,18 @@ $script:UI = @{
         SmallBold = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     }
     Padding = @{
-        Button  = '0,0,0,0'         
-        Content = "0,0,0,35"        
-        Control = '2,2,2,2'         
-        Footer  = '0,0,0,0'     
-        Form    = '5,0,5,0'         
-        Header  = '0,0,0,0'         
-        Help    = '15,15,15,15'     
-        Panel   = '0,0,0,0'         
-        Status  = '0,5,0,5'       
-        ToolBar = '5,5,0,5'       
-        Updates = '15,15,15,15'     
+        #Item   = 'Left,Up,Right,Down'
+        Button  = '0,0,0,0'
+        Content = "0,0,0,35"
+        Control = '2,2,2,2'
+        Footer  = '0,0,0,0'
+        Form    = '5,0,5,0'
+        Header  = '0,0,0,0'
+        Help    = '15,15,15,15'
+        Panel   = '0,0,0,0'
+        Status  = '0,5,0,5'
+        ToolBar = '0,5,0,5'
+        Updates = '15,15,15,15'
     }
     Sizes   = @{
         Columns = @{
@@ -317,7 +321,7 @@ $ListViewProps = @{
     Add_ItemChecked    = {
         $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
-        $script:CreatedButtons['RunButton'].Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
+        $script:CreatedButtons['RunButton'].Enabled = ($anyChecked -gt 0)
         $script:CreatedButtons['RunButton'].Text = "▶ Run ($anyChecked)"
         $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
         $SelectAllSwitch.ForeColor = if ($SelectAllSwitch.Checked) { [System.Drawing.Color]::FromArgb(0, 95, 184) } else { [System.Drawing.Color]::White }
@@ -365,7 +369,8 @@ $ListViewProps = @{
         }
     }
     AllowColumnReorder = $true
-    AllowDrop          = $true   
+    AllowDrop          = $true
+    BorderStyle        = 'None'
     CheckBoxes         = $true
     Dock               = 'Fill'
     Font               = $script:UI.Fonts.Default
@@ -391,18 +396,20 @@ $SelectAllSwitchProps = @{
         }
     }
     Appearance = 'Button'
-    Dock       = 'Left'
-
-    Tag        = $false
-    Text       = "⏹"
     AutoSize   = $false
     BackColor  = $script:UI.Colors.Accent
     Checked    = $false
+    Dock       = 'Left'
     FlatStyle  = 'Flat'
     Font       = $script:UI.Fonts.Bold
     ForeColor  = [System.Drawing.Color]::White
     Height     = $script:UI.Sizes.Input.Height
-    Width      = $script:UI.Sizes.Input.Width / 2 - 14
+    Margin     = '0,0,2,0'
+    Padding    = '0,0,0,0'
+    Tag        = $false
+    Text       = "◼"
+    TextAlign  = 'MiddleCenter'
+    Width      = $script:UI.Sizes.Input.Width / 2 - 15
 }
 
 $SearchBoxContainerProps = @{
@@ -449,7 +456,7 @@ $SearchBoxProps = @{
     }
     BackColor       = $script:UI.Colors.Background
     BorderStyle     = 'None'  # Remove the default border
-    Dock            = 'Fill'
+    Dock            = 'Right'
     ForeColor       = $script:UI.Colors.Accent
     Height          = $script:UI.Sizes.Input.Height
     Multiline       = $false
@@ -459,22 +466,22 @@ $SearchBoxProps = @{
 }
 
 $script:ToolbarButtons = @(
-    @{
-        Name        = "ScheduleButton"
-        Text        = "⏰"
-        BorderStyle = 'FixedSingle'
-        BorderColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   
-        BackColor   = [System.Drawing.Color]::FromArgb(76, 175, 80)   
-        ForeColor   = [System.Drawing.Color]::White
-        Font        = $script:UI.Fonts.Regular
-        ToolTip     = "Schedule scripts to run later"
-        Enabled     = $true
-        Click       = { 
+    # @{
+    #     Name        = "ScheduleButton"
+    #     Text        = "⏰"
+    #     BorderStyle = 'FixedSingle'
+    #     BorderColor = [System.Drawing.Color]::FromArgb(76, 175, 80)   
+    #     BackColor   = [System.Drawing.Color]::FromArgb(76, 175, 80)   
+    #     ForeColor   = [System.Drawing.Color]::White
+    #     Font        = $script:UI.Fonts.Regular
+    #     ToolTip     = "Schedule scripts to run later"
+    #     Enabled     = $true
+    #     Click       = { 
 
-            [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-        }
-        Width       = $script:UI.Sizes.Input.Width / 2 - 8
-    }, 
+    #         [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    #     }
+    #     Width       = $script:UI.Sizes.Input.Width / 2 - 8
+    # }, 
 
     @{
         Name      = "RunButton"
@@ -483,14 +490,10 @@ $script:ToolbarButtons = @(
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Run selected scripts"
         Enabled   = $false
+        Dock      = "Left"
         Font      = $Script:UI.Fonts.Regular
         Click     = { 
-            if ($ConsentCheckbox.Checked) {
-                RunSelectedItems -Action Invoke
-            }
-            else {
-                [System.Windows.Forms.MessageBox]::Show("Please check the consent checkbox to proceed with execution.", "Consent Required", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-            }
+            RunSelectedItems
         }
     },
     @{
@@ -500,7 +503,7 @@ $script:ToolbarButtons = @(
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Toggle admin consent for execution"
         Font      = $Script:UI.Fonts.Regular
-        Dock      = "Left"
+        Dock      = "Right"
         Enabled   = $true
         Click     = { 
 
@@ -513,8 +516,7 @@ $script:ToolbarButtons = @(
 
 $ConsentCheckboxProps = @{
     Add_CheckedChanged = {
-        $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
-        $script:CreatedButtons['RunButton'].Enabled = $ConsentCheckbox.Checked -and ($anyChecked -gt 0)
+        # Remove Run button enable/disable logic - button stays enabled based on selected items
     }
     Add_Click          = {
         $isChecked = $ConsentCheckbox.Checked
@@ -522,7 +524,7 @@ $ConsentCheckboxProps = @{
     }
     Add_MouseEnter     = {
         if ($script:StatusLabel) {
-            $script:StatusLabel.Text = "Check this box to enable script execution."
+            $script:StatusLabel.Text = "Check this box to run scripts with administrator privileges."
         }
     }
     Add_MouseLeave     = {
@@ -534,14 +536,16 @@ $ConsentCheckboxProps = @{
     AutoSize           = $false
     BackColor          = $script:UI.Colors.Accent
     Checked            = $false
-    Dock               = 'Right'
+    Dock               = 'Left'
     FlatStyle          = 'Flat'
-    Font               = $script:UI.Fonts.Regular
+    Font               = $script:UI.Fonts.Bold
     ForeColor          = [System.Drawing.Color]::White
     Height             = $script:UI.Sizes.Input.Height
-    Padding            = $script:UI.Padding.Control
+    Margin             = '0,0,2,0'
+    Padding            = '0,0,0,0'
     Text               = "⛊"
-    Width              = $script:UI.Sizes.Input.Width / 2 - 10
+    TextAlign          = 'MiddleCenter'
+    Width              = $script:UI.Sizes.Input.Width / 2 - 8
 }
 function Read-Profile {
     param([string]$Path)
@@ -619,7 +623,7 @@ $ProfileDropdownProps = @{
     # BackColor                = $script:UI.Colors.Accent  # ✅ This works
     ForeColor                = $script:UI.Colors.Accent        # ✅ This works
     # FlatStyle                = 'Flat'                        # ✅ This works - makes it look more modern
-    Dock                     = 'Left'
+    Dock                     = 'Right'
     DropDownStyle            = 'DropDownList'
     Font                     = $script:UI.Fonts.Default
     Height                   = $script:UI.Sizes.Input.Height
@@ -884,12 +888,17 @@ function RunSelectedItems {
     $script:CurrentLogFile = Join-Path -Path $script:LogsDirectory -ChildPath $logFileName
 
     $startTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
-    Add-Content -Path $script:CurrentLogFile -Value "$startTime INFO Gray WinUtil execution started"
+    $adminMode = $ConsentCheckbox.Checked
+    $modeText = if ($adminMode) { "administrator" } else { "normal" }
+    Add-Content -Path $script:CurrentLogFile -Value "$startTime INFO Gray WinUtil execution started in $modeText mode"
 
     $script:CreatedButtons['RunButton'].Enabled = $false
     $script:CreatedButtons['RunButton'].Text = "Running..."
 
-    if ($script:StatusLabel) { $script:StatusLabel.Text = "Initializing execution..." }
+    if ($script:StatusLabel) { 
+        $statusText = if ($adminMode) { "Initializing execution (Admin mode)..." } else { "Initializing execution..." }
+        $script:StatusLabel.Text = $statusText
+    }
     if ($script:ActionButton) { $script:ActionButton.Visible = $false }
     if ($script:RetryButton) { $script:RetryButton.Visible = $false }
     if ($script:CancelButton) { $script:CancelButton.Visible = $true }
@@ -983,7 +992,39 @@ function RunSelectedItems {
                 $output = $null
                 $errorOutput = $null
 
-                if ($command -match 'winget') {
+                if ($adminMode) {
+                    # Run with administrator privileges
+                    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+                    $processInfo.FileName = "powershell.exe"
+                    $processInfo.Arguments = "-Command `"$command`""
+                    $processInfo.UseShellExecute = $true  # Must be true for runas
+                    $processInfo.CreateNoWindow = $true
+                    $processInfo.Verb = "runas"  # Request elevation
+
+                    try {
+                        $process = [System.Diagnostics.Process]::Start($processInfo)
+                        $process.WaitForExit()
+                        $exitCode = $process.ExitCode
+                        
+                        # Since we can't redirect output with UseShellExecute = true, 
+                        # we'll indicate success/failure based on exit code
+                        $executionOutput = if ($exitCode -eq 0) { "Command executed successfully" } else { "Command failed with exit code: $exitCode" }
+                        
+                        if ($exitCode -ne 0) {
+                            $executionFailed = $true
+                        }
+                    }
+                    catch [System.ComponentModel.Win32Exception] {
+                        # User declined UAC prompt
+                        $executionCancelled = $true
+                        $executionOutput = "User declined administrator privileges"
+                    }
+                    catch {
+                        $executionFailed = $true
+                        $executionOutput = $_.Exception.Message
+                    }
+                }
+                elseif ($command -match 'winget') {
 
                     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
                     $processInfo.FileName = "powershell.exe"
@@ -1149,7 +1190,8 @@ function RunSelectedItems {
     }
     finally {
 
-        $script:CreatedButtons['RunButton'].Enabled = $ConsentCheckbox.Checked
+        $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
+        $script:CreatedButtons['RunButton'].Enabled = ($anyChecked -gt 0)
         $script:CreatedButtons['RunButton'].Text = "▶ Run"
         $SelectAllSwitch.Checked = $false
         $SelectAllSwitch.Tag = $false
@@ -1179,18 +1221,8 @@ $ConsentCheckbox = New-Object System.Windows.Forms.CheckBox -Property $ConsentCh
 $ProfileDropDown = New-Object System.Windows.Forms.ComboBox -Property $ProfileDropdownProps
 
 $HelpLabel = New-Object System.Windows.Forms.Button -Property @{
-    Text      = "ℹ"
-    Dock      = 'Left'
-    FlatStyle = 'Flat'
-    Height    = $script:UI.Sizes.Input.Height - 5
-    Width     = $script:UI.Sizes.Input.Width / 2 - 10
-    BackColor = $script:UI.Colors.Accent
-    ForeColor = [System.Drawing.Color]::White
-    Font      = $Script:UI.Fonts.Regular
-    Enabled   = $true
     Add_Click = { 
         if ($script:HelpForm -and -not $script:HelpForm.IsDisposed) {
-
             $script:HelpForm.BringToFront()
             $script:HelpForm.Activate()
             return
@@ -1215,7 +1247,25 @@ $HelpLabel = New-Object System.Windows.Forms.Button -Property @{
         $script:HelpForm.Controls.Add($HelpPanel)
         $script:HelpForm.Show()  
     }
+    AutoSize  = $false
+    # BackColor = [System.Drawing.Color]::White
+    Dock      = 'Left'
+    Enabled   = $true
+    FlatStyle = 'Flat'
+    Font      = $script:UI.Fonts.Bold
+    ForeColor = $script:UI.Colors.Accent
+    Height    = $script:UI.Sizes.Input.Height
+    Margin    = '0,0,0,0'
+    Padding   = '0,0,0,0'
+    Text      = "?"
+    TextAlign = 'MiddleCenter'
+    Width     = $script:UI.Sizes.Input.Width / 2 - 8
 }
+
+# Add consistent flat appearance for all three buttons
+$SelectAllSwitch.FlatAppearance.BorderSize = 0
+$ConsentCheckbox.FlatAppearance.BorderSize = 0
+$HelpLabel.FlatAppearance.BorderSize = 0
 
 $script:StatusPanel = New-Object System.Windows.Forms.Panel -Property @{
     Dock   = 'Top'
@@ -1330,7 +1380,7 @@ $script:CancelButton = New-Object System.Windows.Forms.Button -Property @{
 $script:ActionButton.FlatAppearance.BorderSize = 0
 $script:RetryButton.FlatAppearance.BorderSize = 0
 $script:CancelButton.FlatAppearance.BorderSize = 0
-$script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $script:RetryButton, $script:ActionButton, $script:CancelButton))
+$script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $HelpLabel, $script:RetryButton, $script:ActionButton, $script:CancelButton))
 $script:StatusPanel.Controls.AddRange(@($script:ProgressBarPanel, $script:StatusContentPanel))
 
 $script:CreatedButtons = @{}
@@ -1377,11 +1427,11 @@ $SearchBoxContainer.Controls.Add($SearchBox)
 $script:ToolBarPanel.Controls.AddRange(
     @($SearchBoxContainer) + 
     $script:CreatedButtons.Values + 
-    @( $ProfileDropdown, $SelectAllSwitch, $ConsentCheckbox))
+    @( $ProfileDropdown, $ConsentCheckbox, $SelectAllSwitch))
 
 $ContentPanel.Controls.Add($script:ScriptsPanel)
 $ContentPanel.Controls.Add($script:ToolBarPanel)
-$FooterPanel.Controls.AddRange(@($script:StatusPanel, $HelpLabel))
+$FooterPanel.Controls.AddRange(@($script:StatusPanel))
 $Form.Controls.AddRange(@($HeaderPanel, $FooterPanel, $ContentPanel))
 
 @($script:DataDirectory, $script:ProfilesDirectory, $script:LogsDirectory) | ForEach-Object {
