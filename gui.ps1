@@ -21,6 +21,8 @@ Features:
 - TODO Make Group items look distinct by setting up a different background color
 - TODO Do not make list item bold on select, make them bold only if Run as Admin is checked
 - FIXME The list view is updating when it should not been eg seaerch box click and leave. get rid of all such.
+- FIXME Move Status Action Button Panel from Status panel to the Toolbar to the right of Run button.
+
 #>
 $script:Config = @{
     ApiUrl       = $null  
@@ -155,7 +157,6 @@ function Update-TitleBarTheme {
             $SelectAllSwitch.BackColor = $newAccentColor
             $ConsentCheckbox.BackColor = $newAccentColor
             $HelpLabel.ForeColor = $newAccentColor
-            $SearchBox.ForeColor = $newAccentColor
             $ProfileDropDown.ForeColor = $newAccentColor
             
             # Update action buttons
@@ -590,25 +591,26 @@ $SelectAllSwitchProps = @{
 $SearchBoxContainerProps = @{
     # BackColor = $script:UI.Colors.Accent  # This becomes the "border" color
     Dock    = 'Fill'
-    Padding = '5,3,5,5'  # This creates the border width
+    # BorderStyle = 'FixedSingle'  # Use FixedSingle to create a border
+    Padding = '5,0,5,0'  # This creates the border width
 }
 
 $SearchBoxProps = @{
     Add_Enter       = {
-        if ($this.Text -eq "👓 Search ...") {
+        if ($this.Text -eq "Search ...") {
             $this.Text = ""
             $this.ForeColor = $script:UI.Colors.Text
         }
     }
     Add_Leave       = {
         if ($this.Text.Trim() -eq "") {
-            $this.Text = "👓 Search ..."
+            $this.Text = "Search ..."
             $this.ForeColor = $script:UI.Colors.Accent
         }
     }
     Add_TextChanged = {
         $searchText = $this.Text.Trim()
-        if ($searchText -eq "👓 Search ...") { return }
+        if ($searchText -eq "Search ...") { return }
         
         $listViews = @($script:ListViews.Values)
         foreach ($lv in $listViews) {
@@ -628,16 +630,16 @@ $SearchBoxProps = @{
                 $lv.EndUpdate()
             }
         }
-    }
+    }#set location winf gui iwndow
     BackColor       = $script:UI.Colors.Background
-    BorderStyle     = 'None'  # Remove the default border
+    BorderStyle     = 'FixedSingle'  # Remove the default border
     Dock            = 'Right'
-    ForeColor       = $script:UI.Colors.Accent
+    # ForeColor       = $script:UI.Colors.Accent
     Height          = $script:UI.Sizes.Input.Height
     Multiline       = $false
-    Text            = "👓 Search ..."
+    Text            = "Search ..."
     TextAlign       = 'Left'
-    Width           = $script:UI.Sizes.Input.FooterWidth
+    Width           = $script:UI.Sizes.Input.Width
 }
 
 $script:ToolbarButtons = @(
@@ -673,19 +675,21 @@ $script:ToolbarButtons = @(
     },
     @{
         Name      = "Reset List"
-        Text      = "⸙ Reload"
+        Text      = "⸙"
         BackColor = [System.Drawing.Color]::FromArgb(0, 114, 220)
         ForeColor = [System.Drawing.Color]::White
-        ToolTip   = "Toggle admin consent for execution"
+        ToolTip   = "Refresh the script list"
         Font      = $Script:UI.Fonts.Regular
         Dock      = "Right"
         Enabled   = $true
         Click     = { 
 
-            $SelectAllSwitch.Checked = -not $SelectAllSwitch.Checked
+            # $SelectAllSwitch.Checked = -not $SelectAllSwitch.Checked
             $ProfileDropdown.SelectedIndex = $script:CurrentProfileIndex
+            # Trigger the refresh event manually by calling the event handler directly
+            & $ProfileDropdownProps['Add_SelectedIndexChanged']
         }
-        Width     = $script:UI.Sizes.Input.Width
+        Width     = $script:UI.Sizes.Input.Width / 2 - 15
     }
 )
 
@@ -1602,6 +1606,37 @@ foreach ($buttonDef in $script:ToolbarButtons) {
     # for example $script:CreatedButtons['RunButton']
     $script:CreatedButtons[$buttonDef.Name] = $button
 }
+# Create Search Button styled like Reset List button
+$SearchButton = New-Object System.Windows.Forms.Button -Property @{
+    Add_Click = {
+        # Clear search and reset view
+        $SearchBox.Text = "Search ..."
+        
+        # Reset all item colors to normal
+        $listViews = @($script:ListViews.Values)
+        foreach ($lv in $listViews) {
+            $lv.BeginUpdate()
+            try {
+                foreach ($item in $lv.Items) {
+                    $item.ForeColor = $script:UI.Colors.Text
+                }
+            }
+            finally {
+                $lv.EndUpdate()
+            }
+        }
+    }
+    BackColor = $Script:UI.Colors.Accent
+    Dock      = 'Right'
+    FlatStyle = 'Flat'
+    Font      = $script:UI.Fonts.Regular
+    ForeColor = [System.Drawing.Color]::White
+    # Height    = $script:UI.Sizes.Input.Height
+    Text      = "X"
+    Width     = $script:UI.Sizes.Input.Width / 2 - 17
+}
+$SearchButton.FlatAppearance.BorderSize = 0
+$SearchBoxContainer.Controls.Add($SearchButton)
 $SearchBoxContainer.Controls.Add($SearchBox)
 $script:ToolBarPanel.Controls.AddRange(
     @($SearchBoxContainer) + 
