@@ -34,6 +34,43 @@ $script:Config = @{
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
+# Add Windows API for titlebar customization
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class WindowAPI {
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+    
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    
+    public const int DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19;
+    public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    public const int DWMWA_CAPTION_COLOR = 35;
+    public const int DWMWA_TEXT_COLOR = 36;
+    public const uint SWP_FRAMECHANGED = 0x0020;
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOSIZE = 0x0001;
+    
+    public static void SetTitleBarColor(IntPtr handle, int captionColor, int textColor) {
+        // Enable dark mode first
+        int darkMode = 1;
+        DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
+        
+        // Set caption (background) color
+        DwmSetWindowAttribute(handle, DWMWA_CAPTION_COLOR, ref captionColor, sizeof(int));
+        
+        // Set text color
+        DwmSetWindowAttribute(handle, DWMWA_TEXT_COLOR, ref textColor, sizeof(int));
+        
+        // Refresh the window frame
+        SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
+    }
+}
+"@
+
 $script:Config.DatabaseUrl = "https://raw.githubusercontent.com/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/refs/heads/$($script:Config.GitHubBranch)/$($script:Config.DatabaseFile)"
 $script:Config.ApiUrl = "https://api.github.com/repos/$($script:Config.GitHubOwner)/$($script:Config.GitHubRepo)/contents"
 
@@ -45,6 +82,118 @@ $script:CurrentProfileIndex = -1
 
 $script:HelpForm = $null
 $script:UpdatesForm = $null
+$script:ThemeMonitorTimer = $null
+$script:LastDetectedTheme = $null
+$script:LastDetectedAccentColor = $null
+
+# Define theme update function at script scope
+function Update-TitleBarTheme {
+    try {
+        $appsUseLightTheme = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -ErrorAction SilentlyContinue
+        $isDarkMode = ($appsUseLightTheme -eq 0)  # 0 = Dark mode, 1 = Light mode
+    }
+    catch {
+        $isDarkMode = $false  # Default to light mode if unable to detect
+    }
+    
+    # Check for accent color changes
+    try {
+        $AccentColorValue = Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\DWM" -Name "AccentColor" -ErrorAction SilentlyContinue
+        $newAccentColor = if ($AccentColorValue) {
+            [System.Drawing.Color]::FromArgb(
+                ($AccentColorValue -band 0xFF000000) -shr 24, 
+                ($AccentColorValue -band 0x000000FF), 
+                ($AccentColorValue -band 0x0000FF00) -shr 8, 
+                ($AccentColorValue -band 0x00FF0000) -shr 16)
+        }
+        else {
+            [System.Drawing.Color]::FromArgb(44, 151, 222)
+        }
+    }
+    catch {
+        $newAccentColor = [System.Drawing.Color]::FromArgb(44, 151, 222)
+    }
+    
+    $accentColorChanged = ($script:LastDetectedAccentColor -eq $null) -or 
+                         ($script:LastDetectedAccentColor.ToArgb() -ne $newAccentColor.ToArgb())
+    
+    # Update titlebar if theme changed
+    if ($script:LastDetectedTheme -ne $isDarkMode) {
+        $script:LastDetectedTheme = $isDarkMode
+        
+        if ($isDarkMode) {
+            # Dark mode: Use default windows dark color Panel background
+            $captionColorInt = 0x00101010  # Dark gray background
+            $textColorInt = 0x00FFFFFF  # White text
+            $modeText = "dark mode"
+        }
+        else {
+            # Light mode: Use light gray background with dark text
+            $captionColorInt = 0x00F0F0F0  # Light gray background
+            $textColorInt = 0x00000000     # Black text
+            $modeText = "light mode"
+        }
+        
+        try {
+            [WindowAPI]::SetTitleBarColor($Form.Handle, $captionColorInt, $textColorInt)
+            Write-Host "Theme changed - Applied titlebar styling for $modeText" -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Failed to set custom titlebar colors: $_"
+        }
+    }
+    
+    # Update accent color if changed
+    if ($accentColorChanged) {
+        $script:LastDetectedAccentColor = $newAccentColor
+        $script:UI.Colors.Accent = $newAccentColor
+        
+        Write-Host "Accent color changed - Updating UI controls" -ForegroundColor Cyan
+        
+        try {
+            # Update all controls that use accent color
+            $SelectAllSwitch.BackColor = $newAccentColor
+            $ConsentCheckbox.BackColor = $newAccentColor
+            $HelpLabel.ForeColor = $newAccentColor
+            $SearchBox.ForeColor = $newAccentColor
+            $ProfileDropDown.ForeColor = $newAccentColor
+            
+            # Update action buttons
+            if ($script:ActionButton) { $script:ActionButton.ForeColor = $newAccentColor }
+            if ($script:RetryButton) { $script:RetryButton.ForeColor = $newAccentColor }
+            if ($script:CancelButton) { $script:CancelButton.ForeColor = $newAccentColor }
+            
+            # Update toolbar buttons
+            foreach ($button in $script:CreatedButtons.Values) {
+                if ($button.Name -eq "RunButton") {
+                    # Always update Run button to use accent color
+                    $button.BackColor = $newAccentColor
+                }
+                else {
+                    $button.BackColor = $newAccentColor
+                }
+            }
+            
+            # Update progress bar color if it exists
+            $progressBars = @()
+            if ($script:ProgressBarPanel) {
+                foreach ($control in $script:ProgressBarPanel.Controls) {
+                    if ($control -is [System.Windows.Forms.ProgressBar]) {
+                        $progressBars += $control
+                    }
+                }
+            }
+            foreach ($progressBar in $progressBars) {
+                $progressBar.ForeColor = $newAccentColor
+            }
+            
+            Write-Host "Applied new accent color: R=$($newAccentColor.R) G=$($newAccentColor.G) B=$($newAccentColor.B)" -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Failed to update some UI controls with new accent color: $_"
+        }
+    }
+}
 
 $script:UI = @{
     Colors  = @{
@@ -116,7 +265,7 @@ else {
 }
 
 $FormProps = @{
-    Add_KeyDown = {
+    Add_KeyDown    = {
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::A) {
 
             $SelectAllSwitch.Checked = $true
@@ -174,8 +323,21 @@ $FormProps = @{
             $_.Handled = $true
         }
     }
-    Add_Shown   = { 
+    Add_Shown      = { 
         $Form.Activate()
+        
+        # Initial theme setup
+        Update-TitleBarTheme
+        
+        # Create timer for theme monitoring (check every 2 seconds)
+        $script:ThemeMonitorTimer = New-Object System.Windows.Forms.Timer
+        $script:ThemeMonitorTimer.Interval = 2000
+        $script:ThemeMonitorTimer.Add_Tick({
+                Update-TitleBarTheme
+            })
+        $script:ThemeMonitorTimer.Start()
+        
+        Write-Host "Theme monitoring started - titlebar will update automatically when you change Windows theme" -ForegroundColor Cyan
 
         Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
             $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
@@ -186,13 +348,22 @@ $FormProps = @{
             $script:CurrentProfileIndex = 0  
         }
     }
-    BackColor   = $script:UI.Colors.Background
-    Font        = $script:UI.Fonts.Default
-    Height      = $script:UI.Sizes.Window.Height
-    KeyPreview  = $true
-    Padding     = $script:UI.Padding.Form
-    Text        = "WINUTIL-$($script:Config.GitHubOwner.toUpper()) / $($script:Config.GitHubRepo.toUpper())"
-    Width       = $script:UI.Sizes.Window.Width
+    Add_FormClosed = {
+        # Clean up timer when form is closed
+        if ($script:ThemeMonitorTimer) {
+            $script:ThemeMonitorTimer.Stop()
+            $script:ThemeMonitorTimer.Dispose()
+            $script:ThemeMonitorTimer = $null
+            Write-Host "Theme monitoring stopped" -ForegroundColor Gray
+        }
+    }
+    BackColor      = $script:UI.Colors.Background
+    Font           = $script:UI.Fonts.Default
+    Height         = $script:UI.Sizes.Window.Height
+    KeyPreview     = $true
+    Padding        = $script:UI.Padding.Form
+    Text           = "WINUTIL-$($script:Config.GitHubOwner.toUpper()) / $($script:Config.GitHubRepo.toUpper())"
+    Width          = $script:UI.Sizes.Window.Width
 }
 
 $HeaderPanelProps = @{
@@ -323,6 +494,10 @@ $ListViewProps = @{
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $script:CreatedButtons['RunButton'].Enabled = ($anyChecked -gt 0)
         $script:CreatedButtons['RunButton'].Text = "▶ Run ($anyChecked)"
+        
+        # Keep Run button using accent color always
+        $script:CreatedButtons['RunButton'].BackColor = $script:UI.Colors.Accent
+        
         $SelectAllSwitch.Checked = ($anyChecked -eq $totalItems)
         $SelectAllSwitch.ForeColor = if ($SelectAllSwitch.Checked) { [System.Drawing.Color]::FromArgb(0, 95, 184) } else { [System.Drawing.Color]::White }
         $SelectAllSwitch.Tag = ($anyChecked -eq $totalItems)
@@ -486,7 +661,7 @@ $script:ToolbarButtons = @(
     @{
         Name      = "RunButton"
         Text      = "▶ Run (0)"
-        BackColor = [System.Drawing.Color]::Green   
+        BackColor = $script:UI.Colors.Accent  # Use accent color when disabled
         ForeColor = [System.Drawing.Color]::White
         ToolTip   = "Run selected scripts"
         Enabled   = $false
@@ -1193,6 +1368,10 @@ function RunSelectedItems {
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
         $script:CreatedButtons['RunButton'].Enabled = ($anyChecked -gt 0)
         $script:CreatedButtons['RunButton'].Text = "▶ Run"
+        
+        # Keep Run button using accent color always
+        $script:CreatedButtons['RunButton'].BackColor = $script:UI.Colors.Accent
+        
         $SelectAllSwitch.Checked = $false
         $SelectAllSwitch.Tag = $false
 
