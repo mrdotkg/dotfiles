@@ -26,13 +26,14 @@ Features:
 
 #>
 $script:Config = @{
-    ApiUrl       = $null  
-    DatabaseFile = "db.json"           
-    DatabaseUrl  = $null  
-    GitHubBranch = "main"              
-    GitHubOwner  = "mrdotkg"           
-    GitHubRepo   = "dotfiles"          
-    ScriptsPath  = "$HOME\Documents\WinUtil Local Data"  
+    ApiUrl        = $null  
+    DatabaseFile  = "db.json"           
+    DatabaseUrl   = $null  
+    GitHubBranch  = "main"              
+    GitHubOwner   = "mrdotkg"           
+    GitHubRepo    = "dotfiles"          
+    ScriptsPath   = "$HOME\Documents\WinUtil Local Data"
+    SshConfigPath = "$HOME\.ssh\config"  # Add SSH config path
 }
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
@@ -81,7 +82,9 @@ $script:DataDirectory = "$HOME\Documents\WinUtil Local Data"
 $script:ProfilesDirectory = "$HOME\Documents\WinUtil Local Data\Profiles"
 $script:LogsDirectory = "$HOME\Documents\WinUtil Local Data\Logs"
 $script:ListViews = @{}
-$script:CurrentProfileIndex = -1  
+$script:CurrentProfileIndex = -1
+$script:AvailableMachines = @()  # Store available machines
+$script:CurrentMachine = $env:COMPUTERNAME  # Default to local machine
 
 $script:HelpForm = $null
 $script:UpdatesForm = $null
@@ -239,7 +242,7 @@ $script:UI = @{
         Input   = @{
             FooterWidth = 150
             Height      = 25
-            Width       = 80
+            Width       = 100
         }
         Status  = @{
             Height = 30
@@ -341,6 +344,23 @@ $FormProps = @{
         
         Write-Host "Theme monitoring started - titlebar will update automatically when you change Windows theme" -ForegroundColor Cyan
 
+        # Load available machines
+        $script:AvailableMachines = Get-SshMachines
+        
+        # Clear and populate machine dropdown with display names
+        $MachineDropdown.Items.Clear()
+        foreach ($machine in $script:AvailableMachines) {
+            $MachineDropdown.Items.Add($machine.DisplayName) | Out-Null
+        }
+        
+        # Set default to local machine
+        $localMachine = $script:AvailableMachines | Where-Object { $_.Type -eq "Local" }
+        if ($localMachine) {
+            $MachineDropdown.SelectedItem = $localMachine.DisplayName
+            $script:CurrentMachine = $localMachine.Name
+        }
+
+        # Load profiles
         Get-ChildItem -Path $script:ProfilesDirectory -Filter "*.txt" | ForEach-Object {
             $ProfileDropdown.Items.Add($_.BaseName) | Out-Null
         }
@@ -1067,14 +1087,27 @@ function RunSelectedItems {
 
     $startTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
     $adminMode = $ConsentCheckbox.Checked
+    
+    # Get current machine info
+    $currentMachineInfo = $script:AvailableMachines | Where-Object { $_.Name -eq $script:CurrentMachine }
+    $isRemote = $currentMachineInfo.Type -eq "SSH"
+    $targetDescription = if ($isRemote) { "remote machine $($currentMachineInfo.Host)" } else { "local machine" }
+    
     $modeText = if ($adminMode) { "administrator" } else { "normal" }
-    Add-Content -Path $script:CurrentLogFile -Value "$startTime INFO Gray WinUtil execution started in $modeText mode"
+    Add-Content -Path $script:CurrentLogFile -Value "$startTime INFO Gray WinUtil execution started in $modeText mode on $targetDescription"
 
     $script:CreatedButtons['RunButton'].Enabled = $false
     $script:CreatedButtons['RunButton'].Text = "Running..."
 
     if ($script:StatusLabel) { 
-        $statusText = if ($adminMode) { "Initializing execution (Admin mode)..." } else { "Initializing execution..." }
+        $statusText = if ($isRemote) {
+            if ($adminMode) { "Initializing execution on $($currentMachineInfo.DisplayName) (Admin mode)..." } 
+            else { "Initializing execution on $($currentMachineInfo.DisplayName)..." }
+        }
+        else {
+            if ($adminMode) { "Initializing execution (Admin mode)..." } 
+            else { "Initializing execution..." }
+        }
         $script:StatusLabel.Text = $statusText
     }
     if ($script:ActionButton) { $script:ActionButton.Visible = $false }
@@ -1170,8 +1203,54 @@ function RunSelectedItems {
                 $output = $null
                 $errorOutput = $null
 
-                if ($adminMode) {
-                    # Run with administrator privileges
+                if ($isRemote) {
+                    # Execute on remote machine via SSH
+                    $sshCommand = if ($currentMachineInfo.User) {
+                        "ssh $($currentMachineInfo.User)@$($currentMachineInfo.Host)"
+                    }
+                    else {
+                        "ssh $($currentMachineInfo.Host)"
+                    }
+                    
+                    if ($currentMachineInfo.Port -ne 22) {
+                        $sshCommand += " -p $($currentMachineInfo.Port)"
+                    }
+                    
+                    # Escape the command for SSH execution
+                    $escapedCommand = $command -replace '"', '\"'
+                    $sshCommand += " `"$escapedCommand`""
+                    
+                    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+                    $processInfo.FileName = "powershell.exe"
+                    $processInfo.Arguments = "-Command `"$sshCommand`""
+                    $processInfo.RedirectStandardOutput = $true
+                    $processInfo.RedirectStandardError = $true
+                    $processInfo.UseShellExecute = $false
+                    $processInfo.CreateNoWindow = $true
+
+                    $process = [System.Diagnostics.Process]::Start($processInfo)
+                    $output = $process.StandardOutput.ReadToEnd()
+                    $errorOutput = $process.StandardError.ReadToEnd()
+                    $process.WaitForExit()
+                    $exitCode = $process.ExitCode
+
+                    $executionOutput = if ($output) { $output.Trim() } else { $errorOutput.Trim() }
+
+                    if ($errorOutput -match "connection.*refused|host.*unreachable|permission.*denied.*publickey|connection.*timed.*out" -or
+                        $exitCode -eq 255) {
+                        $executionFailed = $true
+                        $executionOutput = "SSH connection failed: $executionOutput"
+                    }
+                    elseif ($errorOutput -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled" -or
+                        $output -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
+                        $executionCancelled = $true
+                    }
+                    elseif ($exitCode -ne 0) {
+                        $executionFailed = $true
+                    }
+                }
+                elseif ($adminMode) {
+                    # Run with administrator privileges on local machine
                     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
                     $processInfo.FileName = "powershell.exe"
                     $processInfo.Arguments = "-Command `"$command`""
@@ -1203,7 +1282,7 @@ function RunSelectedItems {
                     }
                 }
                 elseif ($command -match 'winget') {
-
+                    # Execute winget commands directly
                     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
                     $processInfo.FileName = "powershell.exe"
                     $processInfo.Arguments = "-Command `"$command`"" 
@@ -1232,7 +1311,7 @@ function RunSelectedItems {
                     }
                 }
                 else {
-
+                    # Execute local commands
                     $ErrorActionPreference = 'Stop'
                     $output = Invoke-Expression $command 2>&1
 
@@ -1384,10 +1463,134 @@ function RunSelectedItems {
     }
 }
 
-if ([Environment]::OSVersion.Version.Major -ge 6) {
-    try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
+# Add function to read SSH config
+function Get-SshMachines {
+    Write-Host "=== SSH Machine Discovery Debug ===" -ForegroundColor Yellow
+    Write-Host "SSH Config Path: $($script:Config.SshConfigPath)" -ForegroundColor Cyan
+    
+    $machines = @(@{
+            Name        = $env:COMPUTERNAME
+            DisplayName = "$env:COMPUTERNAME (Local)"
+            Type        = "Local"
+            Host        = "localhost"
+        })
+    
+    Write-Host "Added local machine: $($env:COMPUTERNAME) (Local)" -ForegroundColor Green
+    
+    if (Test-Path $script:Config.SshConfigPath) {
+        Write-Host "SSH config file found!" -ForegroundColor Green
+        try {
+            $sshConfig = Get-Content $script:Config.SshConfigPath -ErrorAction SilentlyContinue
+            Write-Host "SSH config file has $($sshConfig.Count) lines" -ForegroundColor Cyan
+            
+            if ($sshConfig.Count -eq 0) {
+                Write-Host "SSH config file is empty" -ForegroundColor Yellow
+            }
+            
+            $currentHost = $null
+            $hostCount = 0
+            
+            foreach ($line in $sshConfig) {
+                $line = $line.Trim()
+                Write-Host "Processing line: '$line'" -ForegroundColor Gray
+                
+                if ($line -match '^Host\s+(.+)$') {
+                    $hostName = $Matches[1].Trim()
+                    Write-Host "Found Host entry: '$hostName'" -ForegroundColor Magenta
+                    
+                    # Skip wildcards and localhost
+                    if ($hostName -notmatch '[*?]' -and $hostName -ne 'localhost') {
+                        Write-Host "Valid host name: '$hostName'" -ForegroundColor Green
+                        $currentHost = @{
+                            Name        = $hostName
+                            DisplayName = $hostName
+                            Type        = "SSH"
+                            Host        = $hostName
+                            User        = $null
+                            Port        = 22
+                        }
+                        $hostCount++
+                    }
+                    else {
+                        Write-Host "Skipping host '$hostName' (wildcard or localhost)" -ForegroundColor Yellow
+                        $currentHost = $null
+                    }
+                }
+                elseif ($currentHost -and $line -match '^\s*HostName\s+(.+)$') {
+                    $currentHost.Host = $Matches[1].Trim()
+                    Write-Host "Set hostname: $($currentHost.Host)" -ForegroundColor Cyan
+                }
+                elseif ($currentHost -and $line -match '^\s*User\s+(.+)$') {
+                    $currentHost.User = $Matches[1].Trim()
+                    Write-Host "Set user: $($currentHost.User)" -ForegroundColor Cyan
+                }
+                elseif ($currentHost -and $line -match '^\s*Port\s+(.+)$') {
+                    $currentHost.Port = [int]$Matches[1].Trim()
+                    Write-Host "Set port: $($currentHost.Port)" -ForegroundColor Cyan
+                }
+                elseif ($line -match '^Host\s+' -or $line -eq '') {
+                    # Starting new host or empty line, save current if valid
+                    if ($currentHost -and $currentHost.Name) {
+                        $machines += $currentHost
+                        Write-Host "Added SSH machine: $($currentHost.DisplayName) -> $($currentHost.Host):$($currentHost.Port)" -ForegroundColor Green
+                        $currentHost = $null
+                    }
+                }
+            }
+            
+            # Add the last host if exists
+            if ($currentHost -and $currentHost.Name) {
+                $machines += $currentHost
+                Write-Host "Added final SSH machine: $($currentHost.DisplayName) -> $($currentHost.Host):$($currentHost.Port)" -ForegroundColor Green
+            }
+            
+            Write-Host "Found $hostCount total SSH hosts in config" -ForegroundColor Cyan
+        }
+        catch {
+            Write-Warning "Failed to read SSH config: $_"
+            Write-Host "Error details: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    else {
+        Write-Host "SSH config file not found at: $($script:Config.SshConfigPath)" -ForegroundColor Red
+        Write-Host "You can create this file with SSH host configurations" -ForegroundColor Yellow
+    }
+    
+    Write-Host "Total machines available: $($machines.Count)" -ForegroundColor Green
+    foreach ($machine in $machines) {
+        Write-Host "  - $($machine.DisplayName) [$($machine.Type)]" -ForegroundColor White
+    }
+    Write-Host "=== End SSH Machine Discovery ===" -ForegroundColor Yellow
+    
+    return $machines
 }
-[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$MachineDropdownProps = @{
+    Add_SelectedIndexChanged = {
+        $selectedDisplayName = $MachineDropdown.SelectedItem
+        if ($selectedDisplayName) {
+            # Find the machine object by display name
+            $selectedMachine = $script:AvailableMachines | Where-Object { $_.DisplayName -eq $selectedDisplayName }
+            if ($selectedMachine) {
+                $script:CurrentMachine = $selectedMachine.Name
+                $machineType = if ($selectedMachine.Type -eq "Local") { "local machine" } else { "remote machine ($($selectedMachine.Host))" }
+                if ($script:StatusLabel) {
+                    $script:StatusLabel.Text = "Target machine changed to $($selectedMachine.DisplayName)"
+                }
+                Write-Host "Target machine set to: $($selectedMachine.DisplayName) [$machineType]" -ForegroundColor Cyan
+            }
+        }
+    }
+    ForeColor                = $script:UI.Colors.Accent
+    Dock                     = 'Left'
+    DropDownStyle            = 'DropDownList'
+    Font                     = $script:UI.Fonts.Default
+    Height                   = $script:UI.Sizes.Input.Height
+    Width                    = $script:UI.Sizes.Input.Width
+}
+
+# Create machine dropdown without custom formatting
+$MachineDropdown = New-Object System.Windows.Forms.ComboBox -Property $MachineDropdownProps
 
 $Form = New-Object Windows.Forms.Form -Property $FormProps
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
@@ -1640,7 +1843,7 @@ $SearchBoxContainer.Controls.Add($SearchBox)
 $script:ToolBarPanel.Controls.AddRange(
     @($SearchBoxContainer) + 
     $script:CreatedButtons.Values + 
-    @( $ProfileDropdown, $ConsentCheckbox, $SelectAllSwitch))
+    @($MachineDropdown, $ProfileDropdown, $ConsentCheckbox, $SelectAllSwitch))
 
 $ContentPanel.Controls.Add($script:ScriptsPanel)
 $ContentPanel.Controls.Add($script:ToolBarPanel)
@@ -1678,4 +1881,9 @@ if (-not (Test-Path $defaultProfile)) {
     }
 }
 
-[void]$Form.ShowDialog()
+if ([Environment]::OSVersion.Version.Major -ge 6) {
+    try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
+}
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$Form.ShowDialog() | Out-Null
