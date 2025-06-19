@@ -240,9 +240,13 @@ $script:UI = @{
 
         }
         Input   = @{
-            FooterWidth = 150
+            FooterWidth = 120
             Height      = 25
-            Width       = 100
+            Width       = 120
+            Icon        = @{
+                Height = 20
+                Width  = 20
+            }
         }
         Status  = @{
             Height = 30
@@ -514,8 +518,24 @@ $ListViewProps = @{
     Add_ItemChecked    = {
         $totalItems = ($script:ListViews.Values | ForEach-Object { $_.Items.Count } | Measure-Object -Sum).Sum
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
+        
+        # Check if there are failed/cancelled items for retry functionality
+        $failedItems = ($script:ListViews.Values | ForEach-Object { 
+                $_.Items | Where-Object { 
+                    $_.BackColor -eq [System.Drawing.Color]::FromArgb(255, 200, 200) -or 
+                    $_.BackColor -eq [System.Drawing.Color]::FromArgb(255, 235, 200) 
+                } 
+            } | Measure-Object).Count
+        
         $script:CreatedButtons['RunButton'].Enabled = ($anyChecked -gt 0)
-        $script:CreatedButtons['RunButton'].Text = "▶ Run ($anyChecked)"
+        
+        # Change button text based on whether there are failed items
+        if ($failedItems -gt 0 -and $anyChecked -eq 0) {
+            $script:CreatedButtons['RunButton'].Text = "▶ Run, Again? ($failedItems)"
+        }
+        else {
+            $script:CreatedButtons['RunButton'].Text = "▶ Run ($anyChecked)"
+        }
         
         # Keep Run button using accent color always
         $script:CreatedButtons['RunButton'].BackColor = $script:UI.Colors.Accent
@@ -600,13 +620,13 @@ $SelectAllSwitchProps = @{
     FlatStyle  = 'Flat'
     Font       = $script:UI.Fonts.Bold
     ForeColor  = [System.Drawing.Color]::White
-    Height     = $script:UI.Sizes.Input.Height
+    Height     = $script:UI.Sizes.Input.Icon.Height
     Margin     = '0,0,2,0'
     Padding    = '0,0,0,0'
     Tag        = $false
     Text       = "◼"
     TextAlign  = 'MiddleCenter'
-    Width      = $script:UI.Sizes.Input.Width / 2 - 15
+    Width      = $script:UI.Sizes.Input.Icon.Width
 }
 
 $SearchBoxContainerProps = @{
@@ -676,7 +696,7 @@ $script:ToolbarButtons = @(
 
     #         [System.Windows.Forms.MessageBox]::Show("Scheduling functionality coming soon!", "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     #     }
-    #     Width       = $script:UI.Sizes.Input.Width / 2 - 8
+    #     Width       = $script:UI.Sizes.Input.Icon.Width
     # }, 
 
     @{
@@ -689,7 +709,26 @@ $script:ToolbarButtons = @(
         Dock      = "Left"
         Font      = $Script:UI.Fonts.Regular
         Click     = { 
-            RunSelectedItems
+            # Check if we should retry failed items or run selected items
+            $failedItems = @()
+            foreach ($listView in $script:ListViews.Values) {
+                $failedItems += $listView.Items | Where-Object { 
+                    $_.BackColor -eq [System.Drawing.Color]::FromArgb(255, 200, 200) -or 
+                    $_.BackColor -eq [System.Drawing.Color]::FromArgb(255, 235, 200) 
+                }
+            }
+            
+            $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
+            
+            if ($failedItems.Count -gt 0 -and $anyChecked -eq 0) {
+                # Retry mode - run failed items
+                $script:RetryItems = $failedItems
+                RunSelectedItems -RetryMode $true
+            }
+            else {
+                # Normal mode - run selected items
+                RunSelectedItems
+            }
         }
     },
     @{
@@ -708,7 +747,7 @@ $script:ToolbarButtons = @(
             # Trigger the refresh event manually by calling the event handler directly
             & $ProfileDropdownProps['Add_SelectedIndexChanged']
         }
-        Width     = $script:UI.Sizes.Input.Width / 2 - 15
+        Width     = $script:UI.Sizes.Input.Icon.Width
     }
 )
 
@@ -738,12 +777,12 @@ $ConsentCheckboxProps = @{
     FlatStyle          = 'Flat'
     Font               = $script:UI.Fonts.Bold
     ForeColor          = [System.Drawing.Color]::White
-    Height             = $script:UI.Sizes.Input.Height
+    Height             = $script:UI.Sizes.Input.Icon.Height
     Margin             = '0,0,2,0'
     Padding            = '0,0,0,0'
     Text               = "⛊"
     TextAlign          = 'MiddleCenter'
-    Width              = $script:UI.Sizes.Input.Width / 2 - 8
+    Width              = $script:UI.Sizes.Input.Icon.Width
 }
 function Read-Profile {
     param([string]$Path)
@@ -825,7 +864,7 @@ $ProfileDropdownProps = @{
     DropDownStyle            = 'DropDownList'
     Font                     = $script:UI.Fonts.Default
     Height                   = $script:UI.Sizes.Input.Height
-    Width                    = $script:UI.Sizes.Input.FooterWidth
+    Width                    = $script:UI.Sizes.Input.Width
 }
 
 
@@ -1342,11 +1381,12 @@ function RunSelectedItems {
                 }
 
                 if ($executionCancelled) {
-
+                    # Keep item checked for retry
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 200)
                     $item.ForeColor = [System.Drawing.Color]::FromArgb(205, 133, 0)
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Cancelled)"
+                    $item.Checked = $true  # Keep checked for retry
                     $cancelledCount++
 
                     if ($script:StatusLabel) {
@@ -1354,11 +1394,12 @@ function RunSelectedItems {
                     }
                 }
                 elseif ($executionFailed) {
-
+                    # Keep item checked for retry
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
                     $item.ForeColor = [System.Drawing.Color]::Red
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Failed)"
+                    $item.Checked = $true  # Keep checked for retry
                     $failedCount++
 
                     if ($script:StatusLabel) {
@@ -1366,11 +1407,12 @@ function RunSelectedItems {
                     }
                 }
                 else {
-
+                    # Uncheck successful items
                     $item.BackColor = [System.Drawing.Color]::FromArgb(200, 255, 200)
                     $item.ForeColor = [System.Drawing.Color]::DarkGreen
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Completed)"
+                    $item.Checked = $false  # Uncheck successful items
                     $completedCount++
 
                     if ($script:StatusLabel) {
@@ -1388,18 +1430,12 @@ function RunSelectedItems {
 
                 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
                 if ($_.Exception.Message -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
-                    Add-Content -Path $script:CurrentLogFile -Value "$timestamp WARN Execution cancelled with exception for '$name' - Time: $executionTime - Error: $executionOutput"
-                }
-                else {
-                    Add-Content -Path $script:CurrentLogFile -Value "$timestamp ERROR Execution failed with exception for '$name' - Time: $executionTime - Error: $executionOutput"
-                }
-
-                if ($_.Exception.Message -match "cancelled|canceled|aborted|user.*declined|operation.*cancelled") {
-
+                    # Keep item checked for retry
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 200)
                     $item.ForeColor = [System.Drawing.Color]::FromArgb(205, 133, 0)
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Cancelled)"
+                    $item.Checked = $true  # Keep checked for retry
                     $cancelledCount++
 
                     if ($script:StatusLabel) {
@@ -1407,11 +1443,12 @@ function RunSelectedItems {
                     }
                 }
                 else {
-
+                    # Keep item checked for retry
                     $item.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
                     $item.ForeColor = [System.Drawing.Color]::Red
                     $item.Font = $script:UI.Fonts.Default
                     $item.SubItems[1].Text = "$($executionTime) (Failed)"
+                    $item.Checked = $true  # Keep checked for retry
                     $failedCount++
 
                     if ($script:StatusLabel) {
@@ -1439,17 +1476,19 @@ function RunSelectedItems {
             $script:StatusLabel.Text = $statusText
             $script:StatusLabel.Visible = $true
             $script:ActionButton.Visible = $true
-
-            if (($failedCount -gt 0 -or $cancelledCount -gt 0) -and $script:RetryButton) {
-                $script:RetryButton.Visible = $true
-            }
         }
     }
     finally {
 
         $anyChecked = ($script:ListViews.Values | ForEach-Object { $_.Items | Where-Object { $_.Checked } } | Measure-Object).Count
-        $script:CreatedButtons['RunButton'].Enabled = ($anyChecked -gt 0)
-        $script:CreatedButtons['RunButton'].Text = "▶ Run"
+        
+        # Update button text based on execution results
+        if ($failedCount -gt 0 -or $cancelledCount -gt 0) {
+            $script:CreatedButtons['RunButton'].Text = "▶ Run, Again? ($anyChecked)"
+        }
+        else {
+            $script:CreatedButtons['RunButton'].Text = "▶ Run ($anyChecked)"
+        }
         
         # Keep Run button using accent color always
         $script:CreatedButtons['RunButton'].BackColor = $script:UI.Colors.Accent
@@ -1596,7 +1635,7 @@ $Form = New-Object Windows.Forms.Form -Property $FormProps
 $HeaderPanel = New-Object System.Windows.Forms.Panel -Property $HeaderPanelProps
 
 $ContentPanel = New-Object Windows.Forms.Panel -Property $ContentPanelProps
-$FooterPanel = New-Object Windows.Forms.Panel -Property $FooterPanelProps
+$FooterPanel = New-Object System.Windows.Forms.Panel -Property $FooterPanelProps
 
 $SelectAllSwitch = New-Object System.Windows.Forms.CheckBox -Property $SelectAllSwitchProps
 $SearchBoxContainer = New-Object System.Windows.Forms.Panel -Property $SearchBoxContainerProps
@@ -1639,12 +1678,12 @@ $HelpLabel = New-Object System.Windows.Forms.Button -Property @{
     FlatStyle = 'Flat'
     Font      = $script:UI.Fonts.Bold
     ForeColor = $script:UI.Colors.Accent
-    Height    = $script:UI.Sizes.Input.Height
+    Height    = $script:UI.Sizes.Input.Icon.Height
     Margin    = '0,0,0,0'
     Padding   = '0,0,0,0'
     Text      = "?"
     TextAlign = 'MiddleCenter'
-    Width     = $script:UI.Sizes.Input.Width / 2 - 8
+    Width     = $script:UI.Sizes.Input.Icon.Width
 }
 
 # Add consistent flat appearance for all three buttons
@@ -1711,32 +1750,6 @@ $script:ActionButton = New-Object System.Windows.Forms.Button -Property @{
     Width     = 70
 }
 
-$script:RetryButton = New-Object System.Windows.Forms.Button -Property @{
-    Add_Click = {
-        $script:RetryItems = @()
-        foreach ($listView in $script:ListViews.Values) {
-            foreach ($item in $listView.Items) {
-                if ($item.BackColor -eq [System.Drawing.Color]::FromArgb(255, 200, 200) -or 
-                    $item.BackColor -eq [System.Drawing.Color]::FromArgb(255, 235, 200)) {
-                    $script:RetryItems += $item
-                }
-            }
-        }
-
-        if ($script:RetryItems.Count -gt 0) {
-            RunSelectedItems -RetryMode $true
-        }
-    }
-    Dock      = 'Right'
-    FlatStyle = 'Flat'
-    ForeColor = $script:UI.Colors.Accent
-    Font      = $script:UI.Fonts.Small
-    Height    = 22
-    Text      = "↻ Retry"
-    Visible   = $false
-    Width     = 70
-}
-
 $script:CancelButton = New-Object System.Windows.Forms.Button -Property @{
     Add_Click = {
         $script:RetryItems = @()
@@ -1763,9 +1776,8 @@ $script:CancelButton = New-Object System.Windows.Forms.Button -Property @{
     Width     = 70
 }
 $script:ActionButton.FlatAppearance.BorderSize = 0
-$script:RetryButton.FlatAppearance.BorderSize = 0
 $script:CancelButton.FlatAppearance.BorderSize = 0
-$script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $HelpLabel, $script:RetryButton, $script:ActionButton, $script:CancelButton))
+$script:StatusContentPanel.Controls.AddRange(@($script:StatusLabel, $HelpLabel, $script:ActionButton, $script:CancelButton))
 $script:StatusPanel.Controls.AddRange(@($script:ProgressBarPanel, $script:StatusContentPanel))
 
 $script:CreatedButtons = @{}
@@ -1833,9 +1845,9 @@ $SearchButton = New-Object System.Windows.Forms.Button -Property @{
     FlatStyle = 'Flat'
     Font      = $script:UI.Fonts.Regular
     ForeColor = [System.Drawing.Color]::White
-    # Height    = $script:UI.Sizes.Input.Height
+    # Height    = $script:UI.Sizes.Input.Icon.Height
     Text      = "X"
-    Width     = $script:UI.Sizes.Input.Width / 2 - 17
+    Width     = $script:UI.Sizes.Input.Icon.Width
 }
 $SearchButton.FlatAppearance.BorderSize = 0
 $SearchBoxContainer.Controls.Add($SearchButton)
