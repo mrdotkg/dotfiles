@@ -1850,12 +1850,10 @@ $SearchButton = New-Object System.Windows.Forms.Button -Property @{
     Width     = $script:UI.Sizes.Input.Icon.Width
 }
 $SearchButton.FlatAppearance.BorderSize = 0
-$SearchBoxContainer.Controls.Add($SearchButton)
-$SearchBoxContainer.Controls.Add($SearchBox)
 $script:ToolBarPanel.Controls.AddRange(
-    @($SearchBoxContainer) + 
     $script:CreatedButtons.Values + 
-    @($ConsentCheckbox, $MachineDropdown, $ProfileDropdown, $SelectAllSwitch))
+    @( $ProfileDropdown, $SearchBox, $SearchButton) + 
+    @($ConsentCheckbox, $MachineDropdown, $SelectAllSwitch))
 
 $ContentPanel.Controls.Add($script:ScriptsPanel)
 $ContentPanel.Controls.Add($script:ToolBarPanel)
