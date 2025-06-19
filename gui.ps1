@@ -244,8 +244,8 @@ $script:UI = @{
             Height      = 25
             Width       = 120
             Icon        = @{
-                Height = 20
-                Width  = 20
+                Height = 25
+                Width  = 25
             }
         }
         Status  = @{
@@ -678,7 +678,7 @@ $SearchBoxProps = @{
     Multiline       = $false
     Text            = "Search ..."
     TextAlign       = 'Left'
-    Width           = $script:UI.Sizes.Input.Width
+    Width           = $script:UI.Sizes.Input.Width - 30
 }
 
 $script:ToolbarButtons = @(
@@ -1855,7 +1855,7 @@ $SearchBoxContainer.Controls.Add($SearchBox)
 $script:ToolBarPanel.Controls.AddRange(
     @($SearchBoxContainer) + 
     $script:CreatedButtons.Values + 
-    @($MachineDropdown, $ProfileDropdown, $ConsentCheckbox, $SelectAllSwitch))
+    @($ConsentCheckbox, $MachineDropdown, $ProfileDropdown, $SelectAllSwitch))
 
 $ContentPanel.Controls.Add($script:ScriptsPanel)
 $ContentPanel.Controls.Add($script:ToolBarPanel)
