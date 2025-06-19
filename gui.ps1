@@ -4,6 +4,9 @@ Features:
 - TODO Submit new collections and scripts to repository
 - BUG only the first group, its actual name is being overridden by default
 - FIXME Write commands to PowerShell history
+- FIXME The list view is updating when it should not been eg seaerch box click and leave. get rid of all such.
+- FIXME Move Status Action Button Panel from Status panel to the Toolbar to the right of Run button.
+- FIXME term 'Queued' is not recognized as a name of a cmdlet
 - FIXME Improve execution UI performance - sluttering
 - FIXME Instead of showing status inside time, show it as a separate column
 - FIXME Fix Move List item down.
@@ -20,8 +23,6 @@ Features:
 - TODO Read SSh Config, list remote machines execute on them.
 - TODO Make Group items look distinct by setting up a different background color
 - TODO Do not make list item bold on select, make them bold only if Run as Admin is checked
-- FIXME The list view is updating when it should not been eg seaerch box click and leave. get rid of all such.
-- FIXME Move Status Action Button Panel from Status panel to the Toolbar to the right of Run button.
 
 #>
 $script:Config = @{
@@ -599,13 +600,11 @@ $SearchBoxProps = @{
     Add_Enter       = {
         if ($this.Text -eq "Search ...") {
             $this.Text = ""
-            $this.ForeColor = $script:UI.Colors.Text
         }
     }
     Add_Leave       = {
         if ($this.Text.Trim() -eq "") {
             $this.Text = "Search ..."
-            $this.ForeColor = $script:UI.Colors.Accent
         }
     }
     Add_TextChanged = {
