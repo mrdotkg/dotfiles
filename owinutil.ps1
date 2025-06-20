@@ -158,8 +158,11 @@ class UITheme {
     [void]StartThemeMonitoring() {
         $this.ThemeMonitorTimer = New-Object System.Windows.Forms.Timer
         $this.ThemeMonitorTimer.Interval = 2000
+        $appInstance = $this.Tag
         $this.ThemeMonitorTimer.Add_Tick({
-                $this.UpdateTheme()
+                if ($appInstance) {
+                    $appInstance.UpdateTheme()
+                }
             }.GetNewClosure())
     }
 
@@ -566,21 +569,47 @@ class WinUtilApplication {
     }
 
     [void]CreateMainForm() {
+        # Create the main form and set properties
         $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
-            BackColor  = $this.Theme.Colors.Background
-            Font       = $this.Theme.Fonts.Default
-            Height     = $this.Theme.Sizes.Window.Height
-            KeyPreview = $true
-            Padding    = $this.Theme.Padding.Form
-            Text       = "WINUTIL-$($this.Config.GitHubOwner.toUpper()) / $($this.Config.GitHubRepo.toUpper())"
-            Width      = $this.Theme.Sizes.Window.Width
+            BackColor       = $this.Theme.Colors.Background
+            Font            = $this.Theme.Fonts.Default
+            Height          = $this.Theme.Sizes.Window.Height
+            KeyPreview      = $true
+            Padding         = $this.Theme.Padding.Form
+            Text            = "WINUTIL-$($this.Config.GitHubOwner.toUpper()) / $($this.Config.GitHubRepo.toUpper())"
+            TransparencyKey = $this.Theme.Colors.Background;
+            Width           = $this.Theme.Sizes.Window.Width
         }
 
-        $this.MainForm.Add_KeyDown({ $this.HandleFormKeyDown($_) })
-        $this.MainForm.Add_Shown({ $this.HandleFormShown() })
-        $this.MainForm.Add_FormClosed({ $this.HandleFormClosed() })
+        # Set form background to current Windows wallpaper
+        try {
+            $wallpaperPath = (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction Stop).Wallpaper
+            if (Test-Path $wallpaperPath) {
+                $this.MainForm.BackgroundImage = [System.Drawing.Image]::FromFile($wallpaperPath)
+                $this.MainForm.BackgroundImageLayout = [System.Windows.Forms.ImageLayout]::Stretch
+            }
+        }
+        catch {
+            Write-Warning "Unable to load desktop wallpaper: $_"
+            # Fallback to solid background color
+            $this.MainForm.BackgroundImage = $null
+            $this.MainForm.BackColor = $this.Theme.Colors.Background
+        }
+        $this.MainForm.Icon = [System.Drawing.SystemIcons]::Application
+        $this.MainForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
+        $this.MainForm.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+        
 
-        $this.CreateFormControls()
+        # Store application instance on form for event handlers
+        $this.MainForm.Tag = $this
+
+        # Subscribe to events using form.Tag to call class methods
+        $this.MainForm.add_KeyDown({ param($sender, $e) $sender.Tag.HandleFormKeyDown($e) })
+        $this.MainForm.add_Shown({ param($sender, $e) $sender.Tag.HandleFormShown() })
+        $this.MainForm.add_FormClosed({ param($sender, $e) $sender.Tag.HandleFormClosed() })
+
+        # Initialize child controls on the form
+        # $this.CreateFormControls()
     }
 
     [void]CreateFormControls() {
