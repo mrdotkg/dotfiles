@@ -1,6 +1,9 @@
 <#
 Object-Oriented PowerShell GUI Application for managing and executing scripts from a GitHub repository.
 Converted from process-oriented to OOP structure for better maintainability and extensibility.
+TODO Instead of Json database, Use PS1 scripts with metadata for each script.
+TODO Run As Admin, Current User, Other Users on PC.
+
 #>
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
@@ -38,6 +41,10 @@ public class WindowAPI {
 # Configuration Class
 class WinUtilConfig {
     [string]$ApiUrl
+    # db is now a ps script file instead of a json file
+    # This allows for more complex script definitions and metadata
+    # [string]$DatabaseFile = "db.ps1"
+    
     [string]$DatabaseFile = "db.json"
     [string]$DatabaseUrl
     [string]$GitHubBranch = "main"
@@ -118,15 +125,15 @@ class UITheme {
 
         $this.Padding = @{
             Button  = '0,0,0,0'
-            Content = "0,0,0,35"
-            Control = '2,2,2,2'
+            Content = "0,0,0,0"
+            Control = '0,0,0,0'
             Footer  = '0,0,0,0'
-            Form    = '5,0,5,0'
+            Form    = '5,5,5,5'
             Header  = '0,0,0,0'
             Help    = '15,15,15,15'
             Panel   = '0,0,0,0'
-            Status  = '0,5,0,5'
-            ToolBar = '0,5,0,5'
+            Status  = '0,0,0,0'
+            ToolBar = '0,0,0,0'
             Updates = '15,15,15,15'
         }
 
@@ -135,22 +142,21 @@ class UITheme {
                 Command = 200
                 Name    = -2
             }
-            Footer  = @{ Height = 30 }
-            Header  = @{}
+            Footer  = @{ Height = 0 }
+            Header  = @{ Height = 0 }
             Input   = @{
-                FooterWidth = 120
-                Height      = 25
-                Width       = 120
-                Icon        = @{
+                Height = 25
+                Width  = 100
+                Icon   = @{
                     Height = 25
                     Width  = 25
                 }
             }
-            Status  = @{ Height = 30 }
-            ToolBar = @{ Height = 35 }
+            Status  = @{ Height = 25 }
+            ToolBar = @{ Height = 25 }
             Window  = @{
-                Height = 600
-                Width  = 600
+                Height = 500
+                Width  = 400
             }
         }
     }
@@ -573,104 +579,132 @@ class WinUtilApplication {
         $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
             BackColor       = $this.Theme.Colors.Background
             Font            = $this.Theme.Fonts.Default
+            FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
             Height          = $this.Theme.Sizes.Window.Height
+            Icon            = [System.Drawing.SystemIcons]::Application
             KeyPreview      = $true
             Padding         = $this.Theme.Padding.Form
+            StartPosition   = [System.Windows.Forms.FormStartPosition]::WindowsDefaultLocation
             Text            = "WINUTIL-$($this.Config.GitHubOwner.toUpper()) / $($this.Config.GitHubRepo.toUpper())"
-            TransparencyKey = $this.Theme.Colors.Background;
+            # TransparencyKey = $this.Theme.Colors.Background
             Width           = $this.Theme.Sizes.Window.Width
+        
         }
 
-        # Set form background to current Windows wallpaper
-        try {
-            $wallpaperPath = (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction Stop).Wallpaper
-            if (Test-Path $wallpaperPath) {
-                $this.MainForm.BackgroundImage = [System.Drawing.Image]::FromFile($wallpaperPath)
-                $this.MainForm.BackgroundImageLayout = [System.Windows.Forms.ImageLayout]::Stretch
-            }
-        }
-        catch {
-            Write-Warning "Unable to load desktop wallpaper: $_"
-            # Fallback to solid background color
-            $this.MainForm.BackgroundImage = $null
-            $this.MainForm.BackColor = $this.Theme.Colors.Background
-        }
-        $this.MainForm.Icon = [System.Drawing.SystemIcons]::Application
-        $this.MainForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
-        $this.MainForm.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-        
+        # # Set form background to current Windows wallpaper
+        # try {
+        #     $wallpaperPath = (Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Wallpaper -ErrorAction Stop).Wallpaper
+        #     if (Test-Path $wallpaperPath) {
+        #         $this.MainForm.BackColor = $this.Theme.Colors.Background
+        #         $this.MainForm.TransparencyKey = $this.Theme.Colors.Background
+        #         $this.MainForm.BackgroundImage = [System.Drawing.Image]::FromFile($wallpaperPath)
+        #         $this.MainForm.BackgroundImageLayout = [System.Windows.Forms.ImageLayout]::Stretch
+        #     }
+        # }
+        # catch {
+        #     Write-Warning "Unable to load desktop wallpaper: $_"
+        #     $this.MainForm.BackgroundImage = $null
+        # }
 
         # Store application instance on form for event handlers
         $this.MainForm.Tag = $this
 
         # Subscribe to events using form.Tag to call class methods
-        $this.MainForm.add_KeyDown({ param($sender, $e) $sender.Tag.HandleFormKeyDown($e) })
-        $this.MainForm.add_Shown({ param($sender, $e) $sender.Tag.HandleFormShown() })
-        $this.MainForm.add_FormClosed({ param($sender, $e) $sender.Tag.HandleFormClosed() })
+        $this.MainForm.Add_KeyDown({ param($sender, $e) $sender.Tag.HandleFormKeyDown($e) })
+        $this.MainForm.Add_Shown({ param($sender, $e) $sender.Tag.HandleFormShown() })
+        $this.MainForm.Add_FormClosed({ param($sender, $e) $sender.Tag.HandleFormClosed() })
 
         # Initialize child controls on the form
-        # $this.CreateFormControls()
+        $this.CreateFormControls()
     }
 
     [void]CreateFormControls() {
-        # Create main panels
-        $headerPanel = New-Object System.Windows.Forms.Panel -Property @{
-            Dock   = 'Top'
-            Height = 0
+        
+        # Define layout and control structure
+        $PanelProperties = @{ 
+            BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+            Height      = $this.Theme.Sizes.ToolBar.Height 
+        }
+                 
+        $ButtonProperties = @{ 
+            Height = 25
+            Font   = $this.Theme.Fonts.Default
+            Dock   = 'Left' 
         }
 
-        $contentPanel = New-Object System.Windows.Forms.Panel -Property @{
-            Dock    = 'Fill'
-            Padding = $this.Theme.Padding.Content
+        $TextBoxProperties = @{ 
+            Height = 25
+            Font   = $this.Theme.Fonts.Default
+            Dock   = 'Left' 
+        }
+        
+        $ListViewProperties = @{ 
+            Height = 25
+            Font   = $this.Theme.Fonts.Default
+            Dock   = 'Left' 
+        }
+        
+        $ComboBoxProperties = @{ 
+            Height        = 25
+            DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList    
+            Font          = $this.Theme.Fonts.Default
+            Dock          = 'Left' 
+        }
+        $this.Controls = @{
+            Content   = @{ Type = 'Panel'; Layout = 'Form'; Order = 1; Properties = @{ Dock = 'Fill' } }
+            Toolbar   = @{ Type = 'Panel'; Layout = 'Form'; Order = 2; Properties = @{ Dock = 'Top' } }
+            Status    = @{ Type = 'Panel'; Layout = 'Form'; Order = 3; Properties = @{ Dock = 'Bottom' } }
+            Scripts   = @{ Type = 'Panel'; Layout = 'Content'; Order = 4; Properties = @{ Dock = 'Fill' } }
+            
+            Execute   = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 10; Properties = @{ Text = 'Execute'; } }
+            Refresh   = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 20; Properties = @{ Text = 'auto-refresh'; } }
+            Filter    = @{ Type = 'TextBox'; Layout = 'Toolbar'; Order = 30; Properties = @{ PlaceholderText = 'Filter...'; Dock = 'Right' } }
+            Profile   = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 40; Properties = @{} }
+            Machine   = @{ Type = 'ComboBox'; Layout = 'Status'; Order = 50; Properties = @{} }
+            
+            ScriptsLV = @{ Type = 'ListView'; Layout = 'Scripts'; Order = 100; Properties = @{ View = [System.Windows.Forms.View]::Details; GridLines = $true; CheckBoxes = $true; Dock = 'Fill' } }
         }
 
-        $footerPanel = New-Object System.Windows.Forms.Panel -Property @{
-            Dock   = 'Bottom'
-            Height = $this.Theme.Sizes.Footer.Height
+        # Build and place every control in Order
+        $createdControls = @{}
+        $controlConfigs = $this.Controls.GetEnumerator() | Sort-Object { $_.Value.Order }
+        foreach ($entry in $controlConfigs) {
+            $name = $entry.Key
+            $cfg = $entry.Value
+            # instantiate
+            $ctrl = switch ($cfg.Type) {
+                'Panel' { New-Object System.Windows.Forms.Panel }
+                'Button' { New-Object System.Windows.Forms.Button }
+                'TextBox' { New-Object System.Windows.Forms.TextBox }
+                'ListView' { New-Object System.Windows.Forms.ListView }
+                'ComboBox' { New-Object System.Windows.Forms.ComboBox }
+                default { New-Object System.Windows.Forms.Control }
+            }
+            # apply common props
+            $common = switch ($cfg.Type) {
+                'Panel' { $PanelProperties }
+                'Button' { $ButtonProperties }
+                'TextBox' { $TextBoxProperties }
+                'ListView' { $ListViewProperties }
+                'ComboBox' { $ComboBoxProperties }
+                default { @{} }
+            }
+            foreach ($p in $common.Keys) { $ctrl.$p = $common[$p] }
+            # apply specific props
+            foreach ($p in $cfg.Properties.Keys) { $ctrl.$p = $cfg.Properties[$p] }
+
+            # store and place
+            $createdControls[$name] = $ctrl
+            if ($cfg.Layout -eq 'Form') {
+                $this.MainForm.Controls.Add($ctrl)
+            }
+            else {
+                $createdControls[$cfg.Layout].Controls.Add($ctrl)
+            }
         }
 
-        # Create toolbar
-        $toolbarPanel = $this.CreateToolbar()
-        $scriptsPanel = $this.CreateScriptsPanel()
-        $statusPanel = $this.CreateStatusPanel()
-
-        # Add controls to panels
-        $contentPanel.Controls.Add($scriptsPanel)
-        $contentPanel.Controls.Add($toolbarPanel)
-        $footerPanel.Controls.Add($statusPanel)
-
-        $this.MainForm.Controls.AddRange(@($headerPanel, $footerPanel, $contentPanel))
-
-        # Store references
-        $this.Controls.ScriptsPanel = $scriptsPanel
-        $this.Controls.StatusPanel = $statusPanel
-        $this.Controls.ToolbarPanel = $toolbarPanel
-    }
-
-    [System.Windows.Forms.Panel]CreateToolbar() {
-        # ...existing toolbar creation logic...
-        $toolbarPanel = New-Object System.Windows.Forms.Panel -Property @{
-            Dock   = 'Top'
-            Height = $this.Theme.Sizes.ToolBar.Height
-        }
-        return $toolbarPanel
-    }
-
-    [System.Windows.Forms.Panel]CreateScriptsPanel() {
-        # ...existing scripts panel creation logic...
-        $scriptsPanel = New-Object System.Windows.Forms.Panel -Property @{
-            Dock = 'Fill'
-        }
-        return $scriptsPanel
-    }
-
-    [System.Windows.Forms.Panel]CreateStatusPanel() {
-        # ...existing status panel creation logic...
-        $statusPanel = New-Object System.Windows.Forms.Panel -Property @{
-            Dock   = 'Top'
-            Height = $this.Theme.Sizes.Status.Height
-        }
-        return $statusPanel
+        # replace old references
+        $this.Controls = $createdControls
     }
 
     [void]HandleFormKeyDown([System.Windows.Forms.KeyEventArgs]$e) {
