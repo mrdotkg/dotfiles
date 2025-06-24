@@ -69,20 +69,19 @@ class PSUtilApp {
         $this.ScriptFiles = @()
         
         try {
-            $currentScript = $MyInvocation.ScriptName
-            if (!$currentScript) {
-                $currentScript = $PSCommandPath
-            }
+            $sourceInfo = $this.GetSourceInfo()
             
-            # Check if running from GitHub URL or local directory
-            if ($currentScript -match "^https?://") {
+            # Check source type and load accordingly
+            if ($sourceInfo.Contains("(GitHub)") -or $sourceInfo.Contains("(Remote)")) {
                 $this.LoadRemoteScriptFiles()
             }
-            elseif ($currentScript -and (Test-Path $currentScript)) {
-                $scriptDir = Split-Path $currentScript -Parent
+            elseif ($sourceInfo.Contains("(Local)")) {
+                # Extract directory path from sourceInfo
+                $scriptDir = $sourceInfo.Replace(" (Local)", "")
                 $this.LoadLocalScriptFiles($scriptDir)
             }
             else {
+                # Fallback to remote
                 $this.LoadRemoteScriptFiles()
             }
         }
@@ -186,9 +185,12 @@ class PSUtilApp {
 
     [void]CreateInterface() {
         try {
+            # Determine source for title
+            $sourceInfo = $this.GetSourceInfo()
+            
             # Main Form
             $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
-                Text          = "PSUTIL-$($this.Owner.ToUpper())/$($this.Repo.ToUpper())"
+                Text          = "PSUTIL - $sourceInfo"
                 Size          = New-Object System.Drawing.Size(900, 650)
                 StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
                 BackColor     = $this.Theme.Colors.Background
@@ -216,7 +218,7 @@ class PSUtilApp {
                 FilesCombo        = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 102; Properties = @{ Dock = 'Left'; DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList; Add_SelectedIndexChanged = { $app.OnFilesComboChanged() } } }
                 ExecuteModeCombo  = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 105; Properties = @{ Add_SelectedIndexChanged = { $app.OnExecutionModeChanged() } } }
                 MachineCombo      = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 108; Properties = @{ Add_SelectedIndexChanged = { $app.SwitchMachine() } } }
-                ExecuteBtn        = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 109; Properties = @{ Text = "▶ Execute"; BackColor = $this.Theme.Colors.Accent; ForeColor = $this.Theme.Colors.Surface; Add_Click = { $app.ExecuteSelectedScripts() } } }
+                ExecuteBtn        = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 109; Properties = @{ Text = "▶ Run Commands"; BackColor = $this.Theme.Colors.Accent; ForeColor = $this.Theme.Colors.Surface; Add_Click = { $app.ExecuteSelectedScripts() } } }
                 SelectAllCheckBox = @{ Type = 'CheckBox'; Layout = 'Toolbar'; Order = 110; Properties = @{ Text = "Select All"; Add_CheckedChanged = { $app.OnSelectAllChanged() } } }
                 FilterText        = @{ Type = 'TextBox'; Layout = 'Toolbar'; Order = 1010; Properties = @{ PlaceholderText = "Filter..."; Add_TextChanged = { $app.FilterScripts() } } }
                 ScriptsListView   = @{ Type = 'ListView'; Layout = 'Content'; Order = 300; Properties = @{ } }
@@ -377,11 +379,11 @@ class PSUtilApp {
             
             if ($filesCombo) {
                 $filesCombo.Items.Clear()
-                $filesCombo.Items.Add("Select All Files") | Out-Null
+                $filesCombo.Items.Add("From All Files") | Out-Null
                 
                 $sortedFiles = $this.ScriptFiles | Sort-Object
                 $sortedFiles | ForEach-Object { 
-                    $filesCombo.Items.Add($_) | Out-Null 
+                    $filesCombo.Items.Add("From $_") | Out-Null 
                 }
                 
                 $filesCombo.SelectedIndex = 0
@@ -568,23 +570,16 @@ class PSUtilApp {
         
             if ($selectedText.Contains("(Current User)")) {
                 $this.ExecutionMode = "CurrentUser"
-                $buttonText = "▶ Execute"
             }
             elseif ($selectedText -eq "As Admin") {
                 $this.ExecutionMode = "Admin"
-                $buttonText = "▶ Run as Admin"
             }
             elseif ($selectedText.StartsWith("As ")) {
                 $this.ExecutionMode = $selectedText
-                $userName = $selectedText.Substring(3)
-                $buttonText = "▶ Run as $userName"
             }
             else {
                 $this.ExecutionMode = $selectedText
-                $buttonText = "▶ Run as User..."
             }
-        
-            $this.Controls.ExecuteBtn.Text = $buttonText
         }
     }
 
@@ -633,11 +628,13 @@ class PSUtilApp {
             if ($filesCombo -and $filesCombo.SelectedIndex -ge 0) {
                 $selectedText = $filesCombo.Items[$filesCombo.SelectedIndex]
                 
-                if ($selectedText -eq "Select All Files") {
+                if ($selectedText -eq "From All Files") {
                     $this.SelectedScriptFiles = $this.ScriptFiles
                 }
                 else {
-                    $this.SelectedScriptFiles = @($selectedText)
+                    # Remove "From " prefix to get the actual filename
+                    $fileName = $selectedText.Substring(5)
+                    $this.SelectedScriptFiles = @($fileName)
                 }
                 
                 $this.OnFileSelectionChanged()
@@ -684,20 +681,20 @@ class PSUtilApp {
                 Write-Warning "Failed to load script file: $scriptFile - $_" 
             }
         }
+        $this.UpdateExecuteButtonText()
     }
 
     [array]ParseScriptFile([string]$content, [string]$fileName) {
         $extension = [System.IO.Path]::GetExtension($fileName).ToLower()
         
-        switch ($extension) {
-            '.ps1' { return $this.ParsePS1ScriptFile($content, $fileName) }
-            '.sh' { return $this.ParseShellScriptFile($content, $fileName) }
-            '.bash' { return $this.ParseShellScriptFile($content, $fileName) }
-            '.py' { return $this.ParsePythonScriptFile($content, $fileName) }
-            default { return $this.ParseGenericScriptFile($content, $fileName) }
+        $return = switch ($extension) {
+            '.ps1' { $this.ParsePS1ScriptFile($content, $fileName) }
+            '.sh' { $this.ParseShellScriptFile($content, $fileName) }
+            '.bash' { $this.ParseShellScriptFile($content, $fileName) }
+            '.py' { $this.ParsePythonScriptFile($content, $fileName) }
+            default { $this.ParseGenericScriptFile($content, $fileName) }
         }
-        
-        return $this.ParseGenericScriptFile($content, $fileName)
+        return $return
     }
 
     [array]ParseShellScriptFile([string]$content, [string]$fileName) {
@@ -767,99 +764,26 @@ class PSUtilApp {
             })
     }
 
-    [void]OnFilesComboClick() {
-        Write-Host "OnFilesComboClick called"
-        try {
-            $filesDropDown = $this.Controls['FilesDropDown']
-            if ($filesDropDown) {
-                if ($filesDropDown.Visible) {
-                    $filesDropDown.Visible = $false
-                    Write-Host "Hiding dropdown"
-                }
-                else {
-                    Write-Host "Showing dropdown"
-                    $this.PositionFilesDropDown()
-                    $filesDropDown.Visible = $true
-                    $filesDropDown.BringToFront()
-                    Write-Host "Dropdown should now be visible at location: $($filesDropDown.Location) with size: $($filesDropDown.Size)"
-                }
-            }
-            else {
-                Write-Warning "FilesDropDown control not found"
-            }
-        }
-        catch {
-            Write-Warning "Error in OnFilesComboClick: $_"
-        }
-    }
-
-    [void]OnFilesComboMouseDown($sender, $e) {
-        Write-host "OnFilesComboMouseDown called"
-        try {
-            # Prevent the default dropdown behavior
-            $sender.DroppedDown = $false
-        }
-        catch {
-            Write-Warning "Error in OnFilesComboMouseDown: $_"
-        }
-    }
-
     [void]OnSelectAllChanged() {
-        Write-Host "OnSelectAllChanged called"
         try {
             $checked = $this.Controls.SelectAllCheckBox.Checked
             $this.Controls.ScriptsListView.Items | ForEach-Object {
                 $_.Checked = $checked
             }
+            $this.UpdateExecuteButtonText()
         }
         catch {
             Write-Warning "Error in OnSelectAllChanged: $_"
         }
     }
 
-    [void]PositionFilesDropDown() {
+    [void]UpdateExecuteButtonText() {
         try {
-            $filesCombo = $this.Controls['FilesCombo']
-            $filesDropDown = $this.Controls['FilesDropDown']
-            
-            if ($filesCombo -and $filesDropDown) {
-                # Position the dropdown below the combo box as an overlay
-                $comboLocation = $filesCombo.PointToScreen([System.Drawing.Point]::Empty)
-                $formLocation = $this.MainForm.PointToScreen([System.Drawing.Point]::Empty)
-                
-                $relativeX = $comboLocation.X - $formLocation.X
-                $relativeY = $comboLocation.Y - $formLocation.Y + $filesCombo.Height
-                
-                $filesDropDown.Location = New-Object System.Drawing.Point($relativeX, $relativeY)
-                $filesDropDown.Width = $filesCombo.Width
-                $filesDropDown.Height = 150
-                
-                Write-Host "Positioned CheckedListBox at: $($filesDropDown.Location) with size: $($filesDropDown.Size)"
-            }
+            $checkedCount = ($this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }).Count
+            $this.Controls.ExecuteBtn.Text = "▶ Run $checkedCount Commands"
         }
         catch {
-            Write-Warning "Error positioning FilesDropDown: $_"
-        }
-    }
-
-    [void]UpdateFilesComboText() {
-        try {
-            $filesCombo = $this.Controls['FilesCombo']
-            if ($filesCombo) {
-                if ($this.SelectedScriptFiles -and $this.SelectedScriptFiles.Count -gt 0) {
-                    $count = $this.SelectedScriptFiles.Count
-                    $total = $this.ScriptFiles.Count
-                    
-                    # Update the text property directly instead of using items
-                    $filesCombo.Text = "$count of $total files selected"
-                }
-                else {
-                    $filesCombo.Text = "Select Script Files..."
-                }
-            }
-        }
-        catch {
-            Write-Warning "Error updating files combo text: $_"
+            Write-Warning "Error updating execute button text: $_"
         }
     }
 
@@ -871,6 +795,30 @@ class PSUtilApp {
         catch {
             Write-Error "Error in Show method: $_"
             [System.Windows.Forms.MessageBox]::Show("Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)", "Application Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        }
+    }
+    
+    [string]GetSourceInfo() {
+        try {
+            $currentScript = $MyInvocation.ScriptName
+            if (!$currentScript) {
+                $currentScript = $PSCommandPath
+            }
+            
+            # Check if running from GitHub URL or local directory
+            if ($currentScript -match "^https?://") {
+                return "$($this.Owner.ToUpper())/$($this.Repo.ToUpper()) (GitHub)"
+            }
+            elseif ($currentScript -and (Test-Path $currentScript)) {
+                $scriptDir = Split-Path $currentScript -Parent
+                return "$scriptDir (Local)"
+            }
+            else {
+                return "$($this.Owner.ToUpper())/$($this.Repo.ToUpper()) (Remote)"
+            }
+        }
+        catch {
+            return "$($this.Owner.ToUpper())/$($this.Repo.ToUpper())"
         }
     }
 }
