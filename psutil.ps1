@@ -14,14 +14,21 @@ class PSUtilApp {
     [string]$DataDir = "$env:USERPROFILE\Documents\PSUtil Local Data"
     [string]$DatabaseUrl; [hashtable]$Controls = @{}; [hashtable]$Theme = @{
     }
-    [array]$Machines = @(); [array]$Collections = @(); [array]$ScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
+    [array]$Machines = @(); [array]$Collections = @(); [array]$ScriptFiles = @(); [array]$SelectedScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser" # CurrentUser, Admin, OtherUser
     [System.Windows.Forms.Form]$MainForm
 
     PSUtilApp() {
-        $this.Initialize()
-        $this.CreateInterface()
-        # Remove LoadData() call from here - it will be called in OnFormShown()
+        try {
+            $this.Initialize()
+            $this.CreateInterface()
+        }
+        catch {
+            Write-Error "Error during PSUtilApp initialization: $_"
+            Write-Error "Stack trace: $($_.ScriptStackTrace)"
+            [System.Windows.Forms.MessageBox]::Show("Error during initialization: $_`n`nStack trace: $($_.ScriptStackTrace)", "Initialization Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            throw
+        }
     }
 
     [void]Initialize() {
@@ -36,7 +43,7 @@ class PSUtilApp {
             Fonts  = @{ Default = [System.Drawing.Font]::new("Segoe UI", 10); Bold = [System.Drawing.Font]::new("Segoe UI", 10, [System.Drawing.FontStyle]::Bold) }
             Layout = @{ 
                 Window  = @{ Width = 800; Height = 600; Padding = [System.Windows.Forms.Padding]('5,5,5,5') }; 
-                Control = @{ Height = 30; Width = 100; Padding = [System.Windows.Forms.Padding]('1,1,1,1') }; 
+                Control = @{ Height = 30; Width = 120; Padding = [System.Windows.Forms.Padding]('1,1,1,1') }; 
                 ToolBar = @{ Height = 30; Padding = [System.Windows.Forms.Padding]('2,2,2,2') }; 
                 Status  = @{ Height = 30; Padding = [System.Windows.Forms.Padding]('2,2,2,2') } 
             }
@@ -59,13 +66,111 @@ class PSUtilApp {
     }
 
     [void]LoadScriptFiles() {
-        $this.ScriptFiles = @("db.ps1") # Default main script file
+        $this.ScriptFiles = @()
+        
         try {
-            # Fetch list of PS1 files from GitHub repo
-            $apiResponse = Invoke-WebRequest "https://api.github.com/repos/$($this.Owner)/$($this.Repo)/contents" | ConvertFrom-Json
-            $this.ScriptFiles += ($apiResponse | Where-Object { $_.name -match '\.ps1$' -and $_.name -ne 'db.ps1' }).name
+            $currentScript = $MyInvocation.ScriptName
+            if (!$currentScript) {
+                $currentScript = $PSCommandPath
+            }
+            
+            # Check if running from GitHub URL or local directory
+            if ($currentScript -match "^https?://") {
+                $this.LoadRemoteScriptFiles()
+            }
+            elseif ($currentScript -and (Test-Path $currentScript)) {
+                $scriptDir = Split-Path $currentScript -Parent
+                $this.LoadLocalScriptFiles($scriptDir)
+            }
+            else {
+                $this.LoadRemoteScriptFiles()
+            }
         }
-        catch { Write-Warning "Could not fetch script files from GitHub" }
+        catch {
+            Write-Warning "Error loading script files: $_"
+            # Fallback to default
+            $this.ScriptFiles = @("db.ps1")
+        }
+        
+        Write-Host "Loaded $($this.ScriptFiles.Count) script files: $($this.ScriptFiles -join ', ')"
+    }
+    
+    [void]LoadRemoteScriptFiles() {
+        try {
+            # Recursively fetch all script files from GitHub repo
+            $this.ScriptFiles = $this.GetRemoteScriptFilesRecursive("")
+        }
+        catch { 
+            Write-Warning "Could not fetch script files from GitHub: $_"
+            # Fallback to default
+            $this.ScriptFiles = @("db.ps1")
+        }
+    }
+    
+    [array]GetRemoteScriptFilesRecursive([string]$path) {
+        $files = @()
+        $scriptExtensions = @('.ps1', '.sh', '.bash', '.zsh', '.fish', '.py', '.rb', '.pl', '.js', '.ts', '.bat', '.cmd')
+        
+        try {
+            $url = if ($path) { 
+                "https://api.github.com/repos/$($this.Owner)/$($this.Repo)/contents/$path" 
+            }
+            else { 
+                "https://api.github.com/repos/$($this.Owner)/$($this.Repo)/contents" 
+            }
+            
+            $apiResponse = Invoke-WebRequest $url | ConvertFrom-Json
+            
+            foreach ($item in $apiResponse) {
+                if ($item.type -eq "file") {
+                    $fileName = $item.name
+                    $filePath = if ($path) { "$path/$fileName" } else { $fileName }
+                    
+                    foreach ($ext in $scriptExtensions) {
+                        if ($fileName.EndsWith($ext)) {
+                            $files += $filePath
+                            break
+                        }
+                    }
+                }
+                elseif ($item.type -eq "dir") {
+                    # Recursively search subdirectories
+                    $subPath = if ($path) { "$path/$($item.name)" } else { $item.name }
+                    $files += $this.GetRemoteScriptFilesRecursive($subPath)
+                }
+            }
+        }
+        catch {
+            Write-Warning "Error fetching directory $path : $_"
+        }
+        
+        return $files
+    }
+    
+    [void]LoadLocalScriptFiles([string]$directory) {
+        try {
+            # Define executable script file extensions
+            $scriptExtensions = @('*.ps1', '*.sh', '*.bash', '*.zsh', '*.fish', '*.py', '*.rb', '*.pl', '*.js', '*.ts', '*.bat', '*.cmd')
+            
+            foreach ($ext in $scriptExtensions) {
+                $files = Get-ChildItem -Path $directory -Filter $ext -File -Recurse -ErrorAction SilentlyContinue
+                foreach ($file in $files) {
+                    $relativePath = $file.FullName.Substring($directory.Length + 1).Replace('\', '/')
+                    if ($this.ScriptFiles -notcontains $relativePath) {
+                        $this.ScriptFiles += $relativePath
+                    }
+                }
+            }
+            
+            # If no script files found, add default
+            if ($this.ScriptFiles.Count -eq 0) {
+                $this.ScriptFiles = @("db.ps1")
+            }
+        }
+        catch {
+            Write-Warning "Error scanning local directory for script files: $_"
+            $this.ScriptFiles = @("db.ps1")
+        }
     }
 
     [void]LoadCollections() {
@@ -80,120 +185,189 @@ class PSUtilApp {
     }
 
     [void]CreateInterface() {
-        # Main Form
-        $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
-            Text          = "PSUTIL-$($this.Owner.ToUpper())/$($this.Repo.ToUpper())"
-            Size          = New-Object System.Drawing.Size(900, 650)
-            StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-            BackColor     = $this.Theme.Colors.Background
-            Font          = $this.Theme.Fonts.Default
-            Padding       = $this.Theme.Layout.Window.Padding
-        }
-        
-        # Define controls with common properties and events
-        $commonProps = @{
-            Panel    = @{ BackColor = $this.Theme.Colors.Background; Height = $this.Theme.Layout.Control.Height; Padding = $this.Theme.Layout.ToolBar.Padding }
-            Button   = @{ Font = $this.Theme.Fonts.Bold; FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; Height = $this.Theme.Layout.Control.Height; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width; }
-            ComboBox = @{ Font = $this.Theme.Fonts.Default; DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList; Height = $this.Theme.Layout.Control.Height; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width }
-            TextBox  = @{ Font = $this.Theme.Fonts.Default; Height = $this.Theme.Layout.Control.Height; Dock = 'Right'; Width = $this.Theme.Layout.Control.Width; PlaceholderText = "Filter..."; BackColor = $this.Theme.Colors.Surface; ForeColor = $this.Theme.Colors.Text }
-            ListView = @{ Font = $this.Theme.Fonts.Default; View = [System.Windows.Forms.View]::Details; GridLines = $true; CheckBoxes = $true; FullRowSelect = $true; BackColor = $this.Theme.Colors.Surface; Dock = 'Fill' }
-            Label    = @{ Font = $this.Theme.Fonts.Default; BackColor = $this.Theme.Colors.Background; ForeColor = $this.Theme.Colors.Text; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width; TextAlign = 'MiddleLeft' }
-            CheckBox = @{ Font = $this.Theme.Fonts.Default; BackColor = $this.Theme.Colors.Background; ForeColor = $this.Theme.Colors.Text; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width }
-        }
-        
-        $controlDefs = @{
-            Toolbar           = @{ Type = 'Panel'; Layout = 'Form'; Order = 10; Properties = @{ Dock = 'Top' } }
-            Status            = @{ Type = 'Panel'; Layout = 'Form'; Order = 20; Properties = @{ Dock = 'Bottom'; } }
-            Content           = @{ Type = 'Panel'; Layout = 'Form'; Order = 5; Properties = @{ Dock = 'Fill' } }
-            ExecuteBtn        = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 109; Properties = @{ Text = "▶ Execute"; BackColor = $this.Theme.Colors.Accent; ForeColor = $this.Theme.Colors.Surface }; Events = @{ Click = 'ExecuteSelectedScripts' } }
-            ExecuteModeCombo  = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 105; Properties = @{}; Events = @{ SelectedIndexChanged = 'OnExecutionModeChanged' } }
-            SelectAllCheckBox = @{ Type = 'CheckBox'; Layout = 'Toolbar'; Order = 110; Properties = @{ Text = "Select All" }; Events = @{ CheckedChanged = 'OnSelectAllChanged' } }
-            MachineCombo      = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 108; Properties = @{}; Events = @{ SelectedIndexChanged = 'SwitchMachine' } }
-            FilterText        = @{ Type = 'TextBox'; Layout = 'Toolbar'; Order = 1010; Properties = @{ PlaceholderText = "Filter..." }; Events = @{ TextChanged = 'FilterScripts' } }
-            CollectionCombo   = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 100; Properties = @{Width = $this.Theme.Layout.Control.Width }; Events = @{ SelectedIndexChanged = 'OnCollectionChanged' } }
-            ScriptsListView   = @{ Type = 'ListView'; Layout = 'Content'; Order = 300; Properties = @{ } }
-        }
-        
-        # Create controls dynamically
-        $createdControls = @{}
-        $app = $this
-        $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } | ForEach-Object {
-            $name = $_.Key
-            $config = $_.Value
-            $ctrl = New-Object "System.Windows.Forms.$($config.Type)"
-        
-            # Apply common then specific properties
-            if ($commonProps[$config.Type]) { 
-                $commonProps[$config.Type].GetEnumerator() | ForEach-Object { 
-                    try { $ctrl.($_.Key) = $_.Value } catch {} 
-                } 
-            }
-            $config.Properties.GetEnumerator() | ForEach-Object { 
-                try { $ctrl.($_.Key) = $_.Value } catch {} 
-            }
-        
-            # Add events
-            if ($config.Events) { 
-                $config.Events.GetEnumerator() | ForEach-Object { 
-                    try { $ctrl."Add_$($_.Key)"({ $app.($_.Value)() }) } catch {} 
-                } 
-            }
-        
-            $createdControls[$name] = $ctrl
-            $parent = if ($config.Layout -eq 'Form') { $this.MainForm } else { $createdControls[$config.Layout] }
-            if ($parent) { $parent.Controls.Add($ctrl) }
-        }
-    
-        # Assign controls to class property
-        $this.Controls = $createdControls
-        $this.Controls.ScriptsListView.Columns.Add("Script", 250) | Out-Null
-        $this.Controls.ScriptsListView.Columns.Add("Command", 350) | Out-Null
-        $this.Controls.ScriptsListView.Columns.Add("File", 100) | Out-Null
-        $this.Controls.ScriptsListView.Columns.Add("Status", 100) | Out-Null
-    
-        # Setup execution mode combo items first
-        $this.Controls.ExecuteModeCombo.Items.Add("As $env:USERNAME (Current User)") | Out-Null
-        $this.Controls.ExecuteModeCombo.Items.Add("As Admin") | Out-Null
-    
-        # Add other users on the system
         try {
-            $otherUsers = Get-LocalUser | Where-Object { $_.Name -ne $env:USERNAME -and $_.Enabled } | Select-Object -ExpandProperty Name
-            foreach ($user in $otherUsers) {
-                $this.Controls.ExecuteModeCombo.Items.Add("As $user") | Out-Null
+            # Main Form
+            $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
+                Text          = "PSUTIL-$($this.Owner.ToUpper())/$($this.Repo.ToUpper())"
+                Size          = New-Object System.Drawing.Size(900, 650)
+                StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+                BackColor     = $this.Theme.Colors.Background
+                Font          = $this.Theme.Fonts.Default
+                Padding       = $this.Theme.Layout.Window.Padding
             }
-        }
-        catch {
-            # Fallback for systems without Get-LocalUser
+            
+            # Define controls with common properties and events
+            $commonProps = @{
+                Panel          = @{ BackColor = $this.Theme.Colors.Background; Height = $this.Theme.Layout.Control.Height; Padding = $this.Theme.Layout.ToolBar.Padding }
+                Button         = @{ Font = $this.Theme.Fonts.Bold; FlatStyle = [System.Windows.Forms.FlatStyle]::Flat; Height = $this.Theme.Layout.Control.Height; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width; }
+                ComboBox       = @{ Font = $this.Theme.Fonts.Default; DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList; Height = $this.Theme.Layout.Control.Height; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width }
+                TextBox        = @{ Font = $this.Theme.Fonts.Default; Height = $this.Theme.Layout.Control.Height; Dock = 'Right'; Width = $this.Theme.Layout.Control.Width; PlaceholderText = "Filter..."; BackColor = $this.Theme.Colors.Surface; ForeColor = $this.Theme.Colors.Text }
+                ListView       = @{ Font = $this.Theme.Fonts.Default; View = [System.Windows.Forms.View]::Details; GridLines = $true; CheckBoxes = $true; FullRowSelect = $true; BackColor = $this.Theme.Colors.Surface; Dock = 'Fill' }
+                Label          = @{ Font = $this.Theme.Fonts.Default; BackColor = $this.Theme.Colors.Background; ForeColor = $this.Theme.Colors.Text; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width; TextAlign = 'MiddleLeft' }
+                CheckBox       = @{ Font = $this.Theme.Fonts.Default; BackColor = $this.Theme.Colors.Background; ForeColor = $this.Theme.Colors.Text; Dock = 'Left'; Width = $this.Theme.Layout.Control.Width }
+                CheckedListBox = @{ Font = $this.Theme.Fonts.Default; BackColor = $this.Theme.Colors.Surface; ForeColor = $this.Theme.Colors.Text; Height = $this.Theme.Layout.Control.Height }
+            }
+            
+            $controlDefs = @{
+                Toolbar           = @{ Type = 'Panel'; Layout = 'Form'; Order = 10; Properties = @{ Dock = 'Top' } }
+                Status            = @{ Type = 'Panel'; Layout = 'Form'; Order = 20; Properties = @{ Dock = 'Bottom'; } }
+                Content           = @{ Type = 'Panel'; Layout = 'Form'; Order = 5; Properties = @{ Dock = 'Fill' } }
+                CollectionCombo   = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 100; Properties = @{Dock = 'Right'; Width = $this.Theme.Layout.Control.Width }; Events = @{ SelectedIndexChanged = 'OnCollectionChanged' } }
+                FilesCombo        = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 102; Properties = @{ Dock = 'Left'; DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList }; Events = @{ SelectedIndexChanged = 'OnFilesComboChanged' } }
+                ExecuteModeCombo  = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 105; Properties = @{}; Events = @{ SelectedIndexChanged = 'OnExecutionModeChanged' } }
+                MachineCombo      = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 108; Properties = @{}; Events = @{ SelectedIndexChanged = 'SwitchMachine' } }
+                ExecuteBtn        = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 109; Properties = @{ Text = "▶ Execute"; BackColor = $this.Theme.Colors.Accent; ForeColor = $this.Theme.Colors.Surface }; Events = @{ Click = 'ExecuteSelectedScripts' } }
+                SelectAllCheckBox = @{ Type = 'CheckBox'; Layout = 'Toolbar'; Order = 110; Properties = @{ Text = "Select All" }; Events = @{ CheckedChanged = 'OnSelectAllChanged' } }
+                FilterText        = @{ Type = 'TextBox'; Layout = 'Toolbar'; Order = 1010; Properties = @{ PlaceholderText = "Filter..." }; Events = @{ TextChanged = 'FilterScripts' } }
+                ScriptsListView   = @{ Type = 'ListView'; Layout = 'Content'; Order = 300; Properties = @{ } }
+            }
+            
+            # Create controls dynamically
+            $createdControls = @{}
+            $app = $this
+            $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } | ForEach-Object {
+                $name = $_.Key
+                $config = $_.Value
+                
+                try {
+                    $ctrl = New-Object "System.Windows.Forms.$($config.Type)"
+                }
+                catch {
+                    Write-Error "Failed to create control $name of type $($config.Type): $_"
+                    return
+                }
+            
+                # Apply common then specific properties
+                if ($commonProps[$config.Type]) { 
+                    $commonProps[$config.Type].GetEnumerator() | ForEach-Object { 
+                        try { 
+                            $ctrl.($_.Key) = $_.Value 
+                        }
+                        catch { 
+                            Write-Warning "Failed to set property $($_.Key): $_"
+                        } 
+                    } 
+                }
+                
+                $config.Properties.GetEnumerator() | ForEach-Object { 
+                    try { 
+                        $ctrl.($_.Key) = $_.Value 
+                    }
+                    catch { 
+                        Write-Warning "Failed to set property $($_.Key): $_"
+                    } 
+                }
+            
+                # Add events
+                if ($config.Events) { 
+                    $config.Events.GetEnumerator() | ForEach-Object { 
+                        $eventName = $_.Key
+                        $methodName = $_.Value
+                        
+                        try {
+                            switch ($methodName) {
+                                'OnCollectionChanged' {
+                                    $ctrl."Add_$eventName"({ $app.OnCollectionChanged() })
+                                }
+                                'OnFilesComboChanged' {
+                                    $ctrl."Add_$eventName"({ $app.OnFilesComboChanged() })
+                                }
+                                'OnExecutionModeChanged' {
+                                    $ctrl."Add_$eventName"({ $app.OnExecutionModeChanged() })
+                                }
+                                'SwitchMachine' {
+                                    $ctrl."Add_$eventName"({ $app.SwitchMachine() })
+                                }
+                                'ExecuteSelectedScripts' {
+                                    $ctrl."Add_$eventName"({ $app.ExecuteSelectedScripts() })
+                                }
+                                'OnSelectAllChanged' {
+                                    $ctrl."Add_$eventName"({ $app.OnSelectAllChanged() })
+                                }
+                                'FilterScripts' {
+                                    $ctrl."Add_$eventName"({ $app.FilterScripts() })
+                                }
+                                default {
+                                    Write-Warning "Unknown method name: $methodName"
+                                }
+                            }
+                        }
+                        catch { 
+                            Write-Warning "Failed to add event $eventName for method $methodName`: $_"
+                        } 
+                    } 
+                }
+
+                $createdControls[$name] = $ctrl
+                $parent = if ($config.Layout -eq 'Form') { $this.MainForm } else { $createdControls[$config.Layout] }
+                if ($parent) { 
+                    $parent.Controls.Add($ctrl) 
+                }
+                else {
+                    Write-Warning "Parent not found for $name (Layout: $($config.Layout))"
+                }
+            }
+        
+            # Assign controls to class property
+            $this.Controls = $createdControls
+            $this.Controls.ScriptsListView.Columns.Add("Script", 250) | Out-Null
+            $this.Controls.ScriptsListView.Columns.Add("Command", 350) | Out-Null
+            $this.Controls.ScriptsListView.Columns.Add("File", 100) | Out-Null
+            $this.Controls.ScriptsListView.Columns.Add("Status", 100) | Out-Null
+        
+            # Setup execution mode combo items first
+            $this.Controls.ExecuteModeCombo.Items.Add("As $env:USERNAME (Current User)") | Out-Null
+            $this.Controls.ExecuteModeCombo.Items.Add("As Admin") | Out-Null
+        
+            # Add other users on the system
             try {
-                $otherUsers = Get-WmiObject Win32_UserAccount -Filter "LocalAccount=True" | Where-Object { $_.Name -ne $env:USERNAME -and !$_.Disabled } | Select-Object -ExpandProperty Name
+                $otherUsers = Get-LocalUser | Where-Object { $_.Name -ne $env:USERNAME -and $_.Enabled } | Select-Object -ExpandProperty Name
                 foreach ($user in $otherUsers) {
                     $this.Controls.ExecuteModeCombo.Items.Add("As $user") | Out-Null
                 }
             }
             catch {
-                $this.Controls.ExecuteModeCombo.Items.Add("Other User...") | Out-Null
-            }
-        }
-    
-        # Set the selected index after all setup is complete
-        $this.MainForm.Add_Shown({ 
-                $app.OnFormShown() 
-                # Set default selection after form is shown
-                if ($app.Controls.ExecuteModeCombo -and $app.Controls.ExecuteModeCombo.Items.Count -gt 0) {
-                    $app.Controls.ExecuteModeCombo.SelectedIndex = 0
+                # Fallback for systems without Get-LocalUser
+                try {
+                    $otherUsers = Get-WmiObject Win32_UserAccount -Filter "LocalAccount=True" | Where-Object { $_.Name -ne $env:USERNAME -and !$_.Disabled } | Select-Object -ExpandProperty Name
+                    foreach ($user in $otherUsers) {
+                        $this.Controls.ExecuteModeCombo.Items.Add("As $user") | Out-Null
+                    }
                 }
-            })
+                catch {
+                    $this.Controls.ExecuteModeCombo.Items.Add("Other User...") | Out-Null
+                }
+            }
+        
+            # Set the selected index after all setup is complete
+            $this.MainForm.Add_Shown({ 
+                    try {
+                        $app.OnFormShown() 
+                        # Set default selection after form is shown
+                        if ($app.Controls.ExecuteModeCombo -and $app.Controls.ExecuteModeCombo.Items.Count -gt 0) {
+                            $app.Controls.ExecuteModeCombo.SelectedIndex = 0
+                        }
+                    }
+                    catch {
+                        Write-Error "Error in Form_Shown event: $_"
+                        Write-Error "Stack trace: $($_.ScriptStackTrace)"
+                        [System.Windows.Forms.MessageBox]::Show("Error in Form_Shown: $_`n`nDetails: $($_.ScriptStackTrace)", "Runtime Error")
+                    }
+                })
+        
+        }
+        catch {
+            Write-Error "Error in CreateInterface: $_"
+            Write-Error "Stack trace: $($_.ScriptStackTrace)"
+            throw
+        }
     }
 
     [void]LoadData() {
-        Write-Host "LoadData called. Controls available: $($this.Controls.Keys -join ', ')"
-    
         if ($this.Controls.ContainsKey('MachineCombo') -and $this.Controls.MachineCombo) {
-            Write-Host "Loading MachineCombo with $($this.Machines.Count) machines"
             $this.Controls.MachineCombo.Items.Clear()
             $this.Machines | ForEach-Object { $this.Controls.MachineCombo.Items.Add($_.DisplayName) | Out-Null }
             if ($this.Machines.Count -gt 0) {
-                # Always select the local machine (first item) as default
                 $this.Controls.MachineCombo.SelectedIndex = 0
                 $this.CurrentMachine = $this.Machines[0].Name
             }
@@ -202,17 +376,45 @@ class PSUtilApp {
             Write-Warning "MachineCombo control not found or is null"
         }
     
-        if ($this.Controls.ContainsKey('CollectionCombo') -and $this.Controls.CollectionCombo) {
-            Write-Host "Loading CollectionCombo with $($this.Collections.Count) collections"
-            $this.Controls.CollectionCombo.Items.Clear()
-            $this.Collections | ForEach-Object { $this.Controls.CollectionCombo.Items.Add($_) | Out-Null }
-            if ($this.Collections.Count -gt 0) {
-                $this.Controls.CollectionCombo.SelectedIndex = 0
-                $this.CurrentCollection = $this.Collections[0]
+        try {
+            $collectionControl = $this.Controls['CollectionCombo']
+            if ($collectionControl) {
+                $collectionControl.Items.Clear()
+                $this.Collections | ForEach-Object { $collectionControl.Items.Add($_) | Out-Null }
+                if ($this.Collections.Count -gt 0) {
+                    $collectionControl.SelectedIndex = 0
+                    $this.CurrentCollection = $this.Collections[0]
+                }
+            }
+            else {
+                Write-Warning "CollectionCombo control is null"
             }
         }
-        else {
-            Write-Warning "CollectionCombo control not found or is null"
+        catch {
+            Write-Warning "Error accessing CollectionCombo: $_"
+        }
+
+        try {
+            $filesCombo = $this.Controls['FilesCombo']
+            
+            if ($filesCombo) {
+                $filesCombo.Items.Clear()
+                $filesCombo.Items.Add("Select All Files") | Out-Null
+                
+                $sortedFiles = $this.ScriptFiles | Sort-Object
+                $sortedFiles | ForEach-Object { 
+                    $filesCombo.Items.Add($_) | Out-Null 
+                }
+                
+                $filesCombo.SelectedIndex = 0
+                $this.SelectedScriptFiles = $this.ScriptFiles
+            }
+            else {
+                Write-Warning "FilesCombo control is null"
+            }
+        }
+        catch {
+            Write-Warning "Error accessing FilesCombo: $_"
         }
     }
 
@@ -424,7 +626,6 @@ class PSUtilApp {
     [void]OnFormShown() { 
         $this.MainForm.Activate()
         # Load data after form is fully shown and controls are initialized
-        Write-host "Form shown, loading data..."
         $this.LoadData()
         if ($this.CurrentCollection) { 
             $this.LoadCollectionScripts() 
@@ -439,12 +640,270 @@ class PSUtilApp {
         } 
     }
     
+    [void]OnFileSelectionChanged() {
+        if ($this.SelectedScriptFiles -and $this.SelectedScriptFiles.Count -gt 0) {
+            $this.LoadScriptsFromFiles($this.SelectedScriptFiles)
+        }
+        else {
+            $this.Controls.ScriptsListView.Items.Clear()
+        }
+    }
+
+    [void]OnFilesComboChanged() {
+        try {
+            $filesCombo = $this.Controls['FilesCombo']
+            if ($filesCombo -and $filesCombo.SelectedIndex -ge 0) {
+                $selectedText = $filesCombo.Items[$filesCombo.SelectedIndex]
+                
+                if ($selectedText -eq "Select All Files") {
+                    $this.SelectedScriptFiles = $this.ScriptFiles
+                }
+                else {
+                    $this.SelectedScriptFiles = @($selectedText)
+                }
+                
+                $this.OnFileSelectionChanged()
+            }
+        }
+        catch {
+            Write-Warning "Error in OnFilesComboChanged: $_"
+        }
+    }
+
+    [void]LoadScriptsFromFiles([array]$scriptFiles) {
+        $this.Controls.ScriptsListView.Items.Clear()
+        
+        foreach ($scriptFile in $scriptFiles) {
+            try {
+                $currentScript = $PSCommandPath
+                if ($currentScript -and (Test-Path $currentScript)) {
+                    $scriptDir = Split-Path $currentScript -Parent
+                    $fullPath = Join-Path $scriptDir $scriptFile.Replace('/', '\')
+                    if (Test-Path $fullPath) {
+                        $scriptContent = Get-Content $fullPath -Raw
+                    }
+                    else {
+                        throw "Local file not found: $fullPath"
+                    }
+                }
+                else {
+                    $scriptUrl = "https://raw.githubusercontent.com/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
+                    $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
+                }
+                
+                $parsedScripts = $this.ParseScriptFile($scriptContent, $scriptFile)
+                
+                foreach ($script in $parsedScripts) {
+                    $item = New-Object System.Windows.Forms.ListViewItem($script.Description)
+                    $item.SubItems.Add($script.Command) | Out-Null
+                    $item.SubItems.Add($scriptFile) | Out-Null
+                    $item.SubItems.Add("Ready") | Out-Null
+                    $item.Tag = $script
+                    $this.Controls.ScriptsListView.Items.Add($item) | Out-Null
+                }
+            }
+            catch { 
+                Write-Warning "Failed to load script file: $scriptFile - $_" 
+            }
+        }
+    }
+
+    [array]ParseScriptFile([string]$content, [string]$fileName) {
+        $extension = [System.IO.Path]::GetExtension($fileName).ToLower()
+        
+        switch ($extension) {
+            '.ps1' { return $this.ParsePS1ScriptFile($content, $fileName) }
+            '.sh' { return $this.ParseShellScriptFile($content, $fileName) }
+            '.bash' { return $this.ParseShellScriptFile($content, $fileName) }
+            '.py' { return $this.ParsePythonScriptFile($content, $fileName) }
+            default { return $this.ParseGenericScriptFile($content, $fileName) }
+        }
+        
+        return $this.ParseGenericScriptFile($content, $fileName)
+    }
+
+    [array]ParseShellScriptFile([string]$content, [string]$fileName) {
+        $scripts = @()
+        $lines = $content -split "`n"
+        $currentScript = $null
+        
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i].Trim()
+            
+            if ($line -match '^#\s*Script:\s*(.+)$') {
+                if ($currentScript) { $scripts += $currentScript }
+                $currentScript = @{
+                    Description = $Matches[1].Trim()
+                    Command     = ""
+                    File        = $fileName
+                    LineNumber  = $i + 1
+                }
+            }
+            elseif ($line -match '^#\s*Command:\s*(.+)$' -and $currentScript) {
+                $currentScript.Command = $Matches[1].Trim()
+            }
+            elseif ($line -and !$line.StartsWith('#') -and $currentScript -and !$currentScript.Command) {
+                $currentScript.Command = $line
+            }
+        }
+        
+        if ($currentScript) { $scripts += $currentScript }
+        return $scripts
+    }
+
+    [array]ParsePythonScriptFile([string]$content, [string]$fileName) {
+        $scripts = @()
+        $lines = $content -split "`n"
+        $currentScript = $null
+        
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i].Trim()
+            
+            if ($line -match '^#\s*Script:\s*(.+)$') {
+                if ($currentScript) { $scripts += $currentScript }
+                $currentScript = @{
+                    Description = $Matches[1].Trim()
+                    Command     = ""
+                    File        = $fileName
+                    LineNumber  = $i + 1
+                }
+            }
+            elseif ($line -match '^#\s*Command:\s*(.+)$' -and $currentScript) {
+                $currentScript.Command = $Matches[1].Trim()
+            }
+            elseif ($line -and !$line.StartsWith('#') -and $currentScript -and !$currentScript.Command) {
+                $currentScript.Command = $line
+            }
+        }
+        
+        if ($currentScript) { $scripts += $currentScript }
+        return $scripts
+    }
+
+    [array]ParseGenericScriptFile([string]$content, [string]$fileName) {
+        return @(@{
+                Description = "Execute $fileName"
+                Command     = $content.Trim()
+                File        = $fileName
+                LineNumber  = 1
+            })
+    }
+
+    [void]OnFilesComboClick() {
+        Write-Host "OnFilesComboClick called"
+        try {
+            $filesDropDown = $this.Controls['FilesDropDown']
+            if ($filesDropDown) {
+                if ($filesDropDown.Visible) {
+                    $filesDropDown.Visible = $false
+                    Write-Host "Hiding dropdown"
+                }
+                else {
+                    Write-Host "Showing dropdown"
+                    $this.PositionFilesDropDown()
+                    $filesDropDown.Visible = $true
+                    $filesDropDown.BringToFront()
+                    Write-Host "Dropdown should now be visible at location: $($filesDropDown.Location) with size: $($filesDropDown.Size)"
+                }
+            }
+            else {
+                Write-Warning "FilesDropDown control not found"
+            }
+        }
+        catch {
+            Write-Warning "Error in OnFilesComboClick: $_"
+        }
+    }
+
+    [void]OnFilesComboMouseDown($sender, $e) {
+        Write-Host "OnFilesComboMouseDown called"
+        try {
+            # Prevent the default dropdown behavior
+            $sender.DroppedDown = $false
+        }
+        catch {
+            Write-Warning "Error in OnFilesComboMouseDown: $_"
+        }
+    }
+
+    [void]OnSelectAllChanged() {
+        Write-Host "OnSelectAllChanged called"
+        try {
+            $checked = $this.Controls.SelectAllCheckBox.Checked
+            $this.Controls.ScriptsListView.Items | ForEach-Object {
+                $_.Checked = $checked
+            }
+        }
+        catch {
+            Write-Warning "Error in OnSelectAllChanged: $_"
+        }
+    }
+
+    [void]PositionFilesDropDown() {
+        try {
+            $filesCombo = $this.Controls['FilesCombo']
+            $filesDropDown = $this.Controls['FilesDropDown']
+            
+            if ($filesCombo -and $filesDropDown) {
+                # Position the dropdown below the combo box as an overlay
+                $comboLocation = $filesCombo.PointToScreen([System.Drawing.Point]::Empty)
+                $formLocation = $this.MainForm.PointToScreen([System.Drawing.Point]::Empty)
+                
+                $relativeX = $comboLocation.X - $formLocation.X
+                $relativeY = $comboLocation.Y - $formLocation.Y + $filesCombo.Height
+                
+                $filesDropDown.Location = New-Object System.Drawing.Point($relativeX, $relativeY)
+                $filesDropDown.Width = $filesCombo.Width
+                $filesDropDown.Height = 150
+                
+                Write-Host "Positioned CheckedListBox at: $($filesDropDown.Location) with size: $($filesDropDown.Size)"
+            }
+        }
+        catch {
+            Write-Warning "Error positioning FilesDropDown: $_"
+        }
+    }
+
+    [void]UpdateFilesComboText() {
+        try {
+            $filesCombo = $this.Controls['FilesCombo']
+            if ($filesCombo) {
+                if ($this.SelectedScriptFiles -and $this.SelectedScriptFiles.Count -gt 0) {
+                    $count = $this.SelectedScriptFiles.Count
+                    $total = $this.ScriptFiles.Count
+                    
+                    # Update the text property directly instead of using items
+                    $filesCombo.Text = "$count of $total files selected"
+                }
+                else {
+                    $filesCombo.Text = "Select Script Files..."
+                }
+            }
+        }
+        catch {
+            Write-Warning "Error updating files combo text: $_"
+        }
+    }
+
     [void]Show() { 
-        [System.Windows.Forms.Application]::EnableVisualStyles()
-        $this.MainForm.ShowDialog() | Out-Null 
+        try {
+            [System.Windows.Forms.Application]::EnableVisualStyles()
+            $this.MainForm.ShowDialog() | Out-Null 
+        }
+        catch {
+            Write-Error "Error in Show method: $_"
+            [System.Windows.Forms.MessageBox]::Show("Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)", "Application Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        }
     }
 }
 
-# Entry point
-$app = [PSUtilApp]::new()
-$app.Show()
+# Entry point with error handling
+try {
+    $app = [PSUtilApp]::new()
+    $app.Show()
+}
+catch {
+    Write-Error "Fatal error: $_"
+    Write-Error "Stack trace: $($_.ScriptStackTrace)"
+    [System.Windows.Forms.MessageBox]::Show("Fatal error: $_`n`nStack trace: $($_.ScriptStackTrace)", "Fatal Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+}
