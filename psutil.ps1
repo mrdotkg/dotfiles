@@ -16,7 +16,7 @@ class PSUtilApp {
     }
     [array]$Machines = @(); [array]$Collections = @(); [array]$ScriptFiles = @(); [array]$SelectedScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser" # CurrentUser, Admin, OtherUser
-    [System.Windows.Forms.Form]$MainForm
+    $MainForm  # Remove [System.Windows.Forms.Form] type annotation
 
     PSUtilApp() {
         try {
