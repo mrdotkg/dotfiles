@@ -260,12 +260,14 @@ class PSUtilApp {
                 
                 # Apply regular properties
                 $properties.GetEnumerator() | ForEach-Object { 
-                    try { 
+                    # Check if the property exists on the control before trying to set it
+                    if ($ctrl.PSObject.Properties.Name -contains $_.Key -or 
+                        $ctrl.GetType().GetProperty($_.Key) -ne $null) {
                         $ctrl.($_.Key) = $_.Value 
                     }
-                    catch { 
-                        Write-Warning "Failed to set property $($_.Key): $_"
-                    } 
+                    else {
+                        Write-Verbose "Property '$($_.Key)' not supported on control type '$($config.Type)' - skipping"
+                    }
                 }
                 
                 # Apply events by calling the methods
