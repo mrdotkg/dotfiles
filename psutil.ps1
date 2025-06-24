@@ -212,13 +212,13 @@ class PSUtilApp {
                 Toolbar           = @{ Type = 'Panel'; Layout = 'Form'; Order = 10; Properties = @{ Dock = 'Top' } }
                 Status            = @{ Type = 'Panel'; Layout = 'Form'; Order = 20; Properties = @{ Dock = 'Bottom'; } }
                 Content           = @{ Type = 'Panel'; Layout = 'Form'; Order = 5; Properties = @{ Dock = 'Fill' } }
-                CollectionCombo   = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 100; Properties = @{Dock = 'Right'; Width = $this.Theme.Layout.Control.Width }; Events = @{ SelectedIndexChanged = 'OnCollectionChanged' } }
-                FilesCombo        = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 102; Properties = @{ Dock = 'Left'; DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList }; Events = @{ SelectedIndexChanged = 'OnFilesComboChanged' } }
-                ExecuteModeCombo  = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 105; Properties = @{}; Events = @{ SelectedIndexChanged = 'OnExecutionModeChanged' } }
-                MachineCombo      = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 108; Properties = @{}; Events = @{ SelectedIndexChanged = 'SwitchMachine' } }
-                ExecuteBtn        = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 109; Properties = @{ Text = "▶ Execute"; BackColor = $this.Theme.Colors.Accent; ForeColor = $this.Theme.Colors.Surface }; Events = @{ Click = 'ExecuteSelectedScripts' } }
-                SelectAllCheckBox = @{ Type = 'CheckBox'; Layout = 'Toolbar'; Order = 110; Properties = @{ Text = "Select All" }; Events = @{ CheckedChanged = 'OnSelectAllChanged' } }
-                FilterText        = @{ Type = 'TextBox'; Layout = 'Toolbar'; Order = 1010; Properties = @{ PlaceholderText = "Filter..." }; Events = @{ TextChanged = 'FilterScripts' } }
+                CollectionCombo   = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 100; Properties = @{ Dock = 'Right'; Width = $this.Theme.Layout.Control.Width; Add_SelectedIndexChanged = { $app.OnCollectionChanged() } } }
+                FilesCombo        = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 102; Properties = @{ Dock = 'Left'; DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList; Add_SelectedIndexChanged = { $app.OnFilesComboChanged() } } }
+                ExecuteModeCombo  = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 105; Properties = @{ Add_SelectedIndexChanged = { $app.OnExecutionModeChanged() } } }
+                MachineCombo      = @{ Type = 'ComboBox'; Layout = 'Toolbar'; Order = 108; Properties = @{ Add_SelectedIndexChanged = { $app.SwitchMachine() } } }
+                ExecuteBtn        = @{ Type = 'Button'; Layout = 'Toolbar'; Order = 109; Properties = @{ Text = "▶ Execute"; BackColor = $this.Theme.Colors.Accent; ForeColor = $this.Theme.Colors.Surface; Add_Click = { $app.ExecuteSelectedScripts() } } }
+                SelectAllCheckBox = @{ Type = 'CheckBox'; Layout = 'Toolbar'; Order = 110; Properties = @{ Text = "Select All"; Add_CheckedChanged = { $app.OnSelectAllChanged() } } }
+                FilterText        = @{ Type = 'TextBox'; Layout = 'Toolbar'; Order = 1010; Properties = @{ PlaceholderText = "Filter..."; Add_TextChanged = { $app.FilterScripts() } } }
                 ScriptsListView   = @{ Type = 'ListView'; Layout = 'Content'; Order = 300; Properties = @{ } }
             }
             
@@ -237,19 +237,27 @@ class PSUtilApp {
                     return
                 }
             
-                # Apply common then specific properties
-                if ($commonProps[$config.Type]) { 
-                    $commonProps[$config.Type].GetEnumerator() | ForEach-Object { 
-                        try { 
-                            $ctrl.($_.Key) = $_.Value 
-                        }
-                        catch { 
-                            Write-Warning "Failed to set property $($_.Key): $_"
-                        } 
-                    } 
+                # Merge common properties with specific properties (specific overrides common)
+                $mergedProps = @{}
+                if ($commonProps[$config.Type]) {
+                    $commonProps[$config.Type].GetEnumerator() | ForEach-Object { $mergedProps[$_.Key] = $_.Value }
+                }
+                $config.Properties.GetEnumerator() | ForEach-Object { $mergedProps[$_.Key] = $_.Value }
+                
+                # Separate events from regular properties
+                $events = @{}
+                $properties = @{}
+                $mergedProps.GetEnumerator() | ForEach-Object {
+                    if ($_.Key.StartsWith('Add_')) {
+                        $events[$_.Key] = $_.Value
+                    }
+                    else {
+                        $properties[$_.Key] = $_.Value
+                    }
                 }
                 
-                $config.Properties.GetEnumerator() | ForEach-Object { 
+                # Apply regular properties
+                $properties.GetEnumerator() | ForEach-Object { 
                     try { 
                         $ctrl.($_.Key) = $_.Value 
                     }
@@ -257,45 +265,15 @@ class PSUtilApp {
                         Write-Warning "Failed to set property $($_.Key): $_"
                     } 
                 }
-            
-                # Add events
-                if ($config.Events) { 
-                    $config.Events.GetEnumerator() | ForEach-Object { 
-                        $eventName = $_.Key
-                        $methodName = $_.Value
-                        
-                        try {
-                            switch ($methodName) {
-                                'OnCollectionChanged' {
-                                    $ctrl."Add_$eventName"({ $app.OnCollectionChanged() })
-                                }
-                                'OnFilesComboChanged' {
-                                    $ctrl."Add_$eventName"({ $app.OnFilesComboChanged() })
-                                }
-                                'OnExecutionModeChanged' {
-                                    $ctrl."Add_$eventName"({ $app.OnExecutionModeChanged() })
-                                }
-                                'SwitchMachine' {
-                                    $ctrl."Add_$eventName"({ $app.SwitchMachine() })
-                                }
-                                'ExecuteSelectedScripts' {
-                                    $ctrl."Add_$eventName"({ $app.ExecuteSelectedScripts() })
-                                }
-                                'OnSelectAllChanged' {
-                                    $ctrl."Add_$eventName"({ $app.OnSelectAllChanged() })
-                                }
-                                'FilterScripts' {
-                                    $ctrl."Add_$eventName"({ $app.FilterScripts() })
-                                }
-                                default {
-                                    Write-Warning "Unknown method name: $methodName"
-                                }
-                            }
-                        }
-                        catch { 
-                            Write-Warning "Failed to add event $eventName for method $methodName`: $_"
-                        } 
-                    } 
+                
+                # Apply events by calling the methods
+                $events.GetEnumerator() | ForEach-Object {
+                    try {
+                        $ctrl.($_.Key).Invoke($_.Value)
+                    }
+                    catch {
+                        Write-Warning "Failed to set event $($_.Key): $_"
+                    }
                 }
 
                 $createdControls[$name] = $ctrl
@@ -307,7 +285,7 @@ class PSUtilApp {
                     Write-Warning "Parent not found for $name (Layout: $($config.Layout))"
                 }
             }
-        
+
             # Assign controls to class property
             $this.Controls = $createdControls
             $this.Controls.ScriptsListView.Columns.Add("Script", 250) | Out-Null
@@ -816,7 +794,7 @@ class PSUtilApp {
     }
 
     [void]OnFilesComboMouseDown($sender, $e) {
-        Write-Host "OnFilesComboMouseDown called"
+        Write-host "OnFilesComboMouseDown called"
         try {
             # Prevent the default dropdown behavior
             $sender.DroppedDown = $false
