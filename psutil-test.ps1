@@ -8,34 +8,11 @@ Features:
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
-# Custom function to show messages that works with IEX
-function Show-PSUtilMessage {
-    param(
-        [string]$Message,
-        [string]$Title = "PSUtil",
-        [string]$Buttons = "OK",
-        [string]$Icon = "Information"
-    )
-    
-    try {
-        # Try to use MessageBox if available
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-        $result = [System.Windows.Forms.MessageBox]::Show($Message, $Title)
-        return $result
-    }
-    catch {
-        # Fallback to console output
-        Write-Host "[$Title] $Message" -ForegroundColor Yellow
-        return "OK"
-    }
-}
-
 class PSUtilApp {
-    # Config - Remove all type annotations
+    # Config
     $Owner = "mrdotkg"; $Repo = "dotfiles"; $Branch = "main"; $DbFile = "db.ps1"
     $DataDir = "$env:USERPROFILE\Documents\PSUtil Local Data"
-    $DatabaseUrl; $Controls = @{}; $Theme = @{
-    }
+    $DatabaseUrl; $Controls = @{}; $Theme = @{}
     $Machines = @(); $Collections = @(); $ScriptFiles = @(); $SelectedScriptFiles = @(); $CurrentMachine; $CurrentCollection; $IsExecuting
     $ExecutionMode = "CurrentUser" # CurrentUser, Admin, OtherUser
     $MainForm
@@ -48,7 +25,7 @@ class PSUtilApp {
         catch {
             Write-Error "Error during PSUtilApp initialization: $_"
             Write-Error "Stack trace: $($_.ScriptStackTrace)"
-            Show-PSUtilMessage -Message "Error during initialization: $_`n`nStack trace: $($_.ScriptStackTrace)" -Title "Initialization Error"
+            $null = [System.Windows.Forms.MessageBox]::Show("Error during initialization: $_`n`nStack trace: $($_.ScriptStackTrace)", "Initialization Error", "OK", "Error")
             throw
         }
     }
@@ -58,7 +35,7 @@ class PSUtilApp {
         @("$($this.DataDir)", "$($this.DataDir)\Collections", "$($this.DataDir)\Logs", "$($this.DataDir)\Scripts") | ForEach-Object { if (!(Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null } }
         $this.DatabaseUrl = "https://raw.githubusercontent.com/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$($this.DbFile)"
         
-        # Theme - Replace color casting with FromArgb calls
+        # Theme
         $accent = try { 
             $accentValue = Get-ItemPropertyValue "HKCU:\Software\Microsoft\Windows\DWM" "AccentColor"
             [System.Drawing.Color]::FromArgb($accentValue)
@@ -80,7 +57,7 @@ class PSUtilApp {
             Layout = @{ 
                 Window  = @{ Width = 800; Height = 600; Padding = New-Object System.Windows.Forms.Padding(5, 5, 5, 5) }
                 Control = @{ Height = 30; Width = 120; Padding = New-Object System.Windows.Forms.Padding(1, 1, 1, 1) }
-                ToolBar = @{ Height = 30; Padding = New-Object System.Windows.Forms.Padding(2, 2, 2, 2) }
+                ToolBar = @{ Height = 40; Padding = New-Object System.Windows.Forms.Padding(2, 2, 2, 2) }
                 Status  = @{ Height = 30; Padding = New-Object System.Windows.Forms.Padding(2, 2, 2, 2) } 
             }
         }
@@ -107,11 +84,11 @@ class PSUtilApp {
         try {
             $sourceInfo = $this.GetSourceInfo()
             
-            # Check source type and load accordingly
-            if ($sourceInfo.Contains("(GitHub)") -or $sourceInfo.Contains("(Remote)")) {
+            # Check source type and load accordingly - Fix conditional logic
+            if ($sourceInfo -and (($sourceInfo.Contains("(GitHub)")) -or ($sourceInfo.Contains("(Remote)")))) {
                 $this.LoadRemoteScriptFiles()
             }
-            elseif ($sourceInfo.Contains("(Local)")) {
+            elseif ($sourceInfo -and $sourceInfo.Contains("(Local)")) {
                 # Extract directory path from sourceInfo
                 $scriptDir = $sourceInfo.Replace(" (Local)", "")
                 $this.LoadLocalScriptFiles($scriptDir)
@@ -224,7 +201,7 @@ class PSUtilApp {
             # Determine source for title
             $sourceInfo = $this.GetSourceInfo()
             
-            # Main Form - Replace enum casting with string values
+            # Main Form
             $this.MainForm = New-Object System.Windows.Forms.Form
             $this.MainForm.Text = "PSUTIL - $sourceInfo"
             $this.MainForm.Size = New-Object System.Drawing.Size(900, 650)
@@ -235,8 +212,9 @@ class PSUtilApp {
             # Create panels first
             $toolbar = New-Object System.Windows.Forms.Panel
             $toolbar.Dock = "Top"
-            $toolbar.Height = 40
+            $toolbar.Height = $this.Theme.Layout.ToolBar.Height
             $toolbar.BackColor = $this.Theme.Colors.Background
+            $toolbar.Padding = $this.Theme.Layout.ToolBar.Padding
             
             $content = New-Object System.Windows.Forms.Panel
             $content.Dock = "Fill"
@@ -244,8 +222,9 @@ class PSUtilApp {
             
             $status = New-Object System.Windows.Forms.Panel
             $status.Dock = "Bottom"
-            $status.Height = 30
+            $status.Height = $this.Theme.Layout.Status.Height
             $status.BackColor = $this.Theme.Colors.Background
+            $status.Padding = $this.Theme.Layout.Status.Padding
             
             # Create controls
             $scriptsListView = New-Object System.Windows.Forms.ListView
@@ -255,43 +234,62 @@ class PSUtilApp {
             $scriptsListView.CheckBoxes = $true
             $scriptsListView.FullRowSelect = $true
             $scriptsListView.BackColor = $this.Theme.Colors.Surface
+            $scriptsListView.Font = $this.Theme.Fonts.Default
             
             $executeBtn = New-Object System.Windows.Forms.Button
             $executeBtn.Text = "▶ Run Commands"
             $executeBtn.Dock = "Left"
-            $executeBtn.Width = 120
+            $executeBtn.Width = $this.Theme.Layout.Control.Width * 2
+            $executeBtn.Height = $this.Theme.Layout.Control.Height
             $executeBtn.BackColor = $this.Theme.Colors.Accent
             $executeBtn.ForeColor = $this.Theme.Colors.Surface
             $executeBtn.FlatStyle = "Flat"
+            $executeBtn.Font = $this.Theme.Fonts.Bold
             
             $executeModeCombo = New-Object System.Windows.Forms.ComboBox
             $executeModeCombo.Dock = "Left"
-            $executeModeCombo.Width = 150
+            $executeModeCombo.Width = $this.Theme.Layout.Control.Width
+            $executeModeCombo.Height = $this.Theme.Layout.Control.Height
             $executeModeCombo.DropDownStyle = "DropDownList"
+            $executeModeCombo.Font = $this.Theme.Fonts.Default
             
             $machineCombo = New-Object System.Windows.Forms.ComboBox
             $machineCombo.Dock = "Left"
-            $machineCombo.Width = 150
+            $machineCombo.Width = $this.Theme.Layout.Control.Width
+            $machineCombo.Height = $this.Theme.Layout.Control.Height
             $machineCombo.DropDownStyle = "DropDownList"
+            $machineCombo.Font = $this.Theme.Fonts.Default
             
             $selectAllCheckBox = New-Object System.Windows.Forms.CheckBox
             $selectAllCheckBox.Text = "Select All"
             $selectAllCheckBox.Dock = "Left"
-            $selectAllCheckBox.Width = 100
+            $selectAllCheckBox.Width = $this.Theme.Layout.Control.Width
+            $selectAllCheckBox.Height = $this.Theme.Layout.Control.Height
+            $selectAllCheckBox.Font = $this.Theme.Fonts.Default
+            $selectAllCheckBox.BackColor = $this.Theme.Colors.Background
+            $selectAllCheckBox.ForeColor = $this.Theme.Colors.Text
             
             $filesCombo = New-Object System.Windows.Forms.ComboBox
             $filesCombo.Dock = "Right"
-            $filesCombo.Width = 200
+            $filesCombo.Width = $this.Theme.Layout.Control.Width
+            $filesCombo.Height = $this.Theme.Layout.Control.Height
             $filesCombo.DropDownStyle = "DropDownList"
+            $filesCombo.Font = $this.Theme.Fonts.Default
             
             $collectionCombo = New-Object System.Windows.Forms.ComboBox
             $collectionCombo.Dock = "Right"
-            $collectionCombo.Width = 150
+            $collectionCombo.Width = $this.Theme.Layout.Control.Width
+            $collectionCombo.Height = $this.Theme.Layout.Control.Height
             $collectionCombo.DropDownStyle = "DropDownList"
+            $collectionCombo.Font = $this.Theme.Fonts.Default
             
             $filterText = New-Object System.Windows.Forms.TextBox
             $filterText.Dock = "Right"
-            $filterText.Width = 150
+            $filterText.Width = $this.Theme.Layout.Control.Width
+            $filterText.Height = $this.Theme.Layout.Control.Height
+            $filterText.Font = $this.Theme.Fonts.Default
+            $filterText.BackColor = $this.Theme.Colors.Surface
+            $filterText.ForeColor = $this.Theme.Colors.Text
             
             # Store controls
             $this.Controls = @{
@@ -318,33 +316,72 @@ class PSUtilApp {
             $executeModeCombo.Items.Add("As $env:USERNAME (Current User)") | Out-Null
             $executeModeCombo.Items.Add("As Admin") | Out-Null
             
-            # Add other users safely
+            # Add other users safely - Enhanced user detection
             try {
                 $otherUsers = @()
+                
+                # Try modern PowerShell cmdlet first
                 try {
-                    $otherUsers = Get-LocalUser | Where-Object { $_.Name -ne $env:USERNAME -and $_.Enabled } | Select-Object -ExpandProperty Name
+                    $otherUsers = Get-LocalUser -ErrorAction Stop | Where-Object { 
+                        $_.Name -ne $env:USERNAME -and 
+                        $_.Enabled -eq $true -and 
+                        $_.Name -notlike "*$*" -and
+                        $_.Name -ne "DefaultAccount" -and
+                        $_.Name -ne "WDAGUtilityAccount"
+                    } | Select-Object -ExpandProperty Name
+                    Write-Host "Found users via Get-LocalUser: $($otherUsers -join ', ')"
                 }
                 catch {
+                    # Fallback to WMI for older systems
                     try {
-                        $otherUsers = Get-WmiObject Win32_UserAccount -Filter "LocalAccount=True" | Where-Object { $_.Name -ne $env:USERNAME -and !$_.Disabled } | Select-Object -ExpandProperty Name
+                        $otherUsers = Get-WmiObject Win32_UserAccount -Filter "LocalAccount=True AND Disabled=False" -ErrorAction Stop | Where-Object { 
+                            $_.Name -ne $env:USERNAME -and
+                            $_.Name -notlike "*$*" -and
+                            $_.Name -ne "DefaultAccount" -and
+                            $_.Name -ne "WDAGUtilityAccount"
+                        } | Select-Object -ExpandProperty Name
+                        Write-Host "Found users via WMI: $($otherUsers -join ', ')"
                     }
                     catch {
-                        Write-Warning "Could not enumerate users"
+                        # Final fallback to net user command
+                        try {
+                            $netUsers = net user 2>$null | Where-Object { $_ -match "^[a-zA-Z]" -and $_ -notlike "*command completed*" }
+                            if ($netUsers) {
+                                $otherUsers = $netUsers | ForEach-Object { $_.Trim() } | Where-Object { 
+                                    $_ -ne $env:USERNAME -and 
+                                    $_ -notlike "*$*" -and
+                                    $_ -ne "DefaultAccount" -and
+                                    $_ -ne "WDAGUtilityAccount" -and
+                                    $_ -ne ""
+                                }
+                                Write-Host "Found users via net user: $($otherUsers -join ', ')"
+                            }
+                        }
+                        catch {
+                            Write-Warning "Could not enumerate users via any method"
+                        }
                     }
                 }
                 
-                foreach ($user in $otherUsers) {
-                    $executeModeCombo.Items.Add("As $user") | Out-Null
+                # Add found users to combo
+                if ($otherUsers -and $otherUsers.Count -gt 0) {
+                    foreach ($user in $otherUsers) {
+                        if ($user -and $user.Trim() -ne "") {
+                            $executeModeCombo.Items.Add("As $($user.Trim())") | Out-Null
+                        }
+                    }
+                    Write-Host "Added $($otherUsers.Count) other users to execution mode combo"
                 }
-                
-                if ($otherUsers.Count -eq 0) {
+                else {
                     $executeModeCombo.Items.Add("Other User...") | Out-Null
+                    Write-Host "No other users found, added 'Other User...' option"
                 }
             }
             catch {
                 Write-Warning "Error adding users to execution mode combo: $_"
+                $executeModeCombo.Items.Add("Other User...") | Out-Null
             }
-            
+
             # Add event handlers
             $app = $this
             $executeBtn.Add_Click({ $app.ExecuteSelectedScripts() })
@@ -355,14 +392,17 @@ class PSUtilApp {
             $collectionCombo.Add_SelectedIndexChanged({ $app.OnCollectionChanged() })
             $filterText.Add_TextChanged({ $app.FilterScripts() })
             
+            # Add event handler for list view item checked changes to update button text
+            $scriptsListView.Add_ItemChecked({ $app.UpdateExecuteButtonText() })
+
             # Add controls to panels
-            $toolbar.Controls.Add($filterText)
-            $toolbar.Controls.Add($collectionCombo)
-            $toolbar.Controls.Add($filesCombo)
-            $toolbar.Controls.Add($selectAllCheckBox)
-            $toolbar.Controls.Add($machineCombo)
-            $toolbar.Controls.Add($executeModeCombo)
             $toolbar.Controls.Add($executeBtn)
+            $toolbar.Controls.Add($executeModeCombo)
+            $toolbar.Controls.Add($machineCombo)
+            $toolbar.Controls.Add($selectAllCheckBox)
+            $toolbar.Controls.Add($filesCombo)
+            $toolbar.Controls.Add($collectionCombo)
+            $toolbar.Controls.Add($filterText)
             
             $content.Controls.Add($scriptsListView)
             
@@ -475,7 +515,7 @@ class PSUtilApp {
             }
         }
         catch {
-            Show-PSUtilMessage -Message "Failed to load collection scripts: $_" -Title "Error"
+            $null = [System.Windows.Forms.MessageBox]::Show("Failed to load collection scripts: $_", "Error", "OK", "Error")
         }
     }
 
@@ -514,7 +554,7 @@ class PSUtilApp {
         if ($this.IsExecuting) { return }
         $checkedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }
         if (!$checkedItems) { 
-            Show-PSUtilMessage -Message "No scripts selected."
+            $null = [System.Windows.Forms.MessageBox]::Show("No scripts selected.")
             return 
         }
     
@@ -617,53 +657,83 @@ class PSUtilApp {
     }
 
     OnExecutionModeChanged() {
-        $selectedIndex = $this.Controls.ExecuteModeCombo.SelectedIndex
-        if ($selectedIndex -ge 0) {
-            $selectedText = $this.Controls.ExecuteModeCombo.Items[$selectedIndex]
-        
-            if ($selectedText.Contains("(Current User)")) {
-                $this.ExecutionMode = "CurrentUser"
+        try {
+            $selectedIndex = $this.Controls.ExecuteModeCombo.SelectedIndex
+            if ($selectedIndex -ge 0) {
+                $selectedText = $this.Controls.ExecuteModeCombo.Items[$selectedIndex].ToString()
+            
+                if ($selectedText.Contains("(Current User)")) {
+                    $this.ExecutionMode = "CurrentUser"
+                }
+                elseif ($selectedText -eq "As Admin") {
+                    $this.ExecutionMode = "Admin"
+                }
+                elseif ($selectedText.StartsWith("As ")) {
+                    $this.ExecutionMode = $selectedText
+                }
+                else {
+                    $this.ExecutionMode = $selectedText
+                }
             }
-            elseif ($selectedText -eq "As Admin") {
-                $this.ExecutionMode = "Admin"
-            }
-            elseif ($selectedText.StartsWith("As ")) {
-                $this.ExecutionMode = $selectedText
-            }
-            else {
-                $this.ExecutionMode = $selectedText
-            }
+        }
+        catch {
+            Write-Warning "Error in OnExecutionModeChanged: $_"
         }
     }
 
     SwitchMachine() {
-        $idx = $this.Controls.MachineCombo.SelectedIndex
-        if ($idx -ge 0) { $this.CurrentMachine = $this.Machines[$idx].Name }
+        try {
+            $idx = $this.Controls.MachineCombo.SelectedIndex
+            if ($idx -ge 0 -and $idx -lt $this.Machines.Count) { 
+                $this.CurrentMachine = $this.Machines[$idx].Name 
+            }
+        }
+        catch {
+            Write-Warning "Error in SwitchMachine: $_"
+        }
     }
 
     FilterScripts() {
-        $filter = $this.Controls.FilterText.Text.ToLower()
-        $this.Controls.ScriptsListView.Items | ForEach-Object {
-            $visible = !$filter -or $_.Text.ToLower().Contains($filter) -or $_.SubItems[1].Text.ToLower().Contains($filter)
-            $_.ForeColor = if ($visible) { $this.Theme.Colors.Text } else { [System.Drawing.Color]::LightGray }
+        try {
+            if ($this.Controls.FilterText -and $this.Controls.ScriptsListView) {
+                $filter = $this.Controls.FilterText.Text.ToLower()
+                $this.Controls.ScriptsListView.Items | ForEach-Object {
+                    $visible = !$filter -or $_.Text.ToLower().Contains($filter) -or $_.SubItems[1].Text.ToLower().Contains($filter)
+                    $_.ForeColor = if ($visible) { $this.Theme.Colors.Text } else { [System.Drawing.Color]::LightGray }
+                }
+            }
+        }
+        catch {
+            Write-Warning "Error in FilterScripts: $_"
         }
     }
 
     OnFormShown() { 
         $this.MainForm.Activate()
-        # Load data after form is fully shown and controls are initialized
         $this.LoadData()
+        
+        # Initialize button text with current count
+        $this.UpdateExecuteButtonText()
+        
         if ($this.CurrentCollection) { 
             $this.LoadCollectionScripts() 
+        }
+        else {
+            $this.OnFileSelectionChanged()
         }
     }
     
     OnCollectionChanged() { 
-        $idx = $this.Controls.CollectionCombo.SelectedIndex
-        if ($idx -ge 0) { 
-            $this.CurrentCollection = $this.Collections[$idx]
-            $this.LoadCollectionScripts() 
-        } 
+        try {
+            $idx = $this.Controls.CollectionCombo.SelectedIndex
+            if ($idx -ge 0 -and $idx -lt $this.Collections.Count) { 
+                $this.CurrentCollection = $this.Collections[$idx]
+                $this.LoadCollectionScripts() 
+            } 
+        }
+        catch {
+            Write-Warning "Error in OnCollectionChanged: $_"
+        }
     }
     
     OnFileSelectionChanged() {
@@ -678,7 +748,7 @@ class PSUtilApp {
     OnFilesComboChanged() {
         try {
             if ($this.Controls.FilesCombo -and $this.Controls.FilesCombo.SelectedIndex -ge 0) {
-                $selectedText = $this.Controls.FilesCombo.Items[$this.Controls.FilesCombo.SelectedIndex]
+                $selectedText = $this.Controls.FilesCombo.Items[$this.Controls.FilesCombo.SelectedIndex].ToString()
                 
                 if ($selectedText -eq "From All Files") {
                     $this.SelectedScriptFiles = $this.ScriptFiles
@@ -732,6 +802,8 @@ class PSUtilApp {
                 Write-Warning "Failed to load script file: $scriptFile - $_" 
             }
         }
+        
+        # Update button text after loading scripts
         $this.UpdateExecuteButtonText()
     }
 
@@ -848,29 +920,43 @@ class PSUtilApp {
         }
         catch {
             Write-Error "Error in Show method: $_"
-            Show-PSUtilMessage -Message "Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)" -Title "Application Error"
+            $null = [System.Windows.Forms.MessageBox]::Show("Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)", "Application Error", "OK", "Error")
         }
     }
     
     GetSourceInfo() {
         try {
+            # Get the script path - check multiple sources
             $currentScript = $PSCommandPath
             if (!$currentScript) {
                 $currentScript = $MyInvocation.ScriptName
             }
+            if (!$currentScript) {
+                $currentScript = $script:MyInvocation.MyCommand.Path
+            }
             
-            if ($currentScript -match "^https?://") {
+            Write-Host "Current script path: $currentScript"
+            
+            # Check if running from URL (IEX scenario)
+            if ($currentScript -and $currentScript -match "^https?://") {
                 "$($this.Owner.ToUpper())/$($this.Repo.ToUpper()) (GitHub)"
             }
+            # Check if running from local file
             elseif ($currentScript -and (Test-Path $currentScript)) {
                 $scriptDir = Split-Path $currentScript -Parent
                 "$scriptDir (Local)"
             }
+            # Check if we're in a known local development path
+            elseif ($PWD.Path -and $PWD.Path.Contains("dotfiles")) {
+                "$($PWD.Path) (Local)"
+            }
+            # Default to remote
             else {
                 "$($this.Owner.ToUpper())/$($this.Repo.ToUpper()) (Remote)"
             }
         }
         catch {
+            Write-Warning "Error in GetSourceInfo: $_"
             "$($this.Owner.ToUpper())/$($this.Repo.ToUpper())"
         }
     }
@@ -883,5 +969,5 @@ try {
 }
 catch {
     Write-Error "Fatal error: $_"
-    Show-PSUtilMessage -Message "Fatal error: $_" -Title "Fatal Error"
+    $null = [System.Windows.Forms.MessageBox]::Show("Fatal error: $_", "Fatal Error", "OK", "Error")
 }
