@@ -8,6 +8,28 @@ Features:
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
+# Helper function to show messages that works with IEX
+function Show-PSUtilMessage {
+    param(
+        [string]$Message,
+        [string]$Title = "PSUtil",
+        [string]$Buttons = "OK",
+        [string]$Icon = "Information"
+    )
+    
+    try {
+        # Try to use MessageBox if available
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+        $result = [System.Windows.Forms.MessageBox]::Show($Message, $Title)
+        return $result
+    }
+    catch {
+        # Fallback to console output
+        Write-Host "[$Title] $Message" -ForegroundColor Yellow
+        return "OK"
+    }
+}
+
 class PSUtilApp {
     # Config
     $Owner = "mrdotkg"; $Repo = "dotfiles"; $Branch = "main"; $DbFile = "db.ps1"
@@ -25,7 +47,7 @@ class PSUtilApp {
         catch {
             Write-Error "Error during PSUtilApp initialization: $_"
             Write-Error "Stack trace: $($_.ScriptStackTrace)"
-            $null = [System.Windows.Forms.MessageBox]::Show("Error during initialization: $_`n`nStack trace: $($_.ScriptStackTrace)", "Initialization Error", "OK", "Error")
+            Show-PSUtilMessage -Message "Error during initialization: $_`n`nStack trace: $($_.ScriptStackTrace)" -Title "Initialization Error"
             throw
         }
     }
@@ -515,7 +537,7 @@ class PSUtilApp {
             }
         }
         catch {
-            $null = [System.Windows.Forms.MessageBox]::Show("Failed to load collection scripts: $_", "Error", "OK", "Error")
+            Show-PSUtilMessage -Message "Failed to load collection scripts: $_" -Title "Error"
         }
     }
 
@@ -554,7 +576,7 @@ class PSUtilApp {
         if ($this.IsExecuting) { return }
         $checkedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }
         if (!$checkedItems) { 
-            $null = [System.Windows.Forms.MessageBox]::Show("No scripts selected.")
+            Show-PSUtilMessage -Message "No scripts selected."
             return 
         }
     
@@ -920,10 +942,10 @@ class PSUtilApp {
         }
         catch {
             Write-Error "Error in Show method: $_"
-            $null = [System.Windows.Forms.MessageBox]::Show("Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)", "Application Error", "OK", "Error")
+            Show-PSUtilMessage -Message "Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)" -Title "Application Error"
         }
     }
-    
+
     GetSourceInfo() {
         try {
             # Get the script path - check multiple sources
@@ -969,5 +991,5 @@ try {
 }
 catch {
     Write-Error "Fatal error: $_"
-    $null = [System.Windows.Forms.MessageBox]::Show("Fatal error: $_", "Fatal Error", "OK", "Error")
+    Show-PSUtilMessage -Message "Fatal error: $_" -Title "Fatal Error"
 }
