@@ -8,24 +8,6 @@ Features:
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
-# Helper function to show messages that works with IEX
-function Show-PSUtilMessage {
-    param(
-        [string]$Message,
-        [string]$Title = "PSUtil"
-    )
-    
-    try {
-        # Simple fallback that doesn't rely on type casting
-        Write-Host "[$Title] $Message" -ForegroundColor Yellow
-        return "OK"
-    }
-    catch {
-        Write-Host "[$Title] $Message" -ForegroundColor Yellow
-        return "OK"
-    }
-}
-
 class PSUtilApp {
     # Config
     [string]$Owner = "mrdotkg"; [string]$Repo = "dotfiles"; [string]$Branch = "main"; [string]$DbFile = "db.ps1"
@@ -44,7 +26,7 @@ class PSUtilApp {
         catch {
             Write-Error "Error during PSUtilApp initialization: $_"
             Write-Error "Stack trace: $($_.ScriptStackTrace)"
-            Show-PSUtilMessage -Message "Error during initialization: $_`n`nStack trace: $($_.ScriptStackTrace)" -Title "Initialization Error"
+            [System.Windows.Forms.MessageBox]::Show("Error during initialization: $_`n`nStack trace: $($_.ScriptStackTrace)", "Initialization Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
             throw
         }
     }
@@ -351,7 +333,7 @@ class PSUtilApp {
                     catch {
                         Write-Error "Error in Form_Shown event: $_"
                         Write-Error "Stack trace: $($_.ScriptStackTrace)"
-                        Show-PSUtilMessage -Message "Error in Form_Shown: $_`n`nDetails: $($_.ScriptStackTrace)" -Title "Runtime Error"
+                        [System.Windows.Forms.MessageBox]::Show("Error in Form_Shown: $_`n`nDetails: $($_.ScriptStackTrace)", "Runtime Error")
                     }
                 })
         
@@ -448,7 +430,7 @@ class PSUtilApp {
                 }
             }
         }
-        catch { Show-PSUtilMessage -Message "Failed to load collection scripts: $_" -Title "Error" }
+        catch { [System.Windows.Forms.MessageBox]::Show("Failed to load collection scripts: $_", "Error") }
     }
 
     [array]ParsePS1ScriptFile([string]$content, [string]$fileName) {
@@ -485,7 +467,7 @@ class PSUtilApp {
     [void]ExecuteSelectedScripts() {
         if ($this.IsExecuting) { return }
         $checkedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }
-        if (!$checkedItems) { Show-PSUtilMessage -Message "No scripts selected."; return }
+        if (!$checkedItems) { [System.Windows.Forms.MessageBox]::Show("No scripts selected."); return }
     
         $this.IsExecuting = $true; $this.Controls.ExecuteBtn.Enabled = $false
         $checkedItems | ForEach-Object {
@@ -814,7 +796,7 @@ class PSUtilApp {
         }
         catch {
             Write-Error "Error in Show method: $_"
-            Show-PSUtilMessage -Message "Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)" -Title "Application Error"
+            [System.Windows.Forms.MessageBox]::Show("Error starting application: $_`n`nStack trace: $($_.ScriptStackTrace)", "Application Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
         }
     }
     
@@ -844,12 +826,6 @@ class PSUtilApp {
 }
 
 # Entry point with error handling
-# Initialize Windows Forms settings for better visual appearance
-if ([Environment]::OSVersion.Version.Major -ge 6) {
-    try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
-}
-[System.Windows.Forms.Application]::EnableVisualStyles()
-
 try {
     $app = [PSUtilApp]::new()
     $app.Show()
@@ -857,5 +833,5 @@ try {
 catch {
     Write-Error "Fatal error: $_"
     Write-Error "Stack trace: $($_.ScriptStackTrace)"
-    Show-PSUtilMessage -Message "Fatal error: $_`n`nStack trace: $($_.ScriptStackTrace)" -Title "Fatal Error"
+    [System.Windows.Forms.MessageBox]::Show("Fatal error: $_`n`nStack trace: $($_.ScriptStackTrace)", "Fatal Error", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
 }
