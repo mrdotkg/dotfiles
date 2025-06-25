@@ -18,14 +18,32 @@ function Show-PSUtilMessage {
     )
     
     try {
-        # Try to use MessageBox if available
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-        $result = [System.Windows.Forms.MessageBox]::Show($Message, $Title)
-        return $result
+        # Ensure assemblies are loaded
+        if (-not ([System.Management.Automation.PSTypeName]'System.Windows.Forms.MessageBox').Type) {
+            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        }
+        
+        # Use reflection to call MessageBox.Show
+        $messageBoxType = [System.Type]::GetType("System.Windows.Forms.MessageBox")
+        if ($messageBoxType) {
+            $showMethod = $messageBoxType.GetMethod("Show", [System.Type[]]@([string], [string]))
+            $result = $showMethod.Invoke($null, @($Message, $Title))
+            return $result
+        }
+        else {
+            throw "MessageBox type not available"
+        }
     }
     catch {
         # Fallback to console output
         Write-Host "[$Title] $Message" -ForegroundColor Yellow
+        # Also try simple Read-Host for user acknowledgment
+        try {
+            Read-Host "Press Enter to continue"
+        }
+        catch {
+            # If Read-Host fails, just continue
+        }
         return "OK"
     }
 }
@@ -79,7 +97,7 @@ class PSUtilApp {
             Layout = @{ 
                 Window  = @{ Width = 800; Height = 600; Padding = New-Object System.Windows.Forms.Padding(5, 5, 5, 5) }
                 Control = @{ Height = 30; Width = 120; Padding = New-Object System.Windows.Forms.Padding(1, 1, 1, 1) }
-                ToolBar = @{ Height = 40; Padding = New-Object System.Windows.Forms.Padding(2, 2, 2, 2) }
+                ToolBar = @{ Height = 30; Padding = New-Object System.Windows.Forms.Padding(2, 2, 2, 2) }
                 Status  = @{ Height = 30; Padding = New-Object System.Windows.Forms.Padding(2, 2, 2, 2) } 
             }
         }
