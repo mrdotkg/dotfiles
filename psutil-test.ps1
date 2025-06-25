@@ -237,17 +237,20 @@ class PSUtilApp {
             $this.MainForm.StartPosition = "CenterScreen"
             $this.MainForm.BackColor = $this.Theme.Colors.Background
             $this.MainForm.Font = $this.Theme.Fonts.Default
+            $this.MainForm.FormBorderStyle = "Sizable"
+            $this.MainForm.MinimumSize = New-Object System.Drawing.Size(800, 500)
             
             # Create panels first
             $toolbar = New-Object System.Windows.Forms.Panel
             $toolbar.Dock = "Top"
-            $toolbar.Height = $this.Theme.Layout.ToolBar.Height
+            $toolbar.Height = 50
             $toolbar.BackColor = $this.Theme.Colors.Background
-            $toolbar.Padding = $this.Theme.Layout.ToolBar.Padding
+            $toolbar.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
             
             $content = New-Object System.Windows.Forms.Panel
             $content.Dock = "Fill"
             $content.BackColor = $this.Theme.Colors.Background
+            $content.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 10)
             
             $status = New-Object System.Windows.Forms.Panel
             $status.Dock = "Bottom"
@@ -255,7 +258,7 @@ class PSUtilApp {
             $status.BackColor = $this.Theme.Colors.Background
             $status.Padding = $this.Theme.Layout.Status.Padding
             
-            # Create controls
+            # Create controls with modern styling
             $scriptsListView = New-Object System.Windows.Forms.ListView
             $scriptsListView.Dock = "Fill"
             $scriptsListView.View = "Details"
@@ -264,61 +267,70 @@ class PSUtilApp {
             $scriptsListView.FullRowSelect = $true
             $scriptsListView.BackColor = $this.Theme.Colors.Surface
             $scriptsListView.Font = $this.Theme.Fonts.Default
+            $scriptsListView.BorderStyle = "FixedSingle"
+            $scriptsListView.HeaderStyle = "Nonclickable"
             
+            # Modern button styling
             $executeBtn = New-Object System.Windows.Forms.Button
             $executeBtn.Text = "▶ Run Commands"
-            $executeBtn.Dock = "Left"
-            $executeBtn.Width = $this.Theme.Layout.Control.Width * 2
-            $executeBtn.Height = $this.Theme.Layout.Control.Height
+            $executeBtn.Size = New-Object System.Drawing.Size(150, 35)
+            $executeBtn.Location = New-Object System.Drawing.Point(10, 8)
             $executeBtn.BackColor = $this.Theme.Colors.Accent
-            $executeBtn.ForeColor = $this.Theme.Colors.Surface
+            $executeBtn.ForeColor = [System.Drawing.Color]::White
             $executeBtn.FlatStyle = "Flat"
+            $executeBtn.FlatAppearance.BorderSize = 0
             $executeBtn.Font = $this.Theme.Fonts.Bold
+            $executeBtn.Cursor = "Hand"
             
+            # Modern combo boxes with flat style
             $executeModeCombo = New-Object System.Windows.Forms.ComboBox
-            $executeModeCombo.Dock = "Left"
-            $executeModeCombo.Width = $this.Theme.Layout.Control.Width
-            $executeModeCombo.Height = $this.Theme.Layout.Control.Height
+            $executeModeCombo.Size = New-Object System.Drawing.Size(180, 25)
+            $executeModeCombo.Location = New-Object System.Drawing.Point(170, 13)
             $executeModeCombo.DropDownStyle = "DropDownList"
             $executeModeCombo.Font = $this.Theme.Fonts.Default
+            $executeModeCombo.FlatStyle = "Flat"
             
             $machineCombo = New-Object System.Windows.Forms.ComboBox
-            $machineCombo.Dock = "Left"
-            $machineCombo.Width = $this.Theme.Layout.Control.Width
-            $machineCombo.Height = $this.Theme.Layout.Control.Height
+            $machineCombo.Size = New-Object System.Drawing.Size(150, 25)
+            $machineCombo.Location = New-Object System.Drawing.Point(360, 13)
             $machineCombo.DropDownStyle = "DropDownList"
             $machineCombo.Font = $this.Theme.Fonts.Default
+            $machineCombo.FlatStyle = "Flat"
             
+            # Modern checkbox
             $selectAllCheckBox = New-Object System.Windows.Forms.CheckBox
             $selectAllCheckBox.Text = "Select All"
-            $selectAllCheckBox.Dock = "Left"
-            $selectAllCheckBox.Width = $this.Theme.Layout.Control.Width
-            $selectAllCheckBox.Height = $this.Theme.Layout.Control.Height
+            $selectAllCheckBox.Size = New-Object System.Drawing.Size(80, 25)
+            $selectAllCheckBox.Location = New-Object System.Drawing.Point(520, 13)
             $selectAllCheckBox.Font = $this.Theme.Fonts.Default
             $selectAllCheckBox.BackColor = $this.Theme.Colors.Background
             $selectAllCheckBox.ForeColor = $this.Theme.Colors.Text
+            $selectAllCheckBox.FlatStyle = "Flat"
+            $selectAllCheckBox.Appearance = "Button"
+            $selectAllCheckBox.FlatAppearance.BorderSize = 0
             
-            $filesCombo = New-Object System.Windows.Forms.ComboBox
-            $filesCombo.Dock = "Right"
-            $filesCombo.Width = $this.Theme.Layout.Control.Width
-            $filesCombo.Height = $this.Theme.Layout.Control.Height
-            $filesCombo.DropDownStyle = "DropDownList"
-            $filesCombo.Font = $this.Theme.Fonts.Default
-            
-            $collectionCombo = New-Object System.Windows.Forms.ComboBox
-            $collectionCombo.Dock = "Right"
-            $collectionCombo.Width = $this.Theme.Layout.Control.Width
-            $collectionCombo.Height = $this.Theme.Layout.Control.Height
-            $collectionCombo.DropDownStyle = "DropDownList"
-            $collectionCombo.Font = $this.Theme.Fonts.Default
-            
+            # Right-aligned controls with modern styling
             $filterText = New-Object System.Windows.Forms.TextBox
-            $filterText.Dock = "Right"
-            $filterText.Width = $this.Theme.Layout.Control.Width
-            $filterText.Height = $this.Theme.Layout.Control.Height
+            $filterText.Size = New-Object System.Drawing.Size(120, 25)
+            $filterText.Location = New-Object System.Drawing.Point(750, 13)
             $filterText.Font = $this.Theme.Fonts.Default
             $filterText.BackColor = $this.Theme.Colors.Surface
             $filterText.ForeColor = $this.Theme.Colors.Text
+            $filterText.BorderStyle = "FixedSingle"
+            
+            $collectionCombo = New-Object System.Windows.Forms.ComboBox
+            $collectionCombo.Size = New-Object System.Drawing.Size(120, 25)
+            $collectionCombo.Location = New-Object System.Drawing.Point(620, 13)
+            $collectionCombo.DropDownStyle = "DropDownList"
+            $collectionCombo.Font = $this.Theme.Fonts.Default
+            $collectionCombo.FlatStyle = "Flat"
+            
+            $filesCombo = New-Object System.Windows.Forms.ComboBox
+            $filesCombo.Size = New-Object System.Drawing.Size(120, 25)
+            $filesCombo.Location = New-Object System.Drawing.Point(490, 13)
+            $filesCombo.DropDownStyle = "DropDownList"
+            $filesCombo.Font = $this.Theme.Fonts.Default
+            $filesCombo.FlatStyle = "Flat"
             
             # Store controls
             $this.Controls = @{
@@ -335,12 +347,12 @@ class PSUtilApp {
                 Status            = $status
             }
             
-            # Add columns to ListView
-            $scriptsListView.Columns.Add("Script", 250) | Out-Null
-            $scriptsListView.Columns.Add("Command", 350) | Out-Null
-            $scriptsListView.Columns.Add("File", 100) | Out-Null
+            # Add columns to ListView with better sizing
+            $scriptsListView.Columns.Add("Script", 280) | Out-Null
+            $scriptsListView.Columns.Add("Command", 380) | Out-Null
+            $scriptsListView.Columns.Add("File", 120) | Out-Null
             $scriptsListView.Columns.Add("Status", 100) | Out-Null
-            
+
             # Setup execution mode combo items
             $executeModeCombo.Items.Add("As $env:USERNAME (Current User)") | Out-Null
             $executeModeCombo.Items.Add("As Admin") | Out-Null
@@ -420,26 +432,28 @@ class PSUtilApp {
             $filesCombo.Add_SelectedIndexChanged({ $app.OnFilesComboChanged() })
             $collectionCombo.Add_SelectedIndexChanged({ $app.OnCollectionChanged() })
             $filterText.Add_TextChanged({ $app.FilterScripts() })
-            
-            # Add event handler for list view item checked changes to update button text
             $scriptsListView.Add_ItemChecked({ $app.UpdateExecuteButtonText() })
-
-            # Add controls to panels
-            $toolbar.Controls.Add($executeBtn)
-            $toolbar.Controls.Add($executeModeCombo)
-            $toolbar.Controls.Add($machineCombo)
-            $toolbar.Controls.Add($selectAllCheckBox)
-            $toolbar.Controls.Add($filesCombo)
-            $toolbar.Controls.Add($collectionCombo)
-            $toolbar.Controls.Add($filterText)
             
+            # Handle form resize to reposition controls
+            $this.MainForm.Add_Resize({
+                    try {
+                        $formWidth = $app.MainForm.ClientSize.Width
+                        $filterText.Location = New-Object System.Drawing.Point(($formWidth - 130), 13)
+                        $collectionCombo.Location = New-Object System.Drawing.Point(($formWidth - 260), 13)
+                        $filesCombo.Location = New-Object System.Drawing.Point(($formWidth - 390), 13)
+                    }
+                    catch { }
+                })
+
+            # Add controls to panels using absolute positioning instead of docking
+            $toolbar.Controls.AddRange(@($executeBtn, $executeModeCombo, $machineCombo, $selectAllCheckBox, $filesCombo, $collectionCombo, $filterText))
             $content.Controls.Add($scriptsListView)
             
             # Add panels to form
             $this.MainForm.Controls.Add($content)
             $this.MainForm.Controls.Add($toolbar)
             $this.MainForm.Controls.Add($status)
-            
+
             # Set form shown event
             $this.MainForm.Add_Shown({ 
                     try {
@@ -945,7 +959,7 @@ class PSUtilApp {
 
     Show() { 
         try {
-            # Don't try to enable visual styles to avoid type issues
+            # Global settings already applied at script start
             $null = $this.MainForm.ShowDialog()
         }
         catch {
@@ -992,7 +1006,12 @@ class PSUtilApp {
     }
 }
 
-# Entry point with error handling
+# Entry point with error handling - Initialize Windows Forms at the very end like gui.ps1
+if ([Environment]::OSVersion.Version.Major -ge 6) {
+    try { [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2) } catch {}
+}
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
 try {
     $app = [PSUtilApp]::new()
     $app.Show()
