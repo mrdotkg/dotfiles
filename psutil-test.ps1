@@ -8,6 +8,15 @@ Features:
 
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
+# Ensure additional assemblies are loaded for compatibility
+try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+}
+catch {
+    Write-Warning "Error loading Windows Forms assemblies: $_"
+}
+
 # Helper function to show messages that works with IEX
 function Show-PSUtilMessage {
     param(
@@ -18,32 +27,12 @@ function Show-PSUtilMessage {
     )
     
     try {
-        # Ensure assemblies are loaded
-        if (-not ([System.Management.Automation.PSTypeName]'System.Windows.Forms.MessageBox').Type) {
-            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-        }
-        
-        # Use reflection to call MessageBox.Show
-        $messageBoxType = [System.Type]::GetType("System.Windows.Forms.MessageBox")
-        if ($messageBoxType) {
-            $showMethod = $messageBoxType.GetMethod("Show", [System.Type[]]@([string], [string]))
-            $result = $showMethod.Invoke($null, @($Message, $Title))
-            return $result
-        }
-        else {
-            throw "MessageBox type not available"
-        }
+        # Simple fallback that doesn't rely on complex type checking
+        Write-Host "[$Title] $Message" -ForegroundColor Yellow
+        return "OK"
     }
     catch {
-        # Fallback to console output
         Write-Host "[$Title] $Message" -ForegroundColor Yellow
-        # Also try simple Read-Host for user acknowledgment
-        try {
-            Read-Host "Press Enter to continue"
-        }
-        catch {
-            # If Read-Host fails, just continue
-        }
         return "OK"
     }
 }
@@ -615,7 +604,13 @@ class PSUtilApp {
                 $_.BackColor = [System.Drawing.Color]::LightCoral
                 Write-host "Execution error: $_" -ForegroundColor Red
             }
-            [System.Windows.Forms.Application]::DoEvents()
+            # Use Start-Sleep instead of DoEvents if Application type not available
+            try {
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+            catch {
+                Start-Sleep -Milliseconds 10
+            }
         }
         $this.IsExecuting = $false; $this.Controls.ExecuteBtn.Enabled = $true
     }
@@ -955,7 +950,14 @@ class PSUtilApp {
 
     Show() { 
         try {
-            [System.Windows.Forms.Application]::EnableVisualStyles()
+            # Try to enable visual styles if available
+            try {
+                [System.Windows.Forms.Application]::EnableVisualStyles()
+            }
+            catch {
+                Write-Warning "Could not enable visual styles: $_"
+            }
+            
             $null = $this.MainForm.ShowDialog()
         }
         catch {
