@@ -604,13 +604,8 @@ class PSUtilApp {
                 $_.BackColor = [System.Drawing.Color]::LightCoral
                 Write-host "Execution error: $_" -ForegroundColor Red
             }
-            # Use Start-Sleep instead of DoEvents if Application type not available
-            try {
-                [System.Windows.Forms.Application]::DoEvents()
-            }
-            catch {
-                Start-Sleep -Milliseconds 10
-            }
+            # Simple sleep instead of DoEvents to avoid type issues
+            Start-Sleep -Milliseconds 10
         }
         $this.IsExecuting = $false; $this.Controls.ExecuteBtn.Enabled = $true
     }
@@ -950,14 +945,7 @@ class PSUtilApp {
 
     Show() { 
         try {
-            # Try to enable visual styles if available
-            try {
-                [System.Windows.Forms.Application]::EnableVisualStyles()
-            }
-            catch {
-                Write-Warning "Could not enable visual styles: $_"
-            }
-            
+            # Don't try to enable visual styles to avoid type issues
             $null = $this.MainForm.ShowDialog()
         }
         catch {
