@@ -25,15 +25,21 @@ $Global:Config = @{
         BackgroundColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
         AccentColorFallback = [System.Drawing.Color]::FromArgb(44, 151, 222)
         Position            = "CenterScreen"
+        Padding             = '5,5,5,5'
     }
     
     # Panel dimensions
     Panels           = @{
-        ToolbarHeight   = 25
-        StatusBarHeight = 28
-        ContentPadding  = '8, 0, 8, 0' # Left, Top, Right, Bottom padding for content area
-        ToolbarPadding  = '8, 0, 8, 0' # Left, Top, Right, Bottom padding for toolbar
-        StatusPadding   = '8, 4, 8, 4' # Left, Top, Right, Bottom padding for status bar
+        ToolbarHeight       = 25
+        StatusBarHeight     = 28
+        SidebarWidth        = 120
+        SecondaryPanelWidth = 300
+        SplitterWidth       = 6
+        ContentPadding      = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for content area
+        ToolbarPadding      = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for toolbar
+        StatusPadding       = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for status bar
+        SidebarPadding      = '5, 0, 5, 0' # Left, Top, Right, Bottom padding for sidebar
+        SecondaryPadding    = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for secondary panel
     }
     
     # Control dimensions and text
@@ -53,6 +59,11 @@ $Global:Config = @{
         ExecuteBtnText     = "▶ Run 0 Commands"
         ExecuteBtnTemplate = "▶ Run {0} Commands"
         FilterPlaceholder  = "Filter..."
+        
+        # Sidebar button texts
+        CopyCommandText    = "Copy"
+        RunLaterText       = "Run Later"
+        AddCommandText     = "Save To Collection"
     }
     
     # ListView columns
@@ -79,20 +90,20 @@ $Global:Config = @{
     
     # Default values and text constants
     Defaults         = @{
-        CollectionFile     = "All Commands.txt"
+        CollectionDefault  = "All Commands"
         CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
         FallbackScript     = "db.ps1"
-        FilesComboDefault  = "From All Files"
-        CurrentUserText    = "As $env:USERNAME (Current User)"
+        FilesComboDefault  = "All Scripts"
+        CurrentUserText    = "As $env:USERNAME (Active)"
         AdminText          = "As Admin"
         OtherUserText      = "Other User..."
         ExecutionModes     = @("CurrentUser", "Admin")
         LocalhostName      = "localhost"
-        FilePrefix         = "From "
+        FilePrefix         = ""
         LocalText          = " (Local)"
         RemoteText         = " (Remote)"
         GitHubText         = " (GitHub)"
-        LocalMachinePrefix = "On "
+        LocalMachinePrefix = ""
         LocalMachineText   = " (Local)"
         SSHCommandPrefix   = "ssh "
         SudoCommand        = "sudo "
@@ -188,7 +199,7 @@ class PSUtilApp {
     [hashtable]$Config
     [hashtable]$Controls = @{}; [array]$Machines = @(); [array]$Collections = @(); [array]$ScriptFiles = @()
     [array]$SelectedScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
-    [string]$ExecutionMode = "CurrentUser"; $MainForm
+    [string]$ExecutionMode = "CurrentUser"; [bool]$IsSecondaryPanelVisible = $false; $MainForm
 
     PSUtilApp() {
         $this.Config = $Global:Config
@@ -304,7 +315,9 @@ class PSUtilApp {
         
         # Main Form
         $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
-            Text = "$($this.Config.Window.Title) - $sourceInfo"; Size = New-Object System.Drawing.Size($this.Config.Window.Width, $this.Config.Window.Height)
+            Text = "$($this.Config.Window.Title) - $sourceInfo"; 
+            Size = New-Object System.Drawing.Size($this.Config.Window.Width, $this.Config.Window.Height)
+            Padding = $this.Config.Window.Padding
             StartPosition = $this.Config.Window.Position; BackColor = $this.Config.Window.BackgroundColor
         }
         
@@ -320,24 +333,41 @@ class PSUtilApp {
         
         # Define controls with order for proper placement and future drag-drop
         $controlDefs = @{
-            # Panels (Order 1-3)
+            # Main Layout Panels (Order 1-5)
             Toolbar           = @{ Type = 'Panel'; Order = 1; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
             StatusBar         = @{ Type = 'Panel'; Order = 2; Layout = 'Form'; Properties = @{ Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
-            Content           = @{ Type = 'Panel'; Order = 3; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
+            Sidebar           = @{ Type = 'Panel'; Order = 3; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding } }
+            MainContent       = @{ Type = 'Panel'; Order = 4; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
             
-            # Toolbar controls (Order 10-70) - Left to Right: Execute, Select All, From Files, Machine, Execution Mode, Collection, Filter
+            # Content Layout with Splitter (Order 5-8) - SecondaryContent first, then splitter, then PrimaryContent fills
+            SecondaryContent  = @{ Type = 'Panel'; Order = 5; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = 'White'; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
+            ContentSplitter   = @{ Type = 'Splitter'; Order = 6; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
+            PrimaryContent    = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
+            
+            # Toolbar controls (Order 10-70) - Left to Right: Select All, Filter, Spacers, Execute, Combos
             SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '80'; Dock = 'Left'; Padding = '5,1,0,1' } }
             FilterText        = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
             SpacerPanel1      = @{ Type = 'Panel'; Order = 25; Layout = 'Toolbar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent' } }
-            ExecuteBtn        = @{ Type = 'Button'; Order = 28; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Width = $standardWidth * 1.5; FlatStyle = 'Flat'; BackColor = $accent; ForeColor = $this.Config.Colors.White } }
-            SpacerPanel2      = @{ Type = 'Panel'; Order = 29; Layout = 'Toolbar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent' } }
-            FilesCombo        = @{ Type = 'ComboBox'; Order = 30; Layout = 'Toolbar'; Properties = @{} }
-            MachineCombo      = @{ Type = 'ComboBox'; Order = 40; Layout = 'Toolbar'; Properties = @{} }
-            ExecuteModeCombo  = @{ Type = 'ComboBox'; Order = 50; Layout = 'Toolbar'; Properties = @{} }
-            CollectionCombo   = @{ Type = 'ComboBox'; Order = 60; Layout = 'Toolbar'; Properties = @{} }
+            ExecuteBtn        = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Width = $standardWidth * 1.5; FlatStyle = 'Flat'; BackColor = $accent; ForeColor = $this.Config.Colors.White } }
+            ExecuteModeCombo  = @{ Type = 'ComboBox'; Order = 40; Layout = 'Toolbar'; Properties = @{} }
+            MachineCombo      = @{ Type = 'ComboBox'; Order = 50; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            FilesCombo        = @{ Type = 'ComboBox'; Order = 60; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            CollectionCombo   = @{ Type = 'ComboBox'; Order = 70; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SpacerPanel2      = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent'; Dock = 'Top'; } }
             
-            # Content controls (Order 100+)
-            ScriptsListView   = @{ Type = 'ListView'; Order = 100; Layout = 'Content'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; CheckBoxes = $true; FullRowSelect = $true } }
+            # Sidebar controls (Order 80-89)
+            CopyCommandBtn    = @{ Type = 'Button'; Order = 80; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
+            RunLaterBtn       = @{ Type = 'Button'; Order = 81; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
+            AddCommandBtn     = @{ Type = 'Button'; Order = 82; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
+            # ProfilesBtn       = @{ Type = 'Button'; Order = 83; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.ProfilesText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
+            # ToolsBtn          = @{ Type = 'Button'; Order = 84; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.ToolsText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
+            
+            # Primary content controls (Order 100+)
+            ScriptsListView   = @{ Type = 'ListView'; Order = 100; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; CheckBoxes = $true; FullRowSelect = $true } }
+            
+            # Secondary content controls (Order 200+) - Will be added dynamically based on selected tool
+            SecondaryLabel    = @{ Type = 'Label'; Order = 200; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
+            CloseSecondaryBtn = @{ Type = 'Button'; Order = 201; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = [System.Drawing.Color]::White } }
         }
         
         # Create controls in order
@@ -357,12 +387,19 @@ class PSUtilApp {
             $ctrl.Height = $standardHeight
             $ctrl.Padding = $standardPadding
             $ctrl.Margin = $standardMargin
-            
+                
             # Apply ComboBox-specific defaults
             if ($config.Type -eq 'ComboBox') {
                 $ctrl.DropDownStyle = $standardDropDownStyle
             }
-
+                
+            # Apply Splitter-specific defaults
+            if ($config.Type -eq 'Splitter') {
+                $ctrl.MinExtra = 100
+                $ctrl.MinSize = 100
+            }
+            
+            
             # Panel-specific defaults
             if ($config.Type -eq 'Panel') {
                 $ctrl.BackColor = $standardBackColor
@@ -405,6 +442,12 @@ class PSUtilApp {
         $this.Controls.FilesCombo.Add_SelectedIndexChanged({ $app.OnFilesComboChanged() })
         $this.Controls.FilterText.Add_TextChanged({ $app.FilterScripts() })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
+        
+        # Setup sidebar events
+        $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
+        $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
+        $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
+        $this.Controls.CloseSecondaryBtn.Add_Click({ $app.HideSecondaryPanel() })
         
         # Setup execution mode options using config
         $this.Controls.ExecuteModeCombo.Items.AddRange(@($this.Config.Defaults.CurrentUserText, $this.Config.Defaults.AdminText))
@@ -691,6 +734,62 @@ class PSUtilApp {
         else {
             return "$($this.Owner.ToUpper())/$($this.Repo.ToUpper())$($this.Config.Defaults.RemoteText)"
         }
+    }
+    
+    # Sidebar Event Handlers
+    [void]ShowSecondaryPanel([string]$title) {
+        $this.Controls.SecondaryLabel.Text = $title
+        $this.Controls.SecondaryContent.Visible = $true
+        $this.Controls.ContentSplitter.Visible = $true
+        $this.IsSecondaryPanelVisible = $true
+    }
+    
+    [void]HideSecondaryPanel() {
+        $this.Controls.SecondaryContent.Visible = $false
+        $this.Controls.ContentSplitter.Visible = $false
+        $this.IsSecondaryPanelVisible = $false
+    }
+    
+    [void]ToggleSecondaryPanel([string]$title) {
+        if ($this.IsSecondaryPanelVisible -and $this.Controls.SecondaryLabel.Text -eq $title) {
+            $this.HideSecondaryPanel()
+        }
+        else {
+            $this.ShowSecondaryPanel($title)
+        }
+    }
+    
+    [void]OnCopyCommand() {
+        $selectedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Selected }
+        if ($selectedItems) {
+            $commands = $selectedItems | ForEach-Object { $_.SubItems[1].Text }
+            $commandText = $commands -join "`n"
+            [System.Windows.Forms.Clipboard]::SetText($commandText)
+            [System.Windows.Forms.MessageBox]::Show("Commands copied to clipboard!", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+        else {
+            [System.Windows.Forms.MessageBox]::Show("Please select a command to copy.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        }
+    }
+    
+    [void]OnRunLater() {
+        $this.ToggleSecondaryPanel("⏰ Run Later - Schedule Commands")
+        # TODO: Add scheduling functionality in secondary panel
+    }
+    
+    [void]OnAddCommand() {
+        $this.ToggleSecondaryPanel("➕ Add Command - Create New Script")
+        # TODO: Add command creation functionality in secondary panel
+    }
+    
+    [void]OnProfiles() {
+        $this.ToggleSecondaryPanel("👤 Profiles - Manage Execution Profiles")
+        # TODO: Add profile management functionality in secondary panel
+    }
+    
+    [void]OnTools() {
+        $this.ToggleSecondaryPanel("🔧 Tools - Additional Utilities")
+        # TODO: Add additional tools in secondary panel
     }
 }
 
