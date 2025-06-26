@@ -1,7 +1,6 @@
 # PowerShell GUI utility for executing scripts from GitHub repository
 # Features: PS1 script files with embedded metadata, Multiple execution modes, Multi-script collections support
 
-[System.Windows.Forms.Application]::EnableVisualStyles()
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 # Configuration - All constants and strings centralized for modularity
@@ -802,6 +801,8 @@ class PSUtilApp {
 # Entry point with error handling
 try {
     $app = [PSUtilApp]::new()
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
     $app.Show()
 }
 catch {
