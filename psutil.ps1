@@ -1,8 +1,10 @@
 # PowerShell GUI utility for executing scripts from GitHub repository
 # Features: PS1 script files with embedded metadata, Multiple execution modes, Multi-script collections support
 
-[System.Windows.Forms.Application]::EnableVisualStyles()
+# Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
 # Configuration - All constants and strings centralized for modularity
 $Global:Config = @{
@@ -20,8 +22,8 @@ $Global:Config = @{
     # UI Settings
     Window           = @{
         Title               = "PSUTIL"
-        Width               = 900
-        Height              = 650
+        Width               = 600
+        Height              = 600
         BackgroundColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
         AccentColorFallback = [System.Drawing.Color]::FromArgb(44, 151, 222)
         Position            = "CenterScreen"
@@ -49,13 +51,14 @@ $Global:Config = @{
         Width              = 120
         Height             = 25
         Padding            = '0, 0, 0, 0' # Left, Top, Right, Bottom padding
-        Margin             = '2, 2, 2, 2' # Left, Top, Right, Bottom margin
+        BackColor          = [System.Drawing.Color]::White # Default control background color    
+        ForeColor          = [System.Drawing.Color]::Black # Default control foreground color
         # Font settings to control ComboBox height
         FontName           = "Segoe UI"
         FontSize           = 9.0
         
         # Control text
-        SelectAllText      = "Select All"
+        SelectAllText      = "Check All"
         ExecuteBtnText     = "▶ Run 0 Commands"
         ExecuteBtnTemplate = "▶ Run {0} Commands"
         FilterPlaceholder  = "Filter..."
@@ -327,10 +330,10 @@ class PSUtilApp {
         $standardHeight = $this.Config.Controls.Height
         $standardDock = $this.Config.Controls.Dock
         $standardPadding = $this.Config.Controls.Padding
-        $standardMargin = $this.Config.Controls.Margin
         $standardDropDownStyle = 'DropDownList'
-        $standardBackColor = $this.MainForm.BackColor
-        
+        $standardForeColor = $this.Config.Controls.ForeColor
+        $standardBackColor = $this.Config.Controls.BackColor
+        $standardBackgroundColor = $this.MainForm.BackColor
         # Define controls with order for proper placement and future drag-drop
         $controlDefs = @{
             # Main Layout Panels (Order 1-5)
@@ -340,7 +343,7 @@ class PSUtilApp {
             MainContent       = @{ Type = 'Panel'; Order = 4; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
             
             # Content Layout with Splitter (Order 5-8) - SecondaryContent first, then splitter, then PrimaryContent fills
-            SecondaryContent  = @{ Type = 'Panel'; Order = 5; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = 'White'; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
+            SecondaryContent  = @{ Type = 'Panel'; Order = 5; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
             ContentSplitter   = @{ Type = 'Splitter'; Order = 6; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
             PrimaryContent    = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             
@@ -348,8 +351,9 @@ class PSUtilApp {
             SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '80'; Dock = 'Left'; Padding = '5,1,0,1' } }
             FilterText        = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
             SpacerPanel1      = @{ Type = 'Panel'; Order = 25; Layout = 'Toolbar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent' } }
-            ExecuteBtn        = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Width = $standardWidth * 1.5; FlatStyle = 'Flat'; BackColor = $accent; ForeColor = $this.Config.Colors.White } }
+            ExecuteBtn        = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; } }
             ExecuteModeCombo  = @{ Type = 'ComboBox'; Order = 40; Layout = 'Toolbar'; Properties = @{} }
+            MoreBtn           = @{ Type = 'Button'; Order = 45; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
             MachineCombo      = @{ Type = 'ComboBox'; Order = 50; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             FilesCombo        = @{ Type = 'ComboBox'; Order = 60; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             CollectionCombo   = @{ Type = 'ComboBox'; Order = 70; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
@@ -367,7 +371,7 @@ class PSUtilApp {
             
             # Secondary content controls (Order 200+) - Will be added dynamically based on selected tool
             SecondaryLabel    = @{ Type = 'Label'; Order = 200; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
-            CloseSecondaryBtn = @{ Type = 'Button'; Order = 201; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = [System.Drawing.Color]::White } }
+            CloseSecondaryBtn = @{ Type = 'Button'; Order = 201; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White } }
         }
         
         # Create controls in order
@@ -386,8 +390,9 @@ class PSUtilApp {
             $ctrl.Width = $standardWidth
             $ctrl.Height = $standardHeight
             $ctrl.Padding = $standardPadding
-            $ctrl.Margin = $standardMargin
-                
+            $ctrl.BackColor = $standardBackColor
+            $ctrl.ForeColor = $standardForeColor
+
             # Apply ComboBox-specific defaults
             if ($config.Type -eq 'ComboBox') {
                 $ctrl.DropDownStyle = $standardDropDownStyle
@@ -398,11 +403,10 @@ class PSUtilApp {
                 $ctrl.MinExtra = 100
                 $ctrl.MinSize = 100
             }
-            
-            
+
             # Panel-specific defaults
-            if ($config.Type -eq 'Panel') {
-                $ctrl.BackColor = $standardBackColor
+            if ($config.Type -eq 'Panel' -or $config.Type -eq 'CheckBox') {
+                $ctrl.BackColor = $standardBackgroundColor
             }
             
             # Apply control-specific properties (these override the defaults above)
@@ -442,7 +446,7 @@ class PSUtilApp {
         $this.Controls.FilesCombo.Add_SelectedIndexChanged({ $app.OnFilesComboChanged() })
         $this.Controls.FilterText.Add_TextChanged({ $app.FilterScripts() })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
-        
+        $this.Controls.MoreBtn.Add_Click({ $app.ToggleSidebar() })
         # Setup sidebar events
         $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
@@ -737,6 +741,10 @@ class PSUtilApp {
     }
     
     # Sidebar Event Handlers
+    [void]ToggleSidebar() {
+        $this.Controls.Sidebar.Visible = !$this.Controls.Sidebar.Visible
+    }
+    
     [void]ShowSecondaryPanel([string]$title) {
         $this.Controls.SecondaryLabel.Text = $title
         $this.Controls.SecondaryContent.Visible = $true
@@ -801,5 +809,13 @@ try {
 catch {
     Write-Error "$($Global:Config.Messages.FatalError)$_"
     Write-Error "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)"
-    [System.Windows.Forms.MessageBox]::Show("$($Global:Config.Messages.FatalError)$_`n`n$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)", $Global:Config.Messages.FatalErrorTitle, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    # Ensure MessageBox is available for error display
+    try {
+        [System.Windows.Forms.MessageBox]::Show("$($Global:Config.Messages.FatalError)$_`n`n$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)", $Global:Config.Messages.FatalErrorTitle, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+    catch {
+        # Fallback to Write-Host if MessageBox fails
+        Write-Host "$($Global:Config.Messages.FatalError)$_" -ForegroundColor Red
+        Write-Host "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)" -ForegroundColor Red
+    }
 }
