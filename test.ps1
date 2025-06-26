@@ -1,8 +1,10 @@
 # PowerShell GUI utility for executing scripts from GitHub repository
 # Features: PS1 script files with embedded metadata, Multiple execution modes, Multi-script collections support
 
-[System.Windows.Forms.Application]::EnableVisualStyles()
+# Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
 # Configuration - All constants and strings centralized for modularity
 $Global:Config = @{
@@ -598,74 +600,30 @@ class PSUtilApp {
                 $result = Invoke-Expression $sshCommand
             }
             else {
-                # Local execution - check if command contains Windows Forms types
-                if ($command -match '\[System\.Windows\.Forms\.' -or $command -match 'Add-Type.*Windows\.Forms') {
-                    # For GUI commands, execute in a separate PowerShell process with proper assembly loading
-                    $wrappedCommand = @"
-Add-Type -AssemblyName System.Drawing, System.Windows.Forms
-$command
-"@
-                    if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) {
-                        $tempFile = [System.IO.Path]::GetTempFileName() + ".ps1"
-                        $wrappedCommand | Set-Content $tempFile
-                        Start-Process $this.Config.Defaults.PowerShellCommand -Verb $this.Config.Defaults.RunAsVerb -ArgumentList "-ExecutionPolicy Bypass -File `"$tempFile`"" -Wait
-                        Remove-Item $tempFile -ErrorAction SilentlyContinue
-                        $result = $this.Config.Messages.ExecuteAsAdmin
+                # Local execution
+                if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) {
+                    Start-Process $this.Config.Defaults.PowerShellCommand -Verb $this.Config.Defaults.RunAsVerb -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
+                    $result = $this.Config.Messages.ExecuteAsAdmin
+                }
+                elseif ($this.ExecutionMode.StartsWith($this.Config.Defaults.AsPrefix) -and $this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
+                    $targetUser = $this.ExecutionMode.Substring(3)
+                    $cred = Get-Credential -UserName $targetUser -Message "$($this.Config.Messages.UserPasswordPrompt)$targetUser"
+                    if ($cred) {
+                        Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
+                        $result = "$($this.Config.Messages.ExecuteAsUser)$targetUser"
                     }
-                    elseif ($this.ExecutionMode.StartsWith($this.Config.Defaults.AsPrefix) -and $this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
-                        $targetUser = $this.ExecutionMode.Substring(3)
-                        $cred = Get-Credential -UserName $targetUser -Message "$($this.Config.Messages.UserPasswordPrompt)$targetUser"
-                        if ($cred) {
-                            $tempFile = [System.IO.Path]::GetTempFileName() + ".ps1"
-                            $wrappedCommand | Set-Content $tempFile
-                            Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList "-ExecutionPolicy Bypass -File `"$tempFile`"" -Wait
-                            Remove-Item $tempFile -ErrorAction SilentlyContinue
-                            $result = "$($this.Config.Messages.ExecuteAsUser)$targetUser"
-                        }
-                        else { throw $this.Config.Messages.CancelledByUser }
+                    else { throw $this.Config.Messages.CancelledByUser }
+                }
+                elseif ($this.ExecutionMode -eq $this.Config.Defaults.OtherUserText) {
+                    $cred = Get-Credential -Message $this.Config.Messages.CredentialsPrompt
+                    if ($cred) {
+                        Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
+                        $result = "$($this.Config.Messages.ExecuteAsUser)$($cred.UserName)"
                     }
-                    elseif ($this.ExecutionMode -eq $this.Config.Defaults.OtherUserText) {
-                        $cred = Get-Credential -Message $this.Config.Messages.CredentialsPrompt
-                        if ($cred) {
-                            $tempFile = [System.IO.Path]::GetTempFileName() + ".ps1"
-                            $wrappedCommand | Set-Content $tempFile
-                            Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList "-ExecutionPolicy Bypass -File `"$tempFile`"" -Wait
-                            Remove-Item $tempFile -ErrorAction SilentlyContinue
-                            $result = "$($this.Config.Messages.ExecuteAsUser)$($cred.UserName)"
-                        }
-                        else { throw $this.Config.Messages.CancelledByUser }
-                    }
-                    else {
-                        # Execute in current session since assemblies are already loaded
-                        $result = Invoke-Expression $command
-                    }
+                    else { throw $this.Config.Messages.CancelledByUser }
                 }
                 else {
-                    # Regular non-GUI commands
-                    if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) {
-                        Start-Process $this.Config.Defaults.PowerShellCommand -Verb $this.Config.Defaults.RunAsVerb -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
-                        $result = $this.Config.Messages.ExecuteAsAdmin
-                    }
-                    elseif ($this.ExecutionMode.StartsWith($this.Config.Defaults.AsPrefix) -and $this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
-                        $targetUser = $this.ExecutionMode.Substring(3)
-                        $cred = Get-Credential -UserName $targetUser -Message "$($this.Config.Messages.UserPasswordPrompt)$targetUser"
-                        if ($cred) {
-                            Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
-                            $result = "$($this.Config.Messages.ExecuteAsUser)$targetUser"
-                        }
-                        else { throw $this.Config.Messages.CancelledByUser }
-                    }
-                    elseif ($this.ExecutionMode -eq $this.Config.Defaults.OtherUserText) {
-                        $cred = Get-Credential -Message $this.Config.Messages.CredentialsPrompt
-                        if ($cred) {
-                            Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
-                            $result = "$($this.Config.Messages.ExecuteAsUser)$($cred.UserName)"
-                        }
-                        else { throw $this.Config.Messages.CancelledByUser }
-                    }
-                    else {
-                        $result = Invoke-Expression $command
-                    }
+                    $result = Invoke-Expression $command
                 }
             }
             
@@ -851,5 +809,13 @@ try {
 catch {
     Write-Error "$($Global:Config.Messages.FatalError)$_"
     Write-Error "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)"
-    [System.Windows.Forms.MessageBox]::Show("$($Global:Config.Messages.FatalError)$_`n`n$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)", $Global:Config.Messages.FatalErrorTitle, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    # Ensure MessageBox is available for error display
+    try {
+        [System.Windows.Forms.MessageBox]::Show("$($Global:Config.Messages.FatalError)$_`n`n$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)", $Global:Config.Messages.FatalErrorTitle, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+    catch {
+        # Fallback to Write-Host if MessageBox fails
+        Write-Host "$($Global:Config.Messages.FatalError)$_" -ForegroundColor Red
+        Write-Host "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)" -ForegroundColor Red
+    }
 }
