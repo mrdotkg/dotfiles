@@ -1,8 +1,8 @@
-# PowerShell GUI utility for executing scripts from GitHub repository
-# Features: PS1 script files with embedded metadata, Multiple execution modes, Multi-script collections support
-
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+
+# PowerShell GUI utility for executing scripts from GitHub repository
+# Features: PS1 script files with embedded metadata, Multiple execution modes, Multi-script collections support
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
@@ -303,7 +303,7 @@ class PSUtilApp {
     [void]LoadCollections() {
         $collectionsDir = "$($this.DataDir)\$($this.Config.SubDirs[0])"
         $this.Collections = if ((Test-Path $collectionsDir)) { (Get-ChildItem $collectionsDir -Filter $this.Config.FileExtensions.Text).BaseName } else { @() }
-        $defaultCollection = "$collectionsDir\$($this.Config.Defaults.CollectionFile)"
+        $defaultCollection = "$collectionsDir\$($this.Config.Defaults.CollectionDefault)"
         if (!(Test-Path $defaultCollection)) { 
             $this.Config.Defaults.CollectionContent | Set-Content $defaultCollection -Force
             $this.Collections += ($this.Config.Defaults.CollectionFile -replace $this.Config.FileExtensions.TextExtension, '') 
