@@ -1,10 +1,8 @@
 # PowerShell GUI utility for executing scripts from GitHub repository
 # Features: PS1 script files with embedded metadata, Multiple execution modes, Multi-script collections support
 
-# Load required assemblies first - MUST be at the very beginning for iex compatibility
-Add-Type -AssemblyName System.Drawing, System.Windows.Forms
-
 [System.Windows.Forms.Application]::EnableVisualStyles()
+Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 # Configuration - All constants and strings centralized for modularity
 $Global:Config = @{
@@ -773,11 +771,10 @@ class PSUtilApp {
             $commands = $selectedItems | ForEach-Object { $_.SubItems[1].Text }
             $commandText = $commands -join "`n"
             [System.Windows.Forms.Clipboard]::SetText($commandText)
-            # Match the exact pattern used in ExecuteSelectedScripts
-            [System.Windows.Forms.MessageBox]::Show("Commands copied to clipboard!")
+            [System.Windows.Forms.MessageBox]::Show("Commands copied to clipboard!", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
         else {
-            [System.Windows.Forms.MessageBox]::Show("Please select a command to copy.")
+            [System.Windows.Forms.MessageBox]::Show("Please select a command to copy.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
         }
     }
     
@@ -810,7 +807,5 @@ try {
 catch {
     Write-Error "$($Global:Config.Messages.FatalError)$_"
     Write-Error "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)"
-    # Fallback to Write-Host since MessageBox might not be available in iex context
-    Write-Host "$($Global:Config.Messages.FatalError)$_" -ForegroundColor Red
-    Write-Host "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)" -ForegroundColor Red
+    [System.Windows.Forms.MessageBox]::Show("$($Global:Config.Messages.FatalError)$_`n`n$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)", $Global:Config.Messages.FatalErrorTitle, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
 }
