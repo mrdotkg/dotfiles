@@ -773,10 +773,11 @@ class PSUtilApp {
             $commands = $selectedItems | ForEach-Object { $_.SubItems[1].Text }
             $commandText = $commands -join "`n"
             [System.Windows.Forms.Clipboard]::SetText($commandText)
-            [System.Windows.Forms.MessageBox]::Show("Commands copied to clipboard!", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            # Match the exact pattern used in ExecuteSelectedScripts
+            [System.Windows.Forms.MessageBox]::Show("Commands copied to clipboard!")
         }
         else {
-            [System.Windows.Forms.MessageBox]::Show("Please select a command to copy.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Please select a command to copy.")
         }
     }
     
@@ -809,13 +810,7 @@ try {
 catch {
     Write-Error "$($Global:Config.Messages.FatalError)$_"
     Write-Error "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)"
-    # Ensure MessageBox is available for error display
-    try {
-        [System.Windows.Forms.MessageBox]::Show("$($Global:Config.Messages.FatalError)$_`n`n$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)", $Global:Config.Messages.FatalErrorTitle, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
-    }
-    catch {
-        # Fallback to Write-Host if MessageBox fails
-        Write-Host "$($Global:Config.Messages.FatalError)$_" -ForegroundColor Red
-        Write-Host "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)" -ForegroundColor Red
-    }
+    # Fallback to Write-Host since MessageBox might not be available in iex context
+    Write-Host "$($Global:Config.Messages.FatalError)$_" -ForegroundColor Red
+    Write-Host "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)" -ForegroundColor Red
 }
