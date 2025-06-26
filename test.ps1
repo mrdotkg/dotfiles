@@ -801,7 +801,6 @@ class PSUtilApp {
 # Entry point with error handling
 try {
     $app = [PSUtilApp]::new()
-    [System.Windows.Forms.Application]::EnableVisualStyles()
 
     $app.Show()
 }
