@@ -198,12 +198,10 @@ $Global:Config = @{
 
 class PSUtilApp {
     # Core properties
-    [string]$Owner; [string]$Repo; [string]$Branch; [string]$DbFile
-    [string]$DataDir
-    [hashtable]$Config
-    [hashtable]$Controls = @{}; [array]$Machines = @(); [array]$Collections = @(); [array]$ScriptFiles = @()
+    [string]$Owner; [string]$Repo; [string]$Branch; [string]$DbFile; [string]$DataDir
+    [hashtable]$Config; [hashtable]$Controls = @{}; [array]$Machines = @(); [array]$Collections = @(); [array]$ScriptFiles = @()
     [array]$SelectedScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
-    [string]$ExecutionMode = "CurrentUser"; [bool]$IsSecondaryPanelVisible = $false; $MainForm
+    [string]$ExecutionMode = "CurrentUser"; [bool]$IsSecondaryPanelVisible = $false; $MainForm; $StatusLabel; $StatusProgressBar;
 
     PSUtilApp() {
         $this.Config = $Global:Config
@@ -319,27 +317,18 @@ class PSUtilApp {
 
     [void]CreateInterface() {
         $sourceInfo = $this.GetSourceInfo()
-        $accent = try { [System.Drawing.Color]::FromArgb((Get-ItemPropertyValue $this.Config.Registry.AccentColor $this.Config.Registry.AccentColorValue)) } 
-        catch { $this.Config.Window.AccentColorFallback }
-        
+        $createdControls = @{}
+        $app = $this
+
         # Main Form
         $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
             Text = "$($this.Config.Window.Title) - $([System.IO.Path]::GetFileName($sourceInfo))";
             Size = New-Object System.Drawing.Size($this.Config.Window.Width, $this.Config.Window.Height)
             Padding = $this.Config.Window.Padding
             StartPosition = $this.Config.Window.Position; BackColor = $this.Config.Window.BackgroundColor
+            Add_Shown = { $app.OnFormShown() }
         }
         
-        # Standard parameters to reduce repetition in control definitions
-        $standardFont = New-Object System.Drawing.Font($this.Config.Controls.FontName, $this.Config.Controls.FontSize)
-        $standardWidth = $this.Config.Controls.Width
-        $standardHeight = $this.Config.Controls.Height
-        $standardDock = $this.Config.Controls.Dock
-        $standardPadding = $this.Config.Controls.Padding
-        $standardDropDownStyle = 'DropDownList'
-        $standardForeColor = $this.Config.Controls.ForeColor
-        $standardBackColor = $this.Config.Controls.BackColor
-        $standardBackgroundColor = $this.MainForm.BackColor
         # Define controls with order for proper placement and future drag-drop
         $controlDefs = @{
             # Main Layout Panels (Order 1-5)
@@ -354,10 +343,15 @@ class PSUtilApp {
             PrimaryContent    = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             
             # Toolbar controls (Order 10-70) - Left to Right: Select All, Filter, Spacers, Execute, Combos
-            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '100'; Dock = 'Left'; Padding = '6,2,0,1' } }
+            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '100'; Dock = 'Left'; Padding = '6,2,0,1' } } 
             FilterText        = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
             MoreBtn           = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
             ExecuteBtn        = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right'; Width = '200' } }
+            
+            # Sidebar controls (Order 80-89)
+            CopyCommandBtn    = @{ Type = 'Button'; Order = 80; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
+            RunLaterBtn       = @{ Type = 'Button'; Order = 81; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
+            AddCommandBtn     = @{ Type = 'Button'; Order = 82; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
             # SpacerPanel1      = @{ Type = 'Panel'; Order = 44; Layout = 'Sidebar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent'; Dock = 'Top' } }
             ExecuteModeCombo  = @{ Type = 'ComboBox'; Order = 45; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             MachineCombo      = @{ Type = 'ComboBox'; Order = 50; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
@@ -365,45 +359,36 @@ class PSUtilApp {
             CollectionCombo   = @{ Type = 'ComboBox'; Order = 70; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2      = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent'; Dock = 'Top'; } }
             
-            # Sidebar controls (Order 80-89)
-            CopyCommandBtn    = @{ Type = 'Button'; Order = 80; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
-            RunLaterBtn       = @{ Type = 'Button'; Order = 81; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
-            AddCommandBtn     = @{ Type = 'Button'; Order = 82; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
-            # ProfilesBtn       = @{ Type = 'Button'; Order = 83; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.ProfilesText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
-            # ToolsBtn          = @{ Type = 'Button'; Order = 84; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.ToolsText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
-            
             # Primary content controls (Order 100+)
             ScriptsListView   = @{ Type = 'ListView'; Order = 100; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; CheckBoxes = $true; FullRowSelect = $true } }
             
             # Secondary content controls (Order 200+) - Will be added dynamically based on selected tool
             SecondaryLabel    = @{ Type = 'Label'; Order = 200; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
-            CloseSecondaryBtn = @{ Type = 'Button'; Order = 201; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White } }
+            CloseSecondaryBtn = @{ Type = 'Button'; Order = 201; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White; Add_Click = { $app.HideSecondaryPanel() }; } }
         }
-        
+
+
         # Create controls in order
-        $createdControls = @{}
-        $app = $this
-        
         $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } | ForEach-Object {
             $name = $_.Key
             $config = $_.Value
-            
+
             $ctrl = New-Object "System.Windows.Forms.$($config.Type)"
-            
+
             # Apply standard parameters as defaults (can be overridden by control-specific properties)
-            $ctrl.Font = $standardFont
-            $ctrl.Dock = $standardDock
-            $ctrl.Width = $standardWidth
-            $ctrl.Height = $standardHeight
-            $ctrl.Padding = $standardPadding
-            $ctrl.BackColor = $standardBackColor
-            $ctrl.ForeColor = $standardForeColor
+            $ctrl.Font = New-Object System.Drawing.Font($this.Config.Controls.FontName, $this.Config.Controls.FontSize)
+            $ctrl.Dock = $this.Config.Controls.Dock
+            $ctrl.Width = $this.Config.Controls.Width
+            $ctrl.Height = $this.Config.Controls.Height
+            $ctrl.Padding = $this.Config.Controls.Padding
+            $ctrl.BackColor = $this.Config.Controls.BackColor
+            $ctrl.ForeColor = $this.Config.Controls.ForeColor
 
             # Apply ComboBox-specific defaults
             if ($config.Type -eq 'ComboBox') {
-                $ctrl.DropDownStyle = $standardDropDownStyle
+                $ctrl.DropDownStyle = 'DropDownList'
             }
-                
+
             # Apply Splitter-specific defaults
             if ($config.Type -eq 'Splitter') {
                 $ctrl.MinExtra = 100
@@ -412,38 +397,45 @@ class PSUtilApp {
 
             # Panel-specific defaults
             if ($config.Type -eq 'Panel' -or $config.Type -eq 'CheckBox') {
-                $ctrl.BackColor = $standardBackgroundColor
+                $ctrl.BackColor = $this.MainForm.BackColor
             }
-            
+
             # Apply control-specific properties (these override the defaults above)
-            $config.Properties.GetEnumerator() | ForEach-Object { 
-                $ctrl.($_.Key) = $_.Value 
+            foreach ($kv in $config.Properties.GetEnumerator()) {
+                # Only assign if not an event property (Add_Click, Add_TextChanged, etc.)
+                if ($kv.Key -notmatch '^Add_') {
+                    $ctrl.($kv.Key) = $kv.Value
+                }
             }
-            
+
             $createdControls[$name] = $ctrl
         }
-        
+
         # Add controls to parents in reverse order (because of how WinForms stacking works with Dock=Left)
         $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } -Descending | ForEach-Object {
             $name = $_.Key
             $config = $_.Value
             $ctrl = $createdControls[$name]
-            
+
             $parent = if ($config.Layout -eq 'Form') { $this.MainForm } else { $createdControls[$config.Layout] }
             if ($parent) { 
                 $parent.Controls.Add($ctrl)
             }
         }
-        
+
         # Assign controls to class property
         $this.Controls = $createdControls
-        
+
+        # Save references for status controls for easy access
+        $this.StatusLabel = $this.Controls.StatusLabel
+        $this.StatusProgressBar = $this.Controls.StatusProgressBar
+
         # Setup ListView columns using config
         foreach ($column in $this.Config.ListView.Columns) {
             $this.Controls.ScriptsListView.Columns.Add($column.Name, $column.Width) | Out-Null
         }
-        
-        # Setup events
+
+        # Setup events (must be done after controls are created)
         $this.Controls.ExecuteBtn.Add_Click({ $app.ExecuteSelectedScripts() })
         $this.Controls.SelectAllCheckBox.Add_CheckedChanged({ $app.OnSelectAllChanged() })
         $this.Controls.ExecuteModeCombo.Add_SelectedIndexChanged({ $app.OnExecutionModeChanged() })
@@ -453,12 +445,11 @@ class PSUtilApp {
         $this.Controls.FilterText.Add_TextChanged({ $app.FilterScripts() })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
         $this.Controls.MoreBtn.Add_Click({ $app.ToggleSidebar() })
-        # Setup sidebar events
         $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
         $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
         $this.Controls.CloseSecondaryBtn.Add_Click({ $app.HideSecondaryPanel() })
-        
+
         # Setup execution mode options using config
         $this.Controls.ExecuteModeCombo.Items.AddRange(@($this.Config.Defaults.CurrentUserText, $this.Config.Defaults.AdminText))
         try {
