@@ -8,19 +8,20 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 # Configuration - All constants and strings centralized for modularity
 $Global:Config = @{
+    ScriptFilesBlacklist = @("gui.ps1", "psutil.ps1", "test.ps1")
     # Repository settings
-    Owner            = "mrdotkg"
-    Repo             = "dotfiles" 
-    Branch           = "main"
-    DbFile           = "db.ps1"
+    Owner                = "mrdotkg"
+    Repo                 = "dotfiles" 
+    Branch               = "main"
+    DbFile               = "db.ps1"
     
     # Paths and directories
-    DataDir          = "$env:USERPROFILE\Documents\PSUtil Local Data"
-    SubDirs          = @("Collections", "Logs", "Scripts")
-    SSHConfigPath    = "$env:USERPROFILE\.ssh\config"
+    DataDir              = "$env:USERPROFILE\Documents\PSUtil Local Data"
+    SubDirs              = @("Collections", "Logs", "Scripts")
+    SSHConfigPath        = "$env:USERPROFILE\.ssh\config"
     
     # UI Settings
-    Window           = @{
+    Window               = @{
         Title               = "PSUTIL"
         Width               = 600
         Height              = 600
@@ -31,7 +32,7 @@ $Global:Config = @{
     }
     
     # Panel dimensions
-    Panels           = @{
+    Panels               = @{
         ToolbarHeight       = 25
         StatusBarHeight     = 28
         SidebarWidth        = 120
@@ -45,7 +46,7 @@ $Global:Config = @{
     }
     
     # Control dimensions and text
-    Controls         = @{
+    Controls             = @{
         # Standard dimensions for consistency
         Dock               = 'Left'
         Width              = 120
@@ -70,7 +71,7 @@ $Global:Config = @{
     }
     
     # ListView columns
-    ListView         = @{
+    ListView             = @{
         Columns = @(
             @{ Name = "Script"; Width = 250 }
             @{ Name = "Command"; Width = 350 }
@@ -80,19 +81,19 @@ $Global:Config = @{
     }
     
     # Script file extensions
-    ScriptExtensions = @{
+    ScriptExtensions     = @{
         Remote = @('.ps1', '.sh', '.bash', '.py', '.rb', '.js', '.bat', '.cmd')
         Local  = @('*.ps1', '*.sh', '*.py', '*.rb', '*.js', '*.bat', '*.cmd')
     }
     
     # File extensions and patterns
-    FileExtensions   = @{
+    FileExtensions       = @{
         Text          = "*.txt"
         TextExtension = ".txt"
     }
     
     # Default values and text constants
-    Defaults         = @{
+    Defaults             = @{
         CollectionDefault  = "All Commands"
         CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
         FallbackScript     = "db.ps1"
@@ -121,7 +122,7 @@ $Global:Config = @{
     }
     
     # Status messages
-    Messages         = @{
+    Messages             = @{
         NoScriptsSelected  = "No scripts selected."
         ExecutionError     = "Execution error: "
         FatalError         = "Fatal error: "
@@ -147,7 +148,7 @@ $Global:Config = @{
     }
     
     # Status colors
-    Colors           = @{
+    Colors               = @{
         Ready     = [System.Drawing.Color]::Black
         Running   = [System.Drawing.Color]::LightYellow
         Completed = [System.Drawing.Color]::LightGreen
@@ -158,7 +159,7 @@ $Global:Config = @{
     }
     
     # Regex patterns
-    Patterns         = @{
+    Patterns             = @{
         SSHHost           = '^Host\s+(.+)$'
         SSHExclude        = '[*?]'
         ScriptMetadata    = '^#\s*Script:\s*(.+)$'
@@ -171,19 +172,19 @@ $Global:Config = @{
     }
     
     # API URLs
-    URLs             = @{
+    URLs                 = @{
         GitHubAPI = "https://api.github.com/repos"
         GitHubRaw = "https://raw.githubusercontent.com"
     }
     
     # Registry paths
-    Registry         = @{
+    Registry             = @{
         AccentColor      = "HKCU:\Software\Microsoft\Windows\DWM"
         AccentColorValue = "AccentColor"
     }
     
     # Source info constants
-    SourceInfo       = @{
+    SourceInfo           = @{
         ErrorFetchingDir   = "Error fetching directory "
         DirectoryTypes     = @{
             File = "file"
@@ -250,6 +251,11 @@ class PSUtilApp {
         catch {
             Write-Warning "$($this.Config.Messages.LoadError)$_"
             $this.ScriptFiles = @($this.Config.Defaults.FallbackScript)
+        }
+        # Remove blacklisted files from $this.ScriptFiles
+        if ($this.Config.ScriptFilesBlacklist) {
+            $blacklist = $this.Config.ScriptFilesBlacklist
+            $this.ScriptFiles = $this.ScriptFiles | Where-Object { $blacklist -notcontains $_ }
         }
     }
     
