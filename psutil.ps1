@@ -354,7 +354,7 @@ class PSUtilApp {
             PrimaryContent    = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             
             # Toolbar controls (Order 10-70) - Left to Right: Select All, Filter, Spacers, Execute, Combos
-            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '100'; Dock = 'Left'; Padding = '5,1,0,1' } }
+            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '100'; Dock = 'Left'; Padding = '6,2,0,1' } }
             FilterText        = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
             MoreBtn           = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
             ExecuteBtn        = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right'; Width = '200' } }
