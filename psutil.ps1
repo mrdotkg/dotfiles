@@ -8,7 +8,7 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 # Configuration - All constants and strings centralized for modularity
 $Global:Config = @{
-    ScriptFilesBlacklist = @("gui.ps1", "psutil.ps1", "test.ps1")
+    ScriptFilesBlacklist = @("gui.ps1", "psutil.ps1", "taaest.ps1")
     # Repository settings
     Owner                = "mrdotkg"
     Repo                 = "dotfiles" 
@@ -22,27 +22,27 @@ $Global:Config = @{
     
     # UI Settings
     Window               = @{
-        Title               = "PSUTIL"
+        Title               = "Executor"
         Width               = 600
         Height              = 600
         BackgroundColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
         AccentColorFallback = [System.Drawing.Color]::FromArgb(44, 151, 222)
-        Position            = "CenterScreen"
+        Position            = "Manual"
         Padding             = '5,5,5,5'
     }
     
     # Panel dimensions
     Panels               = @{
-        ToolbarHeight       = 25
-        StatusBarHeight     = 28
-        SidebarWidth        = 120
+        ToolbarHeight       = 35
+        StatusBarHeight     = 25
+        SidebarWidth        = 150
         SecondaryPanelWidth = 300
-        SplitterWidth       = 6
+        SplitterWidth       = 3
         ContentPadding      = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for content area
-        ToolbarPadding      = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for toolbar
+        ToolbarPadding      = '0, 5, 0, 5' # Left, Top, Right, Bottom padding for toolbar
         StatusPadding       = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for status bar
-        SidebarPadding      = '5, 0, 5, 0' # Left, Top, Right, Bottom padding for sidebar
-        SecondaryPadding    = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for secondary panel
+        SidebarPadding      = '5, 0, 0, 0' # Left, Top, Right, Bottom padding for sidebar
+        SecondaryPadding    = '0, 2, 0, 0' # Left, Top, Right, Bottom padding for secondary panel
     }
     
     # Control dimensions and text
@@ -56,7 +56,7 @@ $Global:Config = @{
         ForeColor          = [System.Drawing.Color]::Black # Default control foreground color
         # Font settings to control ComboBox height
         FontName           = "Segoe UI"
-        FontSize           = 9.0
+        FontSize           = 10.0
         
         # Control text
         SelectAllText      = "Check All"
@@ -324,7 +324,7 @@ class PSUtilApp {
         
         # Main Form
         $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
-            Text = "$($this.Config.Window.Title) - $sourceInfo"; 
+            Text = "$($this.Config.Window.Title) - $([System.IO.Path]::GetFileName($sourceInfo))";
             Size = New-Object System.Drawing.Size($this.Config.Window.Width, $this.Config.Window.Height)
             Padding = $this.Config.Window.Padding
             StartPosition = $this.Config.Window.Position; BackColor = $this.Config.Window.BackgroundColor
@@ -354,12 +354,12 @@ class PSUtilApp {
             PrimaryContent    = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             
             # Toolbar controls (Order 10-70) - Left to Right: Select All, Filter, Spacers, Execute, Combos
-            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '80'; Dock = 'Left'; Padding = '5,1,0,1' } }
+            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '100'; Dock = 'Left'; Padding = '5,1,0,1' } }
             FilterText        = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
-            SpacerPanel1      = @{ Type = 'Panel'; Order = 25; Layout = 'Toolbar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent' } }
-            ExecuteBtn        = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; } }
-            ExecuteModeCombo  = @{ Type = 'ComboBox'; Order = 40; Layout = 'Toolbar'; Properties = @{} }
-            MoreBtn           = @{ Type = 'Button'; Order = 45; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
+            MoreBtn           = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
+            ExecuteBtn        = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right'; Width = '200' } }
+            # SpacerPanel1      = @{ Type = 'Panel'; Order = 44; Layout = 'Sidebar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent'; Dock = 'Top' } }
+            ExecuteModeCombo  = @{ Type = 'ComboBox'; Order = 45; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             MachineCombo      = @{ Type = 'ComboBox'; Order = 50; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             FilesCombo        = @{ Type = 'ComboBox'; Order = 60; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             CollectionCombo   = @{ Type = 'ComboBox'; Order = 70; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
