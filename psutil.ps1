@@ -162,8 +162,8 @@ $Global:Config = @{
     Patterns             = @{
         SSHHost           = '^Host\s+(.+)$'
         SSHExclude        = '[*?]'
-        ScriptMetadata    = '^#\s*Script:\s*(.+)$'
-        CommandMetadata   = '^#\s*Command:\s*(.+)$'
+        InlineComments    = '^\s*#'
+        MultiLineComments = '<#([\s\S]*?)#>'
         CommentLine       = '^#'
         HTTPUrl           = '^https?://'
         CommentPrefix     = '#'
@@ -536,32 +536,48 @@ class PSUtilApp {
         $scripts = @()
         $lines = $content -split $this.Config.Patterns.NewlinePattern
         $currentScript = $null
-        
+
         for ($i = 0; $i -lt $lines.Count; $i++) {
             $line = $lines[$i].Trim()
-            
-            if ($line -match $this.Config.Patterns.ScriptMetadata) {
-                if ($currentScript) { $scripts += $currentScript }
+            if ($line -match '^#(.*)$') {
+                # If we have a previous script, add it to the list
+                if ($currentScript -and $currentScript.Command.Trim()) {
+                    $scripts += $currentScript
+                }
+                # Start a new script action
                 $currentScript = @{
                     Description = $Matches[1].Trim()
-                    Command = ""; File = $fileName; LineNumber = $i + 1
+                    Command     = ""
+                    File        = $fileName
+                    LineNumber  = $i + 1
                 }
             }
-            elseif ($line -match $this.Config.Patterns.CommandMetadata -and $currentScript) {
-                $currentScript.Command = $Matches[1].Trim()
-            }
-            elseif ($line -and !$line.StartsWith('#') -and $currentScript -and !$currentScript.Command) {
-                $currentScript.Command = $line
+            elseif ($line -and !$line.StartsWith('#')) {
+                if ($currentScript) {
+                    if ($currentScript.Command) {
+                        $currentScript.Command += "`n$line"
+                    }
+                    else {
+                        $currentScript.Command = $line
+                    }
+                }
             }
         }
-        
-        if ($currentScript) { $scripts += $currentScript }
-        
-        # If no scripts found with metadata, treat entire file as single script
+        # Add the last script if it exists and has a command
+        if ($currentScript -and $currentScript.Command.Trim()) {
+            $scripts += $currentScript
+        }
+
+        # If no scripts found, treat entire file as a single script
         if ($scripts.Count -eq 0) {
-            $scripts = @(@{ Description = "$($this.Config.Messages.ExecuteFileDesc)$fileName"; Command = $content.Trim(); File = $fileName; LineNumber = 1 })
+            $scripts = @(@{
+                    Description = "$($this.Config.Messages.ExecuteFileDesc)$fileName"
+                    Command     = $content.Trim()
+                    File        = $fileName
+                    LineNumber  = 1
+                })
         }
-        
+
         return $scripts
     }
 
