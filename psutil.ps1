@@ -24,7 +24,7 @@ $Global:Config = @{
     Window               = @{
         Title               = "Executor"
         Width               = 600
-        Height              = 600
+        Height              = 700
         BackgroundColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
         AccentColorFallback = [System.Drawing.Color]::FromArgb(44, 151, 222)
         Position            = "Manual"
@@ -73,7 +73,7 @@ $Global:Config = @{
     # ListView columns
     ListView             = @{
         Columns = @(
-            @{ Name = "Script"; Width = 300 }
+            @{ Name = "Script"; Width = 500 }
             @{ Name = "Command"; Width = 100 }
             @{ Name = "File"; Width = 100 }
             @{ Name = "Status"; Width = 100 }
@@ -343,7 +343,7 @@ class PSUtilApp {
             PrimaryContent    = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             
             # Toolbar controls (Order 10-70) - Left to Right: Select All, Filter, Spacers, Execute, Combos
-            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '100'; Dock = 'Left'; Padding = '6,2,0,1' } } 
+            SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '25'; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = $this.Config.Controls.BackColor } } 
             FilterText        = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
             MoreBtn           = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
             ExecuteBtn        = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
@@ -434,6 +434,25 @@ class PSUtilApp {
         foreach ($column in $this.Config.ListView.Columns) {
             $this.Controls.ScriptsListView.Columns.Add($column.Name, $column.Width) | Out-Null
         }
+        $columns = $this.Controls.ScriptsListView.Columns
+        # Hide extra columns initially (show only Script)
+
+        # Add context menu for column visibility dynamically based on config columns
+        $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+
+        for ($i = 1; $i -lt $columns.Count; $i++) {
+            $columns[$i].Width = 0
+            $colName = $columns[$i].Name
+            $menuText = "Show $colName Column"
+            $menuItem = $contextMenu.Items.Add($menuText)
+            $menuItem.Checked = $false
+            $colIdx = $i
+            $menuItem.Add_Click({
+                    param($sender, $e)
+                    $app.ToggleListViewColumn($sender, $e, $colIdx)
+                }.GetNewClosure())
+        }
+        $this.Controls.ScriptsListView.ContextMenuStrip = $contextMenu
 
         # Setup events (must be done after controls are created)
         $this.Controls.ExecuteBtn.Add_Click({ $app.ExecuteSelectedScripts() })
@@ -460,7 +479,22 @@ class PSUtilApp {
             $this.Controls.ExecuteModeCombo.Items.Add($this.Config.Defaults.OtherUserText) | Out-Null
         }
     }
-
+    [void]ToggleListViewColumn($sender, $e, [int]$colIdx) {
+        $lv = $this.Controls.ScriptsListView
+        if ($lv -and $lv.Columns -and $this.Config.ListView.Columns) {
+            $columns = $lv.Columns
+            if ($columns.Count -gt $colIdx) {
+                if ($columns[$colIdx].Width -eq 0) {
+                    $columns[$colIdx].Width = $this.Config.ListView.Columns[$colIdx].Width
+                    $sender.Checked = $true
+                }
+                else {
+                    $columns[$colIdx].Width = 0
+                    $sender.Checked = $false
+                }
+            }
+        }
+    }
     [void]LoadData() {
         # Load machines
         $this.Controls.MachineCombo.Items.Clear()
