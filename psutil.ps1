@@ -60,21 +60,21 @@ $Global:Config = @{
         
         # Control text
         SelectAllText      = "Check All"
-        ExecuteBtnText     = "▶ Run 0 Commands"
-        ExecuteBtnTemplate = "▶ Run {0} Commands"
+        ExecuteBtnText     = "▶ Run 0"
+        ExecuteBtnTemplate = "▶ Run {0}"
         FilterPlaceholder  = "Filter..."
         
         # Sidebar button texts
         CopyCommandText    = "Copy"
-        RunLaterText       = "Run Later"
+        RunLaterText       = "Schedule Later"
         AddCommandText     = "Save To Collection"
     }
     
     # ListView columns
     ListView             = @{
         Columns = @(
-            @{ Name = "Script"; Width = 250 }
-            @{ Name = "Command"; Width = 350 }
+            @{ Name = "Script"; Width = 300 }
+            @{ Name = "Command"; Width = 100 }
             @{ Name = "File"; Width = 100 }
             @{ Name = "Status"; Width = 100 }
         )
@@ -334,7 +334,7 @@ class PSUtilApp {
             # Main Layout Panels (Order 1-5)
             Toolbar           = @{ Type = 'Panel'; Order = 1; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
             StatusBar         = @{ Type = 'Panel'; Order = 2; Layout = 'Form'; Properties = @{ Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
-            Sidebar           = @{ Type = 'Panel'; Order = 3; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding } }
+            Sidebar           = @{ Type = 'Panel'; Order = 3; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent       = @{ Type = 'Panel'; Order = 4; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
             
             # Content Layout with Splitter (Order 5-8) - SecondaryContent first, then splitter, then PrimaryContent fills
@@ -346,7 +346,7 @@ class PSUtilApp {
             SelectAllCheckBox = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '100'; Dock = 'Left'; Padding = '6,2,0,1' } } 
             FilterText        = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
             MoreBtn           = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
-            ExecuteBtn        = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right'; Width = '200' } }
+            ExecuteBtn        = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
             
             # Sidebar controls (Order 80-89)
             CopyCommandBtn    = @{ Type = 'Button'; Order = 80; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Top'; TextAlign = 'MiddleLeft' } }
@@ -360,7 +360,7 @@ class PSUtilApp {
             SpacerPanel2      = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent'; Dock = 'Top'; } }
             
             # Primary content controls (Order 100+)
-            ScriptsListView   = @{ Type = 'ListView'; Order = 100; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; CheckBoxes = $true; FullRowSelect = $true } }
+            ScriptsListView   = @{ Type = 'ListView'; Order = 100; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
             
             # Secondary content controls (Order 200+) - Will be added dynamically based on selected tool
             SecondaryLabel    = @{ Type = 'Label'; Order = 200; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
