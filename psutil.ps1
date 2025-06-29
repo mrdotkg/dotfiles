@@ -526,18 +526,18 @@ class PSUtilApp {
     }
 
     [void]LoadCollectionScripts() {
-        if (!$this.CurrentCollection) { return }
-        $this.Controls.ScriptsListView.Items.Clear()
-        try {
-            $collectionPath = "$($this.DataDir)\$($this.Config.SubDirs[0])\$($this.CurrentCollection)$($this.Config.FileExtensions.TextExtension)"
-            if ((Test-Path $collectionPath)) {
-                $scriptFilesList = (Get-Content $collectionPath) | Where-Object { $_ -and !$_.StartsWith('#') }
-                foreach ($scriptFile in $scriptFilesList) {
-                    $this.LoadScriptFromFile($scriptFile.Trim())
-                }
-            }
-        }
-        catch { Write-Warning "$($this.Config.Messages.CollectionError)$_" }
+        # if (!$this.CurrentCollection) { return }
+        # $this.Controls.ScriptsListView.Items.Clear()
+        # try {
+        #     $collectionPath = "$($this.DataDir)\$($this.Config.SubDirs[0])\$($this.CurrentCollection)$($this.Config.FileExtensions.TextExtension)"
+        #     if ((Test-Path $collectionPath)) {
+        #         $scriptFilesList = (Get-Content $collectionPath) | Where-Object { $_ -and !$_.StartsWith('#') }
+        #         foreach ($scriptFile in $scriptFilesList) {
+        #             $this.LoadScriptFromFile($scriptFile.Trim())
+        #         }
+        #     }
+        # }
+        # catch { Write-Warning "$($this.Config.Messages.CollectionError)$_" }
     }
     
     [void]LoadScriptFromFile([string]$scriptFile) {
@@ -714,7 +714,7 @@ class PSUtilApp {
             $this.LoadCollectionScripts() 
         } 
     }
-    
+
     [void]OnFilesComboChanged() {
         $selectedText = $this.Controls.FilesCombo.SelectedItem
         $this.SelectedScriptFiles = if ($selectedText -eq $this.Config.Defaults.FilesComboDefault) { $this.ScriptFiles } 
