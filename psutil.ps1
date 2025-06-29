@@ -22,13 +22,14 @@ $Global:Config = @{
     
     # UI Settings
     Window               = @{
-        Title               = "Executor"
+        Title               = ""
         Width               = 600
         Height              = 700
         BackgroundColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
         AccentColorFallback = [System.Drawing.Color]::FromArgb(44, 151, 222)
-        Position            = "Manual"
+        Position            = "CenterScreen"
         Padding             = '5,5,5,5'
+        AlwaysOnTop         = $true
     }
     
     # Panel dimensions
@@ -322,7 +323,7 @@ class PSUtilApp {
 
         # Main Form
         $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
-            Text = "$($this.Config.Window.Title) - $([System.IO.Path]::GetFileName($sourceInfo))";
+            Text = "$($this.Config.Window.Title) $([System.IO.Path]::GetFileName($sourceInfo).Substring(0,1).ToUpper() + [System.IO.Path]::GetFileName($sourceInfo).Substring(1))";
             Size = New-Object System.Drawing.Size($this.Config.Window.Width, $this.Config.Window.Height)
             Padding = $this.Config.Window.Padding
             StartPosition = $this.Config.Window.Position; BackColor = $this.Config.Window.BackgroundColor
@@ -442,8 +443,7 @@ class PSUtilApp {
 
         for ($i = 1; $i -lt $columns.Count; $i++) {
             $columns[$i].Width = 0
-            $colName = $columns[$i].Name
-            $menuText = "Show $colName Column"
+            $menuText = "Show $($columns[$i].Text) Column"
             $menuItem = $contextMenu.Items.Add($menuText)
             $menuItem.Checked = $false
             $colIdx = $i
