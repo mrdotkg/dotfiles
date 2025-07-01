@@ -17,7 +17,7 @@ $Global:Config = @{
     
     # Paths and directories
     DataDir              = "$env:USERPROFILE\Documents\PSUtil Local Data"
-    SubDirs              = @("Collections", "Logs", "Scripts")
+    SubDirs              = @("Favourites", "Logs", "Scripts") # <-- Fix: Use "Favourites" not "Favorites"
     SSHConfigPath        = "$env:USERPROFILE\.ssh\config"
     
     # UI Settings
@@ -98,7 +98,6 @@ $Global:Config = @{
         CollectionDefault  = "All Commands"
         CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
         FallbackScript     = "db.ps1"
-        FilesComboDefault  = "All Scripts"
         CurrentUserText    = "As $env:USERNAME (Active)"
         AdminText          = "As Admin"
         OtherUserText      = "Other User..."
@@ -204,6 +203,9 @@ class PSUtilApp {
     [array]$SelectedScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser"; [bool]$IsSecondaryPanelVisible = $false; $MainForm; $StatusLabel; $StatusProgressBar;
 
+    [hashtable]$Favourites = @{} # name -> array of {File, LineNumber}
+    [string]$FavouritesFile
+
     PSUtilApp() {
         $this.Config = $Global:Config
         $this.Owner = $this.Config.Owner
@@ -211,8 +213,84 @@ class PSUtilApp {
         $this.Branch = $this.Config.Branch
         $this.DbFile = $this.Config.DbFile
         $this.DataDir = $this.Config.DataDir
+        $this.FavouritesFile = "$($this.DataDir)\favourites.json"
+        $this.LoadFavourites()
         $this.Initialize()
         $this.CreateInterface()
+    }
+
+    [void]LoadFavourites() {
+        Write-Host "[DEBUG] LoadFavourites"
+        if (Test-Path $this.FavouritesFile) {
+            try {
+                $this.Favourites = Get-Content $this.FavouritesFile | ConvertFrom-Json
+            }
+            catch {
+                $this.Favourites = @{} 
+            }
+        }
+        else {
+            $this.Favourites = @{
+            }
+        }
+    }
+    [void]SaveFavourites() {
+        Write-Host "[DEBUG] SaveFavourites"
+        $this.Favourites | ConvertTo-Json | Set-Content $this.FavouritesFile -Force
+    }
+
+    [array]ReadFavourites([string]$favName) {
+        # Loads actions for a given favourite name from the favourites file
+        Write-Host "[DEBUG] ReadFavourites $favName"
+        if (-not $this.Favourites.ContainsKey($favName)) {
+            Write-Warning "Favourite '$favName' not found."
+            return @()
+        }
+        $refs = $this.Favourites[$favName]
+        $actions = @()
+        foreach ($ref in $refs) {
+            $file = $ref.File
+            $line = $ref.LineNumber
+            # Try to get the action by file and line
+            $action = $this.GetActionByFileAndLine($file, $line)
+            if ($action) { $actions += $action }
+            else { Write-Warning "No action found for $file at line $line" }
+        }
+        return $actions
+    }
+
+    [void]FavouriteActions([string]$favName) {
+        # Loads favourite actions into the main ScriptsListView
+        Write-Host "[DEBUG] FavouriteActions $favName"
+        $actions = $this.ReadFavourites($favName)
+        $this.LoadActionsToListView($actions)
+    }
+
+    [hashtable]GetActionByFileAndLine([string]$file, [int]$line) {
+        # Helper: Loads the action from a file at a specific line number
+        try {
+            $content = $null
+            $currentScript = $PSCommandPath
+            if ($currentScript -and (Test-Path $currentScript)) {
+                $scriptDir = Split-Path $currentScript -Parent
+                $fullPath = Join-Path $scriptDir $file.Replace($this.Config.SourceInfo.SlashSeparator, $this.Config.SourceInfo.BackslashSeparator)
+                if ((Test-Path $fullPath)) {
+                    $content = Get-Content $fullPath -Raw
+                }
+            }
+            if (-not $content) {
+                $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$file"
+                $content = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
+            }
+            $actions = $this.ParseScriptFile($content, $file)
+            foreach ($action in $actions) {
+                if ($action.LineNumber -eq $line) { return $action }
+            }
+        }
+        catch {
+            Write-Warning "Failed to get action for $file at line ${line}: $_"
+        }
+        return $null
     }
 
     [void]Initialize() {
@@ -231,11 +309,25 @@ class PSUtilApp {
             }
         }
         
-        $this.LoadScriptFiles()
-        $this.LoadCollections()
+        $this.ReadScripts()
+    }
+    [void]ReadFavourites() {
+        Write-Host "[DEBUG] ReadFavourites"
+        if (Test-Path $this.FavouritesFile) {
+            try {
+                $this.Favourites = Get-Content $this.FavouritesFile | ConvertFrom-Json
+            }
+            catch {
+                $this.Favourites = @{} 
+            }
+        }
+        else {
+            $this.Favourites = @{
+            }
+        }
     }
 
-    [void]LoadScriptFiles() {
+    [void]ReadScripts() {
         $this.ScriptFiles = @()
         try {
             $sourceInfo = $this.GetSourceInfo()
@@ -305,17 +397,6 @@ class PSUtilApp {
         }
     }
 
-    [void]LoadCollections() {
-        $collectionsDir = "$($this.DataDir)\$($this.Config.SubDirs[0])"
-        $this.Collections = if ((Test-Path $collectionsDir)) { (Get-ChildItem $collectionsDir -Filter $this.Config.FileExtensions.Text).BaseName } else { @() }
-        $defaultCollection = "$collectionsDir\$($this.Config.Defaults.CollectionDefault)"
-        if (!(Test-Path $defaultCollection)) { 
-            $this.Config.Defaults.CollectionContent | Set-Content $defaultCollection -Force
-            $this.Collections += ($this.Config.Defaults.CollectionFile -replace $this.Config.FileExtensions.TextExtension, '') 
-        }
-        $this.CurrentCollection = if ($this.Collections.Count -gt 0) { $this.Collections[0] } else { $null }
-    }
-
     [void]CreateInterface() {
         $sourceInfo = $this.GetSourceInfo()
         $createdControls = @{}
@@ -356,8 +437,7 @@ class PSUtilApp {
             # SpacerPanel1      = @{ Type = 'Panel'; Order = 44; Layout = 'Sidebar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent'; Dock = 'Top' } }
             ExecuteModeCombo  = @{ Type = 'ComboBox'; Order = 45; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             MachineCombo      = @{ Type = 'ComboBox'; Order = 50; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            FilesCombo        = @{ Type = 'ComboBox'; Order = 60; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            CollectionCombo   = @{ Type = 'ComboBox'; Order = 70; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SourceCombo       = @{ Type = 'ComboBox'; Order = 65; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2      = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Width = $this.Config.Controls.Width / 3; BackColor = 'Transparent'; Dock = 'Top'; } }
             
             # Primary content controls (Order 100+)
@@ -455,19 +535,18 @@ class PSUtilApp {
         $this.Controls.ScriptsListView.ContextMenuStrip = $contextMenu
 
         # Setup events (must be done after controls are created)
-        $this.Controls.ExecuteBtn.Add_Click({ $app.ExecuteSelectedScripts() })
-        $this.Controls.SelectAllCheckBox.Add_CheckedChanged({ $app.OnSelectAllChanged() })
-        $this.Controls.ExecuteModeCombo.Add_SelectedIndexChanged({ $app.OnExecutionModeChanged() })
-        $this.Controls.MachineCombo.Add_SelectedIndexChanged({ $app.SwitchMachine() })
-        $this.Controls.CollectionCombo.Add_SelectedIndexChanged({ $app.OnCollectionChanged() })
-        $this.Controls.FilesCombo.Add_SelectedIndexChanged({ $app.OnFilesComboChanged() })
-        $this.Controls.FilterText.Add_TextChanged({ $app.FilterScripts() })
+        $this.Controls.ExecuteBtn.Add_Click({ $app.OnExecute() })
+        $this.Controls.SelectAllCheckBox.Add_CheckedChanged({ $app.OnSelectAll() })
+        $this.Controls.ExecuteModeCombo.Add_SelectedIndexChanged({ $app.OnSwitchUser() })
+        $this.Controls.MachineCombo.Add_SelectedIndexChanged({ $app.OnSwitchMachine() })
+        $this.Controls.SourceCombo.Add_SelectedIndexChanged({ $app.OnSwitchSource() })
+        $this.Controls.FilterText.Add_TextChanged({ $app.OnFilter() })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
-        $this.Controls.MoreBtn.Add_Click({ $app.ToggleSidebar() })
-        $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
-        $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
-        $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
-        $this.Controls.CloseSecondaryBtn.Add_Click({ $app.HideSecondaryPanel() })
+        $this.Controls.MoreBtn.Add_Click({ $app.OnMore() })
+        # $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
+        # $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
+        # $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
+        $this.Controls.CloseSecondaryBtn.Add_Click({ $app.OnCloseSecondary() })
 
         # Setup execution mode options using config
         $this.Controls.ExecuteModeCombo.Items.AddRange(@($this.Config.Defaults.CurrentUserText, $this.Config.Defaults.AdminText))
@@ -477,6 +556,108 @@ class PSUtilApp {
         }
         catch {
             $this.Controls.ExecuteModeCombo.Items.Add($this.Config.Defaults.OtherUserText) | Out-Null
+        }
+
+        # Add "Add to Favourite..." to ListView context menu
+        $addFavMenu = $contextMenu.Items.Add("Add to Favourite...")
+        $addFavMenu.Add_Click({ $app.OnAddToFavourite() })
+    }
+    # Sidebar Event Handlers
+    [void]OnMore() {
+        $this.Controls.Sidebar.Visible = !$this.Controls.Sidebar.Visible
+    }
+    
+    [void]OnSelectAll() {
+        $checked = $this.Controls.SelectAllCheckBox.Checked
+        $this.Controls.ScriptsListView.Items | ForEach-Object { $_.Checked = $checked }
+        $this.UpdateExecuteButtonText()
+    }
+
+    [void]OnSwitchSource() {
+        Write-Host "[DEBUG] OnSwitchSource"
+        $srcCombo = $this.Controls.SourceCombo
+        $sel = $srcCombo.SelectedItem
+        # Prevent selecting group headers
+        if ($sel -like "---*---") {
+            $srcCombo.SelectedIndex = 1
+            return
+        }
+        if ($sel -eq "All Actions") {
+            $this.ReadActions($this.ScriptFiles)
+        }
+        elseif ($sel -like "File: *") {
+            $file = $sel.Substring(6)
+            $this.ReadActions(@($file))
+        }
+        elseif ($sel -like "Favourite: *") {
+            $favName = $sel.Substring(11)
+            # Try to load from Favourites directory first
+            $favPath = Join-Path (Join-Path $this.DataDir "Favourites") "$favName.txt"
+            if (Test-Path $favPath) {
+                $lines = Get-Content $favPath | Where-Object { $_.Trim() }
+                $actions = @()
+                foreach ($line in $lines) {
+                    $found = $false
+                    foreach ($scriptFile in $this.ScriptFiles) {
+                        $scriptContent = $null
+                        $currentScript = $PSCommandPath
+                        if ($currentScript -and (Test-Path $currentScript)) {
+                            $scriptDir = Split-Path $currentScript -Parent
+                            $fullPath = Join-Path $scriptDir $scriptFile.Replace($this.Config.SourceInfo.SlashSeparator, $this.Config.SourceInfo.BackslashSeparator)
+                            if ((Test-Path $fullPath)) {
+                                $scriptContent = Get-Content $fullPath -Raw
+                            }
+                        }
+                        if (!$scriptContent) {
+                            $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
+                            try {
+                                $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
+                            }
+                            catch { $scriptContent = $null }
+                        }
+                        if ($scriptContent) {
+                            $parsedScripts = $this.ParseScriptFile($scriptContent, $scriptFile)
+                            foreach ($action in $parsedScripts) {
+                                if ($action.Description -eq $line.Trim()) {
+                                    $actions += $action
+                                    $found = $true
+                                }
+                            }
+                        }
+                    }
+                    # Optionally, add a dummy entry if not found
+                    # if (-not $found) {
+                    #     $actions += @{ Description = $line.Trim(); Command = ""; File = ""; LineNumber = 0 }
+                    # }
+                }
+                # Only update ListView if actions found
+                if ($actions.Count -gt 0) {
+                    $this.LoadActionsToListView($actions)
+                }
+                else {
+                    [System.Windows.Forms.MessageBox]::Show("No matching actions found in scripts for this favourite file.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    $this.Controls.ScriptsListView.Items.Clear()
+                    $this.UpdateExecuteButtonText()
+                }
+            }
+            else {
+                # fallback to JSON-based favourite
+                $refs = $this.Favourites[$favName]
+                $actions = @()
+                foreach ($ref in $refs) {
+                    $file = $ref.File
+                    $line = $ref.LineNumber
+                    $actions += $this.GetActionByFileAndLine($file, $line)
+                }
+                if ($actions.Count -gt 0) {
+                    $this.LoadActionsToListView($actions)
+                }
+                else {
+                    [System.Windows.Forms.MessageBox]::Show("No matching actions found for this favourite.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    $this.Controls.ScriptsListView.Items.Clear()
+                    $this.UpdateExecuteButtonText()
+                }
+            }
         }
     }
     [void]ToggleListViewColumn($sender, $e, [int]$colIdx) {
@@ -496,6 +677,7 @@ class PSUtilApp {
         }
     }
     [void]LoadData() {
+        Write-Host "[DEBUG] LoadData"
         # Load machines
         $this.Controls.MachineCombo.Items.Clear()
         $this.Machines | ForEach-Object { $this.Controls.MachineCombo.Items.Add($_.DisplayName) | Out-Null }
@@ -503,58 +685,35 @@ class PSUtilApp {
             $this.Controls.MachineCombo.SelectedIndex = 0
             $this.CurrentMachine = $this.Machines[0].Name
         }
-        
-        # Load collections
-        $this.Controls.CollectionCombo.Items.Clear()
-        $this.Collections | ForEach-Object { $this.Controls.CollectionCombo.Items.Add($_) | Out-Null }
-        if ($this.Collections.Count -gt 0) {
-            $this.Controls.CollectionCombo.SelectedIndex = 0
-            $this.CurrentCollection = $this.Collections[0]
+
+        # Populate SourceCombo: All Actions, per-file, Favourites
+        $srcCombo = $this.Controls.SourceCombo
+        $srcCombo.Items.Clear()
+        $srcCombo.Items.Add("All Actions") | Out-Null
+        $srcCombo.Items.Add("------------------------------") | Out-Null
+        foreach ($file in ($this.ScriptFiles | Sort-Object)) {
+            $srcCombo.Items.Add("$file") | Out-Null
         }
-        
-        # Load files using config
-        $this.Controls.FilesCombo.Items.Clear()
-        $this.Controls.FilesCombo.Items.Add($this.Config.Defaults.FilesComboDefault) | Out-Null
-        ($this.ScriptFiles | Sort-Object) | ForEach-Object { $this.Controls.FilesCombo.Items.Add("$($this.Config.Defaults.FilePrefix)$_") | Out-Null }
-        $this.Controls.FilesCombo.SelectedIndex = 0
-        $this.SelectedScriptFiles = $this.ScriptFiles
-        
+        $srcCombo.Items.Add("------------------------------") | Out-Null
+
+        # --- Add favourite files from Favourites directory ---
+        $favouritesDir = Join-Path $this.DataDir "Favourites"
+        if (Test-Path $favouritesDir) {
+            $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
+            foreach ($favFile in $favFiles) {
+                $srcCombo.Items.Add("Favourite: $($favFile.BaseName)") | Out-Null
+            }
+        }
+        # --- Add favourites from JSON (old behaviour) ---
+        foreach ($fav in ($this.Favourites.Keys | Sort-Object)) {
+            $srcCombo.Items.Add("$fav") | Out-Null
+        }
+        $srcCombo.SelectedIndex = 0 # "All Actions"
+
         # Set execution mode default
         if ($this.Controls.ExecuteModeCombo.Items.Count -gt 0) {
             $this.Controls.ExecuteModeCombo.SelectedIndex = 0
         }
-    }
-
-    [void]LoadCollectionScripts() {
-        # if (!$this.CurrentCollection) { return }
-        # $this.Controls.ScriptsListView.Items.Clear()
-        # try {
-        #     $collectionPath = "$($this.DataDir)\$($this.Config.SubDirs[0])\$($this.CurrentCollection)$($this.Config.FileExtensions.TextExtension)"
-        #     if ((Test-Path $collectionPath)) {
-        #         $scriptFilesList = (Get-Content $collectionPath) | Where-Object { $_ -and !$_.StartsWith('#') }
-        #         foreach ($scriptFile in $scriptFilesList) {
-        #             $this.LoadScriptFromFile($scriptFile.Trim())
-        #         }
-        #     }
-        # }
-        # catch { Write-Warning "$($this.Config.Messages.CollectionError)$_" }
-    }
-    
-    [void]LoadScriptFromFile([string]$scriptFile) {
-        try {
-            $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
-            $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
-            $parsedScripts = $this.ParseScriptFile($scriptContent, $scriptFile)
-            foreach ($script in $parsedScripts) {
-                $item = New-Object System.Windows.Forms.ListViewItem($script.Description)
-                $item.SubItems.Add($script.Command) | Out-Null
-                $item.SubItems.Add($scriptFile) | Out-Null
-                $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
-                $item.Tag = $script
-                $this.Controls.ScriptsListView.Items.Add($item) | Out-Null
-            }
-        }
-        catch { Write-Warning "$($this.Config.Messages.ScriptFileError)$scriptFile - $_" }
     }
 
     [array]ParseScriptFile([string]$content, [string]$fileName) {
@@ -606,7 +765,7 @@ class PSUtilApp {
         return $scripts
     }
 
-    [void]ExecuteSelectedScripts() {
+    [void]OnExecute() {
         if ($this.IsExecuting) { return }
         $checkedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }
         if (!$checkedItems) { [System.Windows.Forms.MessageBox]::Show($this.Config.Messages.NoScriptsSelected); return }
@@ -637,6 +796,19 @@ class PSUtilApp {
         
         try {
             $result = ""
+            # Assign the current machine based on $this.CurrentMachine
+            $machine = $this.Machines | Where-Object { $_.Name -eq $this.CurrentMachine }
+            # Assign file and line from the script hashtable if present
+            $file = $script.File
+            $line = $script.LineNumber
+            # You may also want to retrieve the command at the specified file and line
+            $command = $script.Command
+            if ($file -and (Test-Path $file)) {
+                $lines = Get-Content $file
+                if ($line -le $lines.Count -and $line -gt 0) {
+                    $command = $lines[$line - 1]
+                }
+            }
             if ($machine.Type -eq "SSH") {
                 $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$command'"
                 if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) { $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$($this.Config.Defaults.SudoCommand)$command'" }
@@ -681,52 +853,23 @@ class PSUtilApp {
         }
     }
 
-    [void]OnExecutionModeChanged() {
+    [void]OnSwitchUser() {
         $selectedText = $this.Controls.ExecuteModeCombo.SelectedItem
         $this.ExecutionMode = if ($selectedText.Contains("(Current User)")) { $this.Config.Defaults.CurrentUserMode } 
         elseif ($selectedText -eq $this.Config.Defaults.AdminText) { $this.Config.Defaults.AdminMode } 
         else { $selectedText }
     }
 
-    [void]SwitchMachine() {
+    [void]OnSwitchMachine() {
         $idx = $this.Controls.MachineCombo.SelectedIndex
         if ($idx -ge 0) { $this.CurrentMachine = $this.Machines[$idx].Name }
     }
 
-    [void]FilterScripts() {
-        $filter = $this.Controls.FilterText.Text.ToLower()
-        $this.Controls.ScriptsListView.Items | ForEach-Object {
-            $visible = !$filter -or $_.Text.ToLower().Contains($filter) -or $_.SubItems[1].Text.ToLower().Contains($filter)
-            $_.ForeColor = if ($visible) { $this.Config.Colors.Text } else { $this.Config.Colors.Filtered }
-        }
-    }
-
-    [void]OnFormShown() { 
-        $this.MainForm.Activate()
-        $this.LoadData()
-        if ($this.CurrentCollection) { $this.LoadCollectionScripts() }
-    }
-    
-    [void]OnCollectionChanged() { 
-        $idx = $this.Controls.CollectionCombo.SelectedIndex
-        if ($idx -ge 0) { 
-            $this.CurrentCollection = $this.Collections[$idx]
-            $this.LoadCollectionScripts() 
-        } 
-    }
-
-    [void]OnFilesComboChanged() {
-        $selectedText = $this.Controls.FilesCombo.SelectedItem
-        $this.SelectedScriptFiles = if ($selectedText -eq $this.Config.Defaults.FilesComboDefault) { $this.ScriptFiles } 
-        else { @($selectedText.Substring($this.Config.Defaults.FilePrefix.Length)) }
-        $this.LoadScriptsFromFiles($this.SelectedScriptFiles)
-    }
-
-    [void]LoadScriptsFromFiles([array]$scriptFiles) {
-        $this.Controls.ScriptsListView.Items.Clear()
+    [void]ReadActions([array]$scriptFiles) {
+        Write-Host "[DEBUG] ReadActions $($scriptFiles -join ',')"
+        $actions = @()
         foreach ($scriptFile in $scriptFiles) {
             try {
-                # Try local first, then remote
                 $scriptContent = $null
                 $currentScript = $PSCommandPath
                 if ($currentScript -and (Test-Path $currentScript)) {
@@ -740,37 +883,97 @@ class PSUtilApp {
                     $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
                     $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
                 }
-                
                 $parsedScripts = $this.ParseScriptFile($scriptContent, $scriptFile)
-                foreach ($script in $parsedScripts) {
-                    $item = New-Object System.Windows.Forms.ListViewItem($script.Description)
-                    $item.SubItems.Add($script.Command) | Out-Null
-                    $item.SubItems.Add($scriptFile) | Out-Null
-                    $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
-                    $item.Tag = $script
-                    $this.Controls.ScriptsListView.Items.Add($item) | Out-Null
-                }
+                $actions += $parsedScripts
             }
             catch { Write-Warning "$($this.Config.Messages.LoadScriptError)$scriptFile - $_" }
         }
-        $this.UpdateExecuteButtonText()
+        $this.LoadActionsToListView($actions)
     }
 
-    [void]OnSelectAllChanged() {
-        $checked = $this.Controls.SelectAllCheckBox.Checked
-        $this.Controls.ScriptsListView.Items | ForEach-Object { $_.Checked = $checked }
+    [void]LoadActionsToListView([array]$actions) {
+        Write-Host "[DEBUG] LoadActionsToListView $($actions.Count)"
+        $this.Controls.ScriptsListView.Items.Clear()
+        foreach ($script in $actions) {
+            $item = New-Object System.Windows.Forms.ListViewItem($script.Description)
+            $item.SubItems.Add($script.Command) | Out-Null
+            $item.SubItems.Add($script.File) | Out-Null
+            $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
+            $item.Tag = $script
+            $this.Controls.ScriptsListView.Items.Add($item) | Out-Null
+        }
         $this.UpdateExecuteButtonText()
     }
-
     [void]UpdateExecuteButtonText() {
         $checkedCount = ($this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }).Count
         $this.Controls.ExecuteBtn.Text = $this.Config.Controls.ExecuteBtnTemplate -f $checkedCount
     }
 
-    [void]Show() { 
-        $this.MainForm.ShowDialog() | Out-Null 
+
+    [void]OnFilter() {
+        Write-Host "[DEBUG] OnFilter"
+        $filter = $this.Controls.FilterText.Text.ToLower()
+        $this.Controls.ScriptsListView.Items | ForEach-Object {
+            $visible = !$filter -or $_.Text.ToLower().Contains($filter) -or $_.SubItems[1].Text.ToLower().Contains($filter)
+            $_.ForeColor = if ($visible) { $this.Config.Colors.Text } else { $this.Config.Colors.Filtered }
+        }
     }
-    
+
+    [void]OnAddToFavourite() {
+        Write-Host "[DEBUG] OnAddToFavourite"
+        $selectedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Selected }
+        if (!$selectedItems) {
+            [System.Windows.Forms.MessageBox]::Show("Please select an action to add to Favourites.", "Add to Favourite", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+        $this.ShowFavouritePanel($selectedItems)
+    }
+
+    [void]ShowFavouritePanel($selectedItems) {
+        Write-Host "[DEBUG] ShowFavouritePanel"
+        $this.ShowSecondaryPanel("⭐ Add to Favourite")
+        # Simple UI: TextBox for name, ListBox for existing favourites, Save/Cancel buttons
+        $panel = $this.Controls.SecondaryContent
+        $panel.Controls.Clear()
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = "Favourite Name:"
+        $lbl.Dock = 'Top'
+        $panel.Controls.Add($lbl)
+        $txt = New-Object System.Windows.Forms.TextBox
+        $txt.Dock = 'Top'
+        $panel.Controls.Add($txt)
+        $lst = New-Object System.Windows.Forms.ListBox
+        $lst.Dock = 'Top'
+        $lst.Height = 80
+        $lst.Items.AddRange(@($this.Favourites.Keys))
+        $panel.Controls.Add($lst)
+        $btnSave = New-Object System.Windows.Forms.Button
+        $btnSave.Text = "Save"
+        $btnSave.Dock = 'Top'
+        $btnSave.Add_Click({
+                $name = $txt.Text.Trim()
+                if (!$name) { [System.Windows.Forms.MessageBox]::Show("Enter a name."); return }
+                $refs = @()
+                foreach ($item in $selectedItems) {
+                    $tag = $item.Tag
+                    $refs += @{ File = $tag.File; LineNumber = $tag.LineNumber }
+                }
+                $this.Favourites[$name] = $refs
+                $this.SaveFavourites()
+                $this.LoadData()
+                $this.HideSecondaryPanel()
+            }.GetNewClosure())
+        $panel.Controls.Add($btnSave)
+        $btnCancel = New-Object System.Windows.Forms.Button
+        $btnCancel.Text = "Cancel"
+        $btnCancel.Dock = 'Top'
+        $btnCancel.Add_Click({ $this.HideSecondaryPanel() })
+        $panel.Controls.Add($btnCancel)
+        $lst.Add_SelectedIndexChanged({
+                if ($lst.SelectedItem) { $txt.Text = $lst.SelectedItem }
+            })
+    }
+
     [string]GetSourceInfo() {
         $currentScript = $MyInvocation.ScriptName
         if (!$currentScript) { $currentScript = $PSCommandPath }
@@ -787,71 +990,33 @@ class PSUtilApp {
         }
     }
     
-    # Sidebar Event Handlers
-    [void]ToggleSidebar() {
-        $this.Controls.Sidebar.Visible = !$this.Controls.Sidebar.Visible
+    [void]OnFormShown() { 
+        $this.MainForm.Activate()
+        $this.LoadData()
+        if ($this.CurrentCollection) { $this.LoadCollectionScripts() }
     }
-    
-    [void]ShowSecondaryPanel([string]$title) {
-        $this.Controls.SecondaryLabel.Text = $title
-        $this.Controls.SecondaryContent.Visible = $true
-        $this.Controls.ContentSplitter.Visible = $true
-        $this.IsSecondaryPanelVisible = $true
-    }
-    
-    [void]HideSecondaryPanel() {
-        $this.Controls.SecondaryContent.Visible = $false
-        $this.Controls.ContentSplitter.Visible = $false
-        $this.IsSecondaryPanelVisible = $false
-    }
-    
-    [void]ToggleSecondaryPanel([string]$title) {
-        if ($this.IsSecondaryPanelVisible -and $this.Controls.SecondaryLabel.Text -eq $title) {
-            $this.HideSecondaryPanel()
+}
+
+function ReadFavouritesFromFile {
+    param([string]$Path)
+    if (Test-Path $Path) {
+        $ProfileLines = Get-Content -Path $Path -ErrorAction SilentlyContinue
+        if (-not $ProfileLines) {
+            Write-Warning "Selected profile '$Path' is empty or does not exist."
+            return
         }
-        else {
-            $this.ShowSecondaryPanel($title)
-        }
+        # ...rest of your logic...
     }
-    
-    [void]OnCopyCommand() {
-        $selectedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Selected }
-        if ($selectedItems) {
-            $commands = $selectedItems | ForEach-Object { $_.SubItems[1].Text }
-            $commandText = $commands -join "`n"
-            [System.Windows.Forms.Clipboard]::SetText($commandText)
-            [System.Windows.Forms.MessageBox]::Show("Commands copied to clipboard!", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-        }
-        else {
-            [System.Windows.Forms.MessageBox]::Show("Please select a command to copy.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-        }
-    }
-    
-    [void]OnRunLater() {
-        $this.ToggleSecondaryPanel("⏰ Run Later - Schedule Commands")
-        # TODO: Add scheduling functionality in secondary panel
-    }
-    
-    [void]OnAddCommand() {
-        $this.ToggleSecondaryPanel("➕ Add Command - Create New Script")
-        # TODO: Add command creation functionality in secondary panel
-    }
-    
-    [void]OnProfiles() {
-        $this.ToggleSecondaryPanel("👤 Profiles - Manage Execution Profiles")
-        # TODO: Add profile management functionality in secondary panel
-    }
-    
-    [void]OnTools() {
-        $this.ToggleSecondaryPanel("🔧 Tools - Additional Utilities")
-        # TODO: Add additional tools in secondary panel
+    else {
+        Write-Warning "Selected file '$Path' does not exist."
+        return
     }
 }
 
 # Entry point with error handling
 try {
     $app = [PSUtilApp]::new()
-    $app.Show()
+    $app.MainForm.ShowDialog() | Out-Null 
 }
 catch {
     Write-Error "$($Global:Config.Messages.FatalError)$_"
