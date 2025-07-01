@@ -594,45 +594,10 @@ class PSUtilApp {
             # Try to load from Favourites directory first
             $favPath = Join-Path (Join-Path $this.DataDir "Favourites") "$favName.txt"
             if (Test-Path $favPath) {
-                $lines = Get-Content $favPath | Where-Object { $_.Trim() }
-                $actions = @()
-                foreach ($line in $lines) {
-                    $found = $false
-                    foreach ($scriptFile in $this.ScriptFiles) {
-                        $scriptContent = $null
-                        $currentScript = $PSCommandPath
-                        if ($currentScript -and (Test-Path $currentScript)) {
-                            $scriptDir = Split-Path $currentScript -Parent
-                            $fullPath = Join-Path $scriptDir $scriptFile.Replace($this.Config.SourceInfo.SlashSeparator, $this.Config.SourceInfo.BackslashSeparator)
-                            if ((Test-Path $fullPath)) {
-                                $scriptContent = Get-Content $fullPath -Raw
-                            }
-                        }
-                        if (!$scriptContent) {
-                            $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
-                            try {
-                                $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
-                            }
-                            catch { $scriptContent = $null }
-                        }
-                        if ($scriptContent) {
-                            $parsedScripts = $this.ParseScriptFile($scriptContent, $scriptFile)
-                            foreach ($action in $parsedScripts) {
-                                if ($action.Description -eq $line.Trim()) {
-                                    $actions += $action
-                                    $found = $true
-                                }
-                            }
-                        }
-                    }
-                    # Optionally, add a dummy entry if not found
-                    # if (-not $found) {
-                    #     $actions += @{ Description = $line.Trim(); Command = ""; File = ""; LineNumber = 0 }
-                    # }
-                }
-                # Only update ListView if actions found
-                if ($actions.Count -gt 0) {
-                    $this.LoadActionsToListView($actions)
+                # --- GROUPED PROFILE SUPPORT ---
+                $grouped = $this.ReadGroupedProfile($favPath)
+                if ($grouped.Count -gt 0) {
+                    $this.LoadGroupedActionsToListView($grouped)
                 }
                 else {
                     [System.Windows.Forms.MessageBox]::Show("No matching actions found in scripts for this favourite file.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
@@ -641,7 +606,7 @@ class PSUtilApp {
                 }
             }
             else {
-                # fallback to JSON-based favourite
+                # fallback to JSON-based favourite (ungrouped)
                 $refs = $this.Favourites[$favName]
                 $actions = @()
                 foreach ($ref in $refs) {
@@ -994,6 +959,88 @@ class PSUtilApp {
         $this.MainForm.Activate()
         $this.LoadData()
         if ($this.CurrentCollection) { $this.LoadCollectionScripts() }
+    }
+
+    [hashtable]ReadGroupedProfile([string]$profilePath) {
+        # Parse a profile file into an ordered dictionary of groupName -> [actions]
+        $groupedScripts = [ordered]@{}
+        if (!(Test-Path $profilePath)) { return $groupedScripts }
+        $lines = Get-Content $profilePath -ErrorAction SilentlyContinue
+        if (-not $lines) { return $groupedScripts }
+        $currentGroup = "Group #1"
+        foreach ($line in $lines) {
+            $trimmed = $line.Trim()
+            if ($trimmed -eq "") {
+                $currentGroup = "Group#$($groupedScripts.Count + 1)"
+                continue
+            }
+            elseif ($trimmed.StartsWith("#")) {
+                $currentGroup = $trimmed.TrimStart("#").Trim()
+                continue
+            }
+            else {
+                # Try to find the action by ID (line)
+                $action = $this.GetActionById($trimmed)
+                if ($action) {
+                    if (-not $groupedScripts.Contains($currentGroup)) {
+                        $groupedScripts[$currentGroup] = @()
+                    }
+                    $groupedScripts[$currentGroup] += $action
+                }
+            }
+        }
+        return $groupedScripts
+    }
+
+    [hashtable]GetActionById([string]$id) {
+        # Try to find an action by ID in all script files (assume ID is in Description or Command)
+        foreach ($scriptFile in $this.ScriptFiles) {
+            $scriptContent = $null
+            $currentScript = $PSCommandPath
+            if ($currentScript -and (Test-Path $currentScript)) {
+                $scriptDir = Split-Path $currentScript -Parent
+                $fullPath = Join-Path $scriptDir $scriptFile.Replace($this.Config.SourceInfo.SlashSeparator, $this.Config.SourceInfo.BackslashSeparator)
+                if ((Test-Path $fullPath)) {
+                    $scriptContent = Get-Content $fullPath -Raw
+                }
+            }
+            if (!$scriptContent) {
+                $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
+                try { $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content } catch { $scriptContent = $null }
+            }
+            if ($scriptContent) {
+                $parsed = $this.ParseScriptFile($scriptContent, $scriptFile)
+                foreach ($action in $parsed) {
+                    if ($action.Description -eq $id -or $action.Command -eq $id) { return $action }
+                }
+            }
+        }
+        return $null
+    }
+
+    [void]LoadGroupedActionsToListView([hashtable]$groupedScripts) {
+        # Display grouped actions in the ListView using ListView groups
+        $lv = $this.Controls.ScriptsListView
+        $lv.Items.Clear()
+        $lv.Groups.Clear()
+        $groupCount = $groupedScripts.Keys.Count
+        foreach ($groupName in $groupedScripts.Keys) {
+            $group = $null
+            if ($groupCount -gt 1) {
+                $group = New-Object System.Windows.Forms.ListViewGroup($groupName, $groupName)
+                $lv.Groups.Add($group) | Out-Null
+            }
+            foreach ($action in $groupedScripts[$groupName]) {
+                $item = New-Object System.Windows.Forms.ListViewItem($action.Description)
+                $item.SubItems.Add($action.Command) | Out-Null
+                $item.SubItems.Add($action.File) | Out-Null
+                $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
+                $item.Tag = $action
+                if ($group) { $item.Group = $group }
+                $lv.Items.Add($item) | Out-Null
+            }
+        }
+        $this.UpdateExecuteButtonText()
     }
 }
 
