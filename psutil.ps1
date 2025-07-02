@@ -8,20 +8,20 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 # Configuration - All constants and strings centralized for modularity
 $Global:Config = @{
-    ScriptFilesBlacklist = @("gui.ps1", "psutil.ps1", "taaest.ps1")
+    ScriptFilesBlacklist         = @("gui.ps1", "psutil.ps1", "taaest.ps1")
     # Repository settings
-    Owner                = "mrdotkg"
-    Repo                 = "dotfiles" 
-    Branch               = "main"
-    DbFile               = "db.ps1"
+    Owner                        = "mrdotkg"
+    Repo                         = "dotfiles" 
+    Branch                       = "main"
+    DbFile                       = "db.ps1"
     
     # Paths and directories
-    DataDir              = "$env:USERPROFILE\Documents\PSUtil Local Data"
-    SubDirs              = @("Favourites", "Logs", "Scripts") # <-- Fix: Use "Favourites" not "Favorites"
-    SSHConfigPath        = "$env:USERPROFILE\.ssh\config"
+    DataDir                      = "$env:USERPROFILE\Documents\PSUtil Local Data"
+    SubDirs                      = @("Favourites", "Logs", "Scripts") # <-- Fix: Use "Favourites" not "Favorites"
+    SSHConfigPath                = "$env:USERPROFILE\.ssh\config"
     
     # UI Settings
-    Window               = @{
+    Window                       = @{
         Title               = ""
         Width               = 600
         Height              = 700
@@ -33,7 +33,7 @@ $Global:Config = @{
     }
     
     # Panel dimensions
-    Panels               = @{
+    Panels                       = @{
         ToolbarHeight       = 35
         StatusBarHeight     = 25
         SidebarWidth        = 150
@@ -47,7 +47,7 @@ $Global:Config = @{
     }
     
     # Control dimensions and text
-    Controls             = @{
+    Controls                     = @{
         # Standard dimensions for consistency
         Dock               = 'Left'
         Width              = 120
@@ -72,7 +72,7 @@ $Global:Config = @{
     }
     
     # ListView columns
-    ListView             = @{
+    ListView                     = @{
         Columns = @(
             @{ Name = "Script"; Width = 500 }
             @{ Name = "Command"; Width = 100 }
@@ -82,19 +82,19 @@ $Global:Config = @{
     }
     
     # Script file extensions
-    ScriptExtensions     = @{
+    ScriptExtensions             = @{
         Remote = @('.ps1', '.sh', '.bash', '.py', '.rb', '.js', '.bat', '.cmd')
         Local  = @('*.ps1', '*.sh', '*.py', '*.rb', '*.js', '*.bat', '*.cmd')
     }
     
     # File extensions and patterns
-    FileExtensions       = @{
+    FileExtensions               = @{
         Text          = "*.txt"
         TextExtension = ".txt"
     }
     
     # Default values and text constants
-    Defaults             = @{
+    Defaults                     = @{
         CollectionDefault  = "All Commands"
         CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
         FallbackScript     = "db.ps1"
@@ -122,7 +122,7 @@ $Global:Config = @{
     }
     
     # Status messages
-    Messages             = @{
+    Messages                     = @{
         NoScriptsSelected  = "No scripts selected."
         ExecutionError     = "Execution error: "
         FatalError         = "Fatal error: "
@@ -148,7 +148,7 @@ $Global:Config = @{
     }
     
     # Status colors
-    Colors               = @{
+    Colors                       = @{
         Ready     = [System.Drawing.Color]::Black
         Running   = [System.Drawing.Color]::LightYellow
         Completed = [System.Drawing.Color]::LightGreen
@@ -159,7 +159,7 @@ $Global:Config = @{
     }
     
     # Regex patterns
-    Patterns             = @{
+    Patterns                     = @{
         SSHHost           = '^Host\s+(.+)$'
         SSHExclude        = '[*?]'
         InlineComments    = '^\s*#'
@@ -172,19 +172,19 @@ $Global:Config = @{
     }
     
     # API URLs
-    URLs                 = @{
+    URLs                         = @{
         GitHubAPI = "https://api.github.com/repos"
         GitHubRaw = "https://raw.githubusercontent.com"
     }
     
     # Registry paths
-    Registry             = @{
+    Registry                     = @{
         AccentColor      = "HKCU:\Software\Microsoft\Windows\DWM"
         AccentColorValue = "AccentColor"
     }
     
     # Source info constants
-    SourceInfo           = @{
+    SourceInfo                   = @{
         ErrorFetchingDir   = "Error fetching directory "
         DirectoryTypes     = @{
             File = "file"
@@ -194,6 +194,11 @@ $Global:Config = @{
         BackslashSeparator = "\"
         RefSeparator       = "/refs/heads/"
     }
+    SourceComboScriptFilesHeader = "Script Files--------------" # Header for script files in combo box
+    SourceComboFavouritesHeader  = "Favourites--------------" # Header for favourites in combo box
+    SourceComboAllActionsPrefix  = "All Actions"                # Use star emoji as all actions prefix
+    SourceComboFilePrefix        = "📄 "                        # Use document emoji as file prefix
+    SourceComboFavouritePrefix   = ""                        # Use gem emoji as favourite prefix
 }
 
 class PSUtilApp {
@@ -206,7 +211,10 @@ class PSUtilApp {
     [hashtable]$Favourites = @{} # name -> array of {File, LineNumber}
     [string]$FavouritesFile
 
+    [int]$PrevSourceComboIndex = 0  # Track previous valid selection
+
     PSUtilApp() {
+        Write-Host "[DEBUG] PSUtilApp Constructor"
         $this.Config = $Global:Config
         $this.Owner = $this.Config.Owner
         $this.Repo = $this.Config.Repo
@@ -240,8 +248,8 @@ class PSUtilApp {
     }
 
     [array]ReadFavourites([string]$favName) {
-        # Loads actions for a given favourite name from the favourites file
         Write-Host "[DEBUG] ReadFavourites $favName"
+        # Loads actions for a given favourite name from the favourites file
         if (-not $this.Favourites.ContainsKey($favName)) {
             Write-Warning "Favourite '$favName' not found."
             return @()
@@ -260,13 +268,14 @@ class PSUtilApp {
     }
 
     [void]FavouriteActions([string]$favName) {
-        # Loads favourite actions into the main ScriptsListView
         Write-Host "[DEBUG] FavouriteActions $favName"
+        # Loads favourite actions into the main ScriptsListView
         $actions = $this.ReadFavourites($favName)
         $this.LoadActionsToListView($actions)
     }
 
     [hashtable]GetActionByFileAndLine([string]$file, [int]$line) {
+        Write-Host "[DEBUG] GetActionByFileAndLine $file $line"
         # Helper: Loads the action from a file at a specific line number
         try {
             $content = $null
@@ -294,6 +303,7 @@ class PSUtilApp {
     }
 
     [void]Initialize() {
+        Write-Host "[DEBUG] Initialize"
         # Setup directories using config
         @($this.DataDir) + ($this.Config.SubDirs | ForEach-Object { "$($this.DataDir)\$_" }) | 
         ForEach-Object { if (!(Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null } }
@@ -312,7 +322,7 @@ class PSUtilApp {
         $this.ReadScripts()
     }
     [void]ReadFavourites() {
-        Write-Host "[DEBUG] ReadFavourites"
+        Write-Host "[DEBUG] ReadFavourites (no-arg)"
         if (Test-Path $this.FavouritesFile) {
             try {
                 $this.Favourites = Get-Content $this.FavouritesFile | ConvertFrom-Json
@@ -328,6 +338,7 @@ class PSUtilApp {
     }
 
     [void]ReadScripts() {
+        Write-Host "[DEBUG] ReadScripts"
         $this.ScriptFiles = @()
         try {
             $sourceInfo = $this.GetSourceInfo()
@@ -351,6 +362,7 @@ class PSUtilApp {
     }
     
     [void]LoadRemoteScriptFiles() {
+        Write-Host "[DEBUG] LoadRemoteScriptFiles"
         try {
             $this.ScriptFiles = $this.GetRemoteScriptFilesRecursive("")
         }
@@ -361,6 +373,7 @@ class PSUtilApp {
     }
     
     [array]GetRemoteScriptFilesRecursive([string]$path) {
+        Write-Host "[DEBUG] GetRemoteScriptFilesRecursive $path"
         $files = @()
         try {
             $url = if ($path) { "$($this.Config.URLs.GitHubAPI)/$($this.Owner)/$($this.Repo)/contents/$path" } 
@@ -381,6 +394,7 @@ class PSUtilApp {
     }
     
     [void]LoadLocalScriptFiles([string]$directory) {
+        Write-Host "[DEBUG] LoadLocalScriptFiles $directory"
         try {
             foreach ($ext in $this.Config.ScriptExtensions.Local) {
                 $files = Get-ChildItem -Path $directory -Filter $ext -File -Recurse -ErrorAction SilentlyContinue
@@ -398,6 +412,7 @@ class PSUtilApp {
     }
 
     [void]CreateInterface() {
+        Write-Host "[DEBUG] CreateInterface"
         $sourceInfo = $this.GetSourceInfo()
         $createdControls = @{}
         $app = $this
@@ -564,10 +579,12 @@ class PSUtilApp {
     }
     # Sidebar Event Handlers
     [void]OnMore() {
+        Write-Host "[DEBUG] OnMore"
         $this.Controls.Sidebar.Visible = !$this.Controls.Sidebar.Visible
     }
     
     [void]OnSelectAll() {
+        Write-host "[DEBUG] OnSelectAll"
         $checked = $this.Controls.SelectAllCheckBox.Checked
         $this.Controls.ScriptsListView.Items | ForEach-Object { $_.Checked = $checked }
         $this.UpdateExecuteButtonText()
@@ -577,20 +594,48 @@ class PSUtilApp {
         Write-Host "[DEBUG] OnSwitchSource"
         $srcCombo = $this.Controls.SourceCombo
         $sel = $srcCombo.SelectedItem
-        # Prevent selecting group headers
-        if ($sel -like "---*---") {
-            $srcCombo.SelectedIndex = 1
+        $idx = $srcCombo.SelectedIndex
+
+        # If a group header is selected, select the first item in that group instead and reopen dropdown
+        if ($sel -eq $this.Config.SourceComboScriptFilesHeader) {
+            for ($i = $idx + 1; $i -lt $srcCombo.Items.Count; $i++) {
+                $item = $srcCombo.Items[$i]
+                if ($item -ne $this.Config.SourceComboFavouritesHeader -and $item -ne $this.Config.SourceComboScriptFilesHeader) {
+                    if ($this.Config.SourceComboFilePrefix -eq "" -or $item.StartsWith($this.Config.SourceComboFilePrefix)) {
+                        $srcCombo.SelectedIndex = $i
+                        $srcCombo.DroppedDown = $true
+                        return
+                    }
+                }
+            }
             return
         }
-        if ($sel -eq "All Actions") {
+        elseif ($sel -eq $this.Config.SourceComboFavouritesHeader) {
+            for ($i = $idx + 1; $i -lt $srcCombo.Items.Count; $i++) {
+                $item = $srcCombo.Items[$i]
+                if ($item -ne $this.Config.SourceComboScriptFilesHeader -and $item -ne $this.Config.SourceComboFavouritesHeader) {
+                    if ($this.Config.SourceComboFavouritePrefix -eq "" -or $item.StartsWith($this.Config.SourceComboFavouritePrefix)) {
+                        $srcCombo.SelectedIndex = $i
+                        $srcCombo.DroppedDown = $true
+                        return
+                    }
+                }
+            }
+            return
+        }
+
+        # Only update previous index if not a header
+        $this.PrevSourceComboIndex = $idx
+
+        if ($sel -eq $this.Config.SourceComboAllActionsPrefix) {
             $this.ReadActions($this.ScriptFiles)
         }
-        elseif ($sel -like "File: *") {
-            $file = $sel.Substring(6)
+        elseif ($sel -like "$($this.Config.SourceComboFilePrefix)*") {
+            $file = $sel.Substring($this.Config.SourceComboFilePrefix.Length)
             $this.ReadActions(@($file))
         }
-        elseif ($sel -like "Favourite: *") {
-            $favName = $sel.Substring(11)
+        elseif ($sel -like "$($this.Config.SourceComboFavouritePrefix)*") {
+            $favName = $sel.Substring($this.Config.SourceComboFavouritePrefix.Length)
             # Try to load from Favourites directory first
             $favPath = Join-Path (Join-Path $this.DataDir "Favourites") "$favName.txt"
             if (Test-Path $favPath) {
@@ -626,6 +671,7 @@ class PSUtilApp {
         }
     }
     [void]ToggleListViewColumn($sender, $e, [int]$colIdx) {
+        Write-host "[DEBUG] ToggleListViewColumn $colIdx"
         $lv = $this.Controls.ScriptsListView
         if ($lv -and $lv.Columns -and $this.Config.ListView.Columns) {
             $columns = $lv.Columns
@@ -654,19 +700,19 @@ class PSUtilApp {
         # Populate SourceCombo: All Actions, per-file, Favourites
         $srcCombo = $this.Controls.SourceCombo
         $srcCombo.Items.Clear()
-        $srcCombo.Items.Add("All Actions") | Out-Null
-        $srcCombo.Items.Add("------------------------------") | Out-Null
+        $srcCombo.Items.Add($this.Config.SourceComboAllActionsPrefix) | Out-Null
+        # $srcCombo.Items.Add($this.Config.SourceComboScriptFilesHeader) | Out-Null
         foreach ($file in ($this.ScriptFiles | Sort-Object)) {
-            $srcCombo.Items.Add("$file") | Out-Null
+            $srcCombo.Items.Add("$($this.Config.SourceComboFilePrefix)$file") | Out-Null
         }
-        $srcCombo.Items.Add("------------------------------") | Out-Null
+        # $srcCombo.Items.Add($this.Config.SourceComboFavouritesHeader) | Out-Null
 
         # --- Add favourite files from Favourites directory ---
         $favouritesDir = Join-Path $this.DataDir "Favourites"
         if (Test-Path $favouritesDir) {
             $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
             foreach ($favFile in $favFiles) {
-                $srcCombo.Items.Add("Favourite: $($favFile.BaseName)") | Out-Null
+                $srcCombo.Items.Add("$($this.Config.SourceComboFavouritePrefix)$($favFile.BaseName)") | Out-Null
             }
         }
         # --- Add favourites from JSON (old behaviour) ---
@@ -674,6 +720,7 @@ class PSUtilApp {
             $srcCombo.Items.Add("$fav") | Out-Null
         }
         $srcCombo.SelectedIndex = 0 # "All Actions"
+        $this.PrevSourceComboIndex = 0 # Track initial valid selection
 
         # Set execution mode default
         if ($this.Controls.ExecuteModeCombo.Items.Count -gt 0) {
@@ -682,6 +729,7 @@ class PSUtilApp {
     }
 
     [array]ParseScriptFile([string]$content, [string]$fileName) {
+        Write-Host "[DEBUG] ParseScriptFile $fileName"
         $scripts = @()
         $lines = $content -split $this.Config.Patterns.NewlinePattern
         $currentScript = $null
@@ -731,6 +779,7 @@ class PSUtilApp {
     }
 
     [void]OnExecute() {
+        Write-Host "[DEBUG] OnExecute"
         if ($this.IsExecuting) { return }
         $checkedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }
         if (!$checkedItems) { [System.Windows.Forms.MessageBox]::Show($this.Config.Messages.NoScriptsSelected); return }
@@ -756,6 +805,7 @@ class PSUtilApp {
     }
 
     [hashtable]ExecuteScript([hashtable]$script) {
+        Write-Host "[DEBUG] ExecuteScript"
         $command = $script.Command
         $machine = $this.Machines | Where-Object { $_.Name -eq $this.CurrentMachine }
         
@@ -819,6 +869,7 @@ class PSUtilApp {
     }
 
     [void]OnSwitchUser() {
+        Write-Host "[DEBUG] OnSwitchUser"
         $selectedText = $this.Controls.ExecuteModeCombo.SelectedItem
         $this.ExecutionMode = if ($selectedText.Contains("(Current User)")) { $this.Config.Defaults.CurrentUserMode } 
         elseif ($selectedText -eq $this.Config.Defaults.AdminText) { $this.Config.Defaults.AdminMode } 
@@ -826,6 +877,7 @@ class PSUtilApp {
     }
 
     [void]OnSwitchMachine() {
+        Write-host "[DEBUG] OnSwitchMachine"
         $idx = $this.Controls.MachineCombo.SelectedIndex
         if ($idx -ge 0) { $this.CurrentMachine = $this.Machines[$idx].Name }
     }
@@ -859,6 +911,7 @@ class PSUtilApp {
     [void]LoadActionsToListView([array]$actions) {
         Write-Host "[DEBUG] LoadActionsToListView $($actions.Count)"
         $this.Controls.ScriptsListView.Items.Clear()
+        $this.Controls.ScriptsListView.Groups.Clear()
         foreach ($script in $actions) {
             $item = New-Object System.Windows.Forms.ListViewItem($script.Description)
             $item.SubItems.Add($script.Command) | Out-Null
@@ -870,6 +923,7 @@ class PSUtilApp {
         $this.UpdateExecuteButtonText()
     }
     [void]UpdateExecuteButtonText() {
+        Write-Host "[DEBUG] UpdateExecuteButtonText"
         $checkedCount = ($this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }).Count
         $this.Controls.ExecuteBtn.Text = $this.Config.Controls.ExecuteBtnTemplate -f $checkedCount
     }
@@ -940,6 +994,7 @@ class PSUtilApp {
     }
 
     [string]GetSourceInfo() {
+        Write-Host "[DEBUG] GetSourceInfo"
         $currentScript = $MyInvocation.ScriptName
         if (!$currentScript) { $currentScript = $PSCommandPath }
         
@@ -956,12 +1011,14 @@ class PSUtilApp {
     }
     
     [void]OnFormShown() { 
+        Write-Host "[DEBUG] OnFormShown"
         $this.MainForm.Activate()
         $this.LoadData()
         if ($this.CurrentCollection) { $this.LoadCollectionScripts() }
     }
 
     [hashtable]ReadGroupedProfile([string]$profilePath) {
+        Write-Host "[DEBUG] ReadGroupedProfile $profilePath"
         # Parse a profile file into an ordered dictionary of groupName -> [actions]
         $groupedScripts = [ordered]@{}
         if (!(Test-Path $profilePath)) { return $groupedScripts }
@@ -993,6 +1050,7 @@ class PSUtilApp {
     }
 
     [hashtable]GetActionById([string]$id) {
+        Write-Host "[DEBUG] GetActionById $id"
         # Try to find an action by ID in all script files (assume ID is in Description or Command)
         foreach ($scriptFile in $this.ScriptFiles) {
             $scriptContent = $null
@@ -1019,6 +1077,7 @@ class PSUtilApp {
     }
 
     [void]LoadGroupedActionsToListView([hashtable]$groupedScripts) {
+        Write-Host "[DEBUG] LoadGroupedActionsToListView"
         # Display grouped actions in the ListView using ListView groups
         $lv = $this.Controls.ScriptsListView
         $lv.Items.Clear()
