@@ -195,8 +195,8 @@ $Global:Config = @{
         RefSeparator       = "/refs/heads/"
     }
     SourceComboAllActionsPrefix = "All Tasks"                # Use star emoji as all actions prefix
-    SourceComboFilePrefix       = "📄 "                        # Use document emoji as file prefix
-    SourceComboFavouritePrefix  = ""                        # Use gem emoji as favourite prefix
+    SourceComboFilePrefix       = "📃 "                        # Use document emoji as file prefix
+    SourceComboFavouritePrefix  = "✨ "                        # Use gem emoji as favourite prefix
 }
 
 class PSUtilApp {
@@ -996,11 +996,11 @@ class PSUtilApp {
         if (!(Test-Path $profilePath)) { return $groupedScripts }
         $lines = Get-Content $profilePath -ErrorAction SilentlyContinue
         if (-not $lines) { return $groupedScripts }
-        $currentGroup = "Group #1"
+        $currentGroup = "Group 1"
         foreach ($line in $lines) {
             $trimmed = $line.Trim()
             if ($trimmed -eq "") {
-                $currentGroup = "Group#$($groupedScripts.Count + 1)"
+                $currentGroup = "Group $($groupedScripts.Count + 1)"
                 continue
             }
             elseif ($trimmed.StartsWith("#")) {
