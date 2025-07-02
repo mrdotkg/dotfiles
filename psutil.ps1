@@ -8,20 +8,20 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 # Configuration - All constants and strings centralized for modularity
 $Global:Config = @{
-    ScriptFilesBlacklist         = @("gui.ps1", "psutil.ps1", "taaest.ps1")
+    ScriptFilesBlacklist        = @("gui.ps1", "psutil.ps1", "taaest.ps1")
     # Repository settings
-    Owner                        = "mrdotkg"
-    Repo                         = "dotfiles" 
-    Branch                       = "main"
-    DbFile                       = "db.ps1"
+    Owner                       = "mrdotkg"
+    Repo                        = "dotfiles" 
+    Branch                      = "main"
+    DbFile                      = "db.ps1"
     
     # Paths and directories
-    DataDir                      = "$env:USERPROFILE\Documents\PSUtil Local Data"
-    SubDirs                      = @("Favourites", "Logs", "Scripts") # <-- Fix: Use "Favourites" not "Favorites"
-    SSHConfigPath                = "$env:USERPROFILE\.ssh\config"
+    DataDir                     = "$env:USERPROFILE\Documents\PSUtil Local Data"
+    SubDirs                     = @("Favourites", "Logs", "Scripts") # <-- Fix: Use "Favourites" not "Favorites"
+    SSHConfigPath               = "$env:USERPROFILE\.ssh\config"
     
     # UI Settings
-    Window                       = @{
+    Window                      = @{
         Title               = ""
         Width               = 600
         Height              = 700
@@ -33,7 +33,7 @@ $Global:Config = @{
     }
     
     # Panel dimensions
-    Panels                       = @{
+    Panels                      = @{
         ToolbarHeight       = 35
         StatusBarHeight     = 25
         SidebarWidth        = 150
@@ -47,7 +47,7 @@ $Global:Config = @{
     }
     
     # Control dimensions and text
-    Controls                     = @{
+    Controls                    = @{
         # Standard dimensions for consistency
         Dock               = 'Left'
         Width              = 120
@@ -72,9 +72,9 @@ $Global:Config = @{
     }
     
     # ListView columns
-    ListView                     = @{
+    ListView                    = @{
         Columns = @(
-            @{ Name = "Script"; Width = 500 }
+            @{ Name = "Task List"; Width = 500 }
             @{ Name = "Command"; Width = 100 }
             @{ Name = "File"; Width = 100 }
             @{ Name = "Status"; Width = 100 }
@@ -82,24 +82,24 @@ $Global:Config = @{
     }
     
     # Script file extensions
-    ScriptExtensions             = @{
+    ScriptExtensions            = @{
         Remote = @('.ps1', '.sh', '.bash', '.py', '.rb', '.js', '.bat', '.cmd')
         Local  = @('*.ps1', '*.sh', '*.py', '*.rb', '*.js', '*.bat', '*.cmd')
     }
     
     # File extensions and patterns
-    FileExtensions               = @{
+    FileExtensions              = @{
         Text          = "*.txt"
         TextExtension = ".txt"
     }
     
     # Default values and text constants
-    Defaults                     = @{
+    Defaults                    = @{
         CollectionDefault  = "All Commands"
         CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
         FallbackScript     = "db.ps1"
-        CurrentUserText    = "As $env:USERNAME (Active)"
-        AdminText          = "As Admin"
+        CurrentUserText    = "$env:USERNAME (Active)"
+        AdminText          = "Admin"
         OtherUserText      = "Other User..."
         ExecutionModes     = @("CurrentUser", "Admin")
         LocalhostName      = "localhost"
@@ -122,7 +122,7 @@ $Global:Config = @{
     }
     
     # Status messages
-    Messages                     = @{
+    Messages                    = @{
         NoScriptsSelected  = "No scripts selected."
         ExecutionError     = "Execution error: "
         FatalError         = "Fatal error: "
@@ -148,7 +148,7 @@ $Global:Config = @{
     }
     
     # Status colors
-    Colors                       = @{
+    Colors                      = @{
         Ready     = [System.Drawing.Color]::Black
         Running   = [System.Drawing.Color]::LightYellow
         Completed = [System.Drawing.Color]::LightGreen
@@ -159,7 +159,7 @@ $Global:Config = @{
     }
     
     # Regex patterns
-    Patterns                     = @{
+    Patterns                    = @{
         SSHHost           = '^Host\s+(.+)$'
         SSHExclude        = '[*?]'
         InlineComments    = '^\s*#'
@@ -172,19 +172,19 @@ $Global:Config = @{
     }
     
     # API URLs
-    URLs                         = @{
+    URLs                        = @{
         GitHubAPI = "https://api.github.com/repos"
         GitHubRaw = "https://raw.githubusercontent.com"
     }
     
     # Registry paths
-    Registry                     = @{
+    Registry                    = @{
         AccentColor      = "HKCU:\Software\Microsoft\Windows\DWM"
         AccentColorValue = "AccentColor"
     }
     
     # Source info constants
-    SourceInfo                   = @{
+    SourceInfo                  = @{
         ErrorFetchingDir   = "Error fetching directory "
         DirectoryTypes     = @{
             File = "file"
@@ -194,11 +194,9 @@ $Global:Config = @{
         BackslashSeparator = "\"
         RefSeparator       = "/refs/heads/"
     }
-    SourceComboScriptFilesHeader = "Script Files--------------" # Header for script files in combo box
-    SourceComboFavouritesHeader  = "Favourites--------------" # Header for favourites in combo box
-    SourceComboAllActionsPrefix  = "All Actions"                # Use star emoji as all actions prefix
-    SourceComboFilePrefix        = "📄 "                        # Use document emoji as file prefix
-    SourceComboFavouritePrefix   = ""                        # Use gem emoji as favourite prefix
+    SourceComboAllActionsPrefix = "All Tasks"                # Use star emoji as all actions prefix
+    SourceComboFilePrefix       = "📄 "                        # Use document emoji as file prefix
+    SourceComboFavouritePrefix  = ""                        # Use gem emoji as favourite prefix
 }
 
 class PSUtilApp {
@@ -452,13 +450,13 @@ class PSUtilApp {
             SpacerPanelRun     = @{ Type = 'Panel'; Order = 81.2; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             AddCommandBtn      = @{ Type = 'Button'; Order = 82; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelAdd     = @{ Type = 'Panel'; Order = 82.2; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            ExecuteModeLabel   = @{ Type = 'Label'; Order = 44.5; Layout = 'Sidebar'; Properties = @{ Text = "Run As:"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            ExecuteModeLabel   = @{ Type = 'Label'; Order = 44.5; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 45; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelExec    = @{ Type = 'Panel'; Order = 45.2; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            MachineLabel       = @{ Type = 'Label'; Order = 49.5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine:"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            MachineLabel       = @{ Type = 'Label'; Order = 49.5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             MachineCombo       = @{ Type = 'ComboBox'; Order = 50; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelMachine = @{ Type = 'Panel'; Order = 50.2; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            SourceLabel        = @{ Type = 'Label'; Order = 64.5; Layout = 'Sidebar'; Properties = @{ Text = "Source Actions:"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            SourceLabel        = @{ Type = 'Label'; Order = 64.5; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             SourceCombo        = @{ Type = 'ComboBox'; Order = 65; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2       = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
             
@@ -574,7 +572,7 @@ class PSUtilApp {
         $this.Controls.ExecuteModeCombo.Items.AddRange(@($this.Config.Defaults.CurrentUserText, $this.Config.Defaults.AdminText))
         try {
             $otherUsers = Get-LocalUser | Where-Object { $_.Name -ne $env:USERNAME -and $_.Enabled } | Select-Object -ExpandProperty Name
-            $otherUsers | ForEach-Object { $this.Controls.ExecuteModeCombo.Items.Add("As $_") | Out-Null }
+            $otherUsers | ForEach-Object { $this.Controls.ExecuteModeCombo.Items.Add("$_") | Out-Null }
         }
         catch {
             $this.Controls.ExecuteModeCombo.Items.Add($this.Config.Defaults.OtherUserText) | Out-Null
@@ -602,34 +600,6 @@ class PSUtilApp {
         $srcCombo = $this.Controls.SourceCombo
         $sel = $srcCombo.SelectedItem
         $idx = $srcCombo.SelectedIndex
-
-        # If a group header is selected, select the first item in that group instead and reopen dropdown
-        if ($sel -eq $this.Config.SourceComboScriptFilesHeader) {
-            for ($i = $idx + 1; $i -lt $srcCombo.Items.Count; $i++) {
-                $item = $srcCombo.Items[$i]
-                if ($item -ne $this.Config.SourceComboFavouritesHeader -and $item -ne $this.Config.SourceComboScriptFilesHeader) {
-                    if ($this.Config.SourceComboFilePrefix -eq "" -or $item.StartsWith($this.Config.SourceComboFilePrefix)) {
-                        $srcCombo.SelectedIndex = $i
-                        $srcCombo.DroppedDown = $true
-                        return
-                    }
-                }
-            }
-            return
-        }
-        elseif ($sel -eq $this.Config.SourceComboFavouritesHeader) {
-            for ($i = $idx + 1; $i -lt $srcCombo.Items.Count; $i++) {
-                $item = $srcCombo.Items[$i]
-                if ($item -ne $this.Config.SourceComboScriptFilesHeader -and $item -ne $this.Config.SourceComboFavouritesHeader) {
-                    if ($this.Config.SourceComboFavouritePrefix -eq "" -or $item.StartsWith($this.Config.SourceComboFavouritePrefix)) {
-                        $srcCombo.SelectedIndex = $i
-                        $srcCombo.DroppedDown = $true
-                        return
-                    }
-                }
-            }
-            return
-        }
 
         # Only update previous index if not a header
         $this.PrevSourceComboIndex = $idx
@@ -708,11 +678,6 @@ class PSUtilApp {
         $srcCombo = $this.Controls.SourceCombo
         $srcCombo.Items.Clear()
         $srcCombo.Items.Add($this.Config.SourceComboAllActionsPrefix) | Out-Null
-        # $srcCombo.Items.Add($this.Config.SourceComboScriptFilesHeader) | Out-Null
-        foreach ($file in ($this.ScriptFiles | Sort-Object)) {
-            $srcCombo.Items.Add("$($this.Config.SourceComboFilePrefix)$file") | Out-Null
-        }
-        # $srcCombo.Items.Add($this.Config.SourceComboFavouritesHeader) | Out-Null
 
         # --- Add favourite files from Favourites directory ---
         $favouritesDir = Join-Path $this.DataDir "Favourites"
@@ -722,12 +687,12 @@ class PSUtilApp {
                 $srcCombo.Items.Add("$($this.Config.SourceComboFavouritePrefix)$($favFile.BaseName)") | Out-Null
             }
         }
-        # --- Add favourites from JSON (old behaviour) ---
-        foreach ($fav in ($this.Favourites.Keys | Sort-Object)) {
-            $srcCombo.Items.Add("$fav") | Out-Null
+        
+        foreach ($file in ($this.ScriptFiles | Sort-Object)) {
+            $srcCombo.Items.Add("$($this.Config.SourceComboFilePrefix)$file") | Out-Null
         }
+
         $srcCombo.SelectedIndex = 0 # "All Actions"
-        $this.PrevSourceComboIndex = 0 # Track initial valid selection
 
         # Set execution mode default
         if ($this.Controls.ExecuteModeCombo.Items.Count -gt 0) {
