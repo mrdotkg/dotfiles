@@ -206,9 +206,6 @@ class PSUtilApp {
     [array]$SelectedScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser"; [bool]$IsSecondaryPanelVisible = $false; $MainForm; $StatusLabel; $StatusProgressBar;
 
-    [hashtable]$Favourites = @{} # name -> array of {File, LineNumber}
-    [string]$FavouritesFile
-
     [int]$PrevSourceComboIndex = 0  # Track previous valid selection
 
     PSUtilApp() {
@@ -219,85 +216,8 @@ class PSUtilApp {
         $this.Branch = $this.Config.Branch
         $this.DbFile = $this.Config.DbFile
         $this.DataDir = $this.Config.DataDir
-        $this.FavouritesFile = "$($this.DataDir)\favourites.json"
-        $this.LoadFavourites()
         $this.Initialize()
         $this.CreateInterface()
-    }
-
-    [void]LoadFavourites() {
-        Write-Host "[DEBUG] LoadFavourites"
-        if (Test-Path $this.FavouritesFile) {
-            try {
-                $this.Favourites = Get-Content $this.FavouritesFile | ConvertFrom-Json
-            }
-            catch {
-                $this.Favourites = @{} 
-            }
-        }
-        else {
-            $this.Favourites = @{
-            }
-        }
-    }
-    [void]SaveFavourites() {
-        Write-Host "[DEBUG] SaveFavourites"
-        $this.Favourites | ConvertTo-Json | Set-Content $this.FavouritesFile -Force
-    }
-
-    [array]ReadFavourites([string]$favName) {
-        Write-Host "[DEBUG] ReadFavourites $favName"
-        # Loads actions for a given favourite name from the favourites file
-        if (-not $this.Favourites.ContainsKey($favName)) {
-            Write-Warning "Favourite '$favName' not found."
-            return @()
-        }
-        $refs = $this.Favourites[$favName]
-        $actions = @()
-        foreach ($ref in $refs) {
-            $file = $ref.File
-            $line = $ref.LineNumber
-            # Try to get the action by file and line
-            $action = $this.GetActionByFileAndLine($file, $line)
-            if ($action) { $actions += $action }
-            else { Write-Warning "No action found for $file at line $line" }
-        }
-        return $actions
-    }
-
-    [void]FavouriteActions([string]$favName) {
-        Write-Host "[DEBUG] FavouriteActions $favName"
-        # Loads favourite actions into the main ScriptsListView
-        $actions = $this.ReadFavourites($favName)
-        $this.LoadActionsToListView($actions)
-    }
-
-    [hashtable]GetActionByFileAndLine([string]$file, [int]$line) {
-        Write-Host "[DEBUG] GetActionByFileAndLine $file $line"
-        # Helper: Loads the action from a file at a specific line number
-        try {
-            $content = $null
-            $currentScript = $PSCommandPath
-            if ($currentScript -and (Test-Path $currentScript)) {
-                $scriptDir = Split-Path $currentScript -Parent
-                $fullPath = Join-Path $scriptDir $file.Replace($this.Config.SourceInfo.SlashSeparator, $this.Config.SourceInfo.BackslashSeparator)
-                if ((Test-Path $fullPath)) {
-                    $content = Get-Content $fullPath -Raw
-                }
-            }
-            if (-not $content) {
-                $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$file"
-                $content = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
-            }
-            $actions = $this.ParseScriptFile($content, $file)
-            foreach ($action in $actions) {
-                if ($action.LineNumber -eq $line) { return $action }
-            }
-        }
-        catch {
-            Write-Warning "Failed to get action for $file at line ${line}: $_"
-        }
-        return $null
     }
 
     [void]Initialize() {
@@ -319,22 +239,6 @@ class PSUtilApp {
         
         $this.ReadScripts()
     }
-    [void]ReadFavourites() {
-        Write-Host "[DEBUG] ReadFavourites (no-arg)"
-        if (Test-Path $this.FavouritesFile) {
-            try {
-                $this.Favourites = Get-Content $this.FavouritesFile | ConvertFrom-Json
-            }
-            catch {
-                $this.Favourites = @{} 
-            }
-        }
-        else {
-            $this.Favourites = @{
-            }
-        }
-    }
-
     [void]ReadScripts() {
         Write-Host "[DEBUG] ReadScripts"
         $this.ScriptFiles = @()
@@ -628,22 +532,10 @@ class PSUtilApp {
                 }
             }
             else {
-                # fallback to JSON-based favourite (ungrouped)
-                $refs = $this.Favourites[$favName]
-                $actions = @()
-                foreach ($ref in $refs) {
-                    $file = $ref.File
-                    $line = $ref.LineNumber
-                    $actions += $this.GetActionByFileAndLine($file, $line)
-                }
-                if ($actions.Count -gt 0) {
-                    $this.LoadActionsToListView($actions)
-                }
-                else {
-                    [System.Windows.Forms.MessageBox]::Show("No matching actions found for this favourite.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-                    $this.Controls.ScriptsListView.Items.Clear()
-                    $this.UpdateExecuteButtonText()
-                }
+                # No fallback to JSON-based favourite
+                [System.Windows.Forms.MessageBox]::Show("No matching actions found for this favourite.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                $this.Controls.ScriptsListView.Items.Clear()
+                $this.UpdateExecuteButtonText()
             }
         }
     }
@@ -936,7 +828,13 @@ class PSUtilApp {
         $lst = New-Object System.Windows.Forms.ListBox
         $lst.Dock = 'Top'
         $lst.Height = 80
-        $lst.Items.AddRange(@($this.Favourites.Keys))
+        # List existing .txt favourites
+        $favouritesDir = Join-Path $this.DataDir "Favourites"
+        $existingFavs = @()
+        if (Test-Path $favouritesDir) {
+            $existingFavs = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" } | Select-Object -ExpandProperty BaseName
+        }
+        $lst.Items.AddRange($existingFavs)
         $panel.Controls.Add($lst)
         $btnSave = New-Object System.Windows.Forms.Button
         $btnSave.Text = "Save"
@@ -947,10 +845,10 @@ class PSUtilApp {
                 $refs = @()
                 foreach ($item in $selectedItems) {
                     $tag = $item.Tag
-                    $refs += @{ File = $tag.File; LineNumber = $tag.LineNumber }
+                    $refs += "$($tag.Description)"
                 }
-                $this.Favourites[$name] = $refs
-                $this.SaveFavourites()
+                $favPath = Join-Path (Join-Path $this.DataDir "Favourites") "$name.txt"
+                $refs | Set-Content $favPath -Force
                 $this.LoadData()
                 $this.HideSecondaryPanel()
             }.GetNewClosure())
