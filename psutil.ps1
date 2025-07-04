@@ -1,8 +1,7 @@
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
-# PowerShell GUI utility for executing scripts from GitHub repository
-# Features: PS1 script files with embedded metadata, Multiple execution modes, Multi-script collections support
+# PowerShell GUI utility for executing scripts
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
@@ -13,7 +12,6 @@ $Global:Config = @{
     Owner                       = "mrdotkg"
     Repo                        = "dotfiles" 
     Branch                      = "main"
-    DbFile                      = "db.ps1"
     
     # Paths and directories
     DataDir                     = "$env:USERPROFILE\Documents\PSUtil Local Data"
@@ -89,15 +87,13 @@ $Global:Config = @{
     
     # File extensions and patterns
     FileExtensions              = @{
-        Text          = "*.txt"
-        TextExtension = ".txt"
+        Text = "*.txt"
     }
     
     # Default values and text constants
     Defaults                    = @{
         CollectionDefault  = "All Commands"
         CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
-        FallbackScript     = "db.ps1"
         CurrentUserText    = "$env:USERNAME (Active)"
         AdminText          = "Admin"
         OtherUserText      = "Other User..."
@@ -112,7 +108,6 @@ $Global:Config = @{
         SSHCommandPrefix   = "ssh "
         SudoCommand        = "sudo "
         SudoUserCommand    = "sudo -u "
-        AsPrefix           = "As "
         CurrentUserMode    = "CurrentUser"
         AdminMode          = "Admin"
         PowerShellCommand  = "powershell"
@@ -123,6 +118,7 @@ $Global:Config = @{
     
     # Status messages
     Messages                    = @{
+        NoScriptFound      = "No script files found in the specified directory."
         NoScriptsSelected  = "No scripts selected."
         ExecutionError     = "Execution error: "
         FatalError         = "Fatal error: "
@@ -201,21 +197,18 @@ $Global:Config = @{
 
 class PSUtilApp {
     # Core properties
-    [string]$Owner; [string]$Repo; [string]$Branch; [string]$DbFile; [string]$DataDir
-    [hashtable]$Config; [hashtable]$Controls = @{}; [array]$Machines = @(); [array]$Collections = @(); [array]$ScriptFiles = @()
-    [array]$SelectedScriptFiles = @(); [string]$CurrentMachine; [string]$CurrentCollection; [bool]$IsExecuting
-    [string]$ExecutionMode = "CurrentUser"; [bool]$IsSecondaryPanelVisible = $false; $MainForm; $StatusLabel; $StatusProgressBar;
-
-    [int]$PrevSourceComboIndex = 0  # Track previous valid selection
+    [hashtable]$Config
+    [hashtable]$Controls = @{}
+    [hashtable]$Sources = @{}
+    [array]$Machines = @()
+    [array]$ScriptFiles = @()
+    [bool]$IsExecuting
+    [string]$ExecutionMode = "CurrentUser"
+    $MainForm;
 
     PSUtilApp() {
         Write-Host "[DEBUG] PSUtilApp Constructor"
         $this.Config = $Global:Config
-        $this.Owner = $this.Config.Owner
-        $this.Repo = $this.Config.Repo
-        $this.Branch = $this.Config.Branch
-        $this.DbFile = $this.Config.DbFile
-        $this.DataDir = $this.Config.DataDir
         $this.Initialize()
         $this.CreateInterface()
     }
@@ -223,12 +216,11 @@ class PSUtilApp {
     [void]Initialize() {
         Write-Host "[DEBUG] Initialize"
         # Setup directories using config
-        @($this.DataDir) + ($this.Config.SubDirs | ForEach-Object { "$($this.DataDir)\$_" }) | 
+        @($this.Config.DataDir) + ($this.Config.SubDirs | ForEach-Object { "$($this.Config.DataDir)\$_" }) | 
         ForEach-Object { if (!(Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null } }
         
         # Load machines
         $this.Machines = @(@{ Name = $env:COMPUTERNAME; DisplayName = "$($this.Config.Defaults.LocalMachinePrefix)$env:COMPUTERNAME$($this.Config.Defaults.LocalMachineText)"; Type = $this.Config.Defaults.LocalText.Trim() })
-        $this.CurrentMachine = $env:COMPUTERNAME
         if ((Test-Path $this.Config.SSHConfigPath)) {
             (Get-Content $this.Config.SSHConfigPath -ErrorAction SilentlyContinue) | ForEach-Object {
                 if ($_ -match $this.Config.Patterns.SSHHost -and $Matches[1] -notmatch $this.Config.Patterns.SSHExclude -and $Matches[1] -ne $this.Config.Defaults.LocalhostName) {
@@ -239,6 +231,7 @@ class PSUtilApp {
         
         $this.ReadScripts()
     }
+
     [void]ReadScripts() {
         Write-Host "[DEBUG] ReadScripts"
         $this.ScriptFiles = @()
@@ -254,7 +247,6 @@ class PSUtilApp {
         }
         catch {
             Write-Warning "$($this.Config.Messages.LoadError)$_"
-            $this.ScriptFiles = @($this.Config.Defaults.FallbackScript)
         }
         # Remove blacklisted files from $this.ScriptFiles
         if ($this.Config.ScriptFilesBlacklist) {
@@ -270,7 +262,6 @@ class PSUtilApp {
         }
         catch { 
             Write-Warning "$($this.Config.Messages.GitHubError)$_"
-            $this.ScriptFiles = @($this.Config.Defaults.FallbackScript)
         }
     }
     
@@ -278,8 +269,8 @@ class PSUtilApp {
         Write-Host "[DEBUG] GetRemoteScriptFilesRecursive $path"
         $files = @()
         try {
-            $url = if ($path) { "$($this.Config.URLs.GitHubAPI)/$($this.Owner)/$($this.Repo)/contents/$path" } 
-            else { "$($this.Config.URLs.GitHubAPI)/$($this.Owner)/$($this.Repo)/contents" }
+            $url = if ($path) { "$($this.Config.URLs.GitHubAPI)/$($this.Config.Owner)/$($this.Config.Repo)/contents/$path" } 
+            else { "$($this.Config.URLs.GitHubAPI)/$($this.Config.Owner)/$($this.Config.Repo)/contents" }
             $apiResponse = Invoke-WebRequest $url | ConvertFrom-Json
             foreach ($item in $apiResponse) {
                 if ($item.type -eq $this.Config.SourceInfo.DirectoryTypes.File -and $this.Config.ScriptExtensions.Remote -contains [System.IO.Path]::GetExtension($item.name)) {
@@ -305,11 +296,10 @@ class PSUtilApp {
                     if ($this.ScriptFiles -notcontains $relativePath) { $this.ScriptFiles += $relativePath }
                 }
             }
-            if ($this.ScriptFiles.Count -eq 0) { $this.ScriptFiles = @($this.Config.Defaults.FallbackScript) }
+            if ($this.ScriptFiles.Count -eq 0) { Write-Warning "$($this.Config.Messages.NoScriptFound)$_" }
         }
         catch {
             Write-Warning "$($this.Config.Messages.LocalError)$_"
-            $this.ScriptFiles = @($this.Config.Defaults.FallbackScript)
         }
     }
 
@@ -363,6 +353,10 @@ class PSUtilApp {
             SourceLabel        = @{ Type = 'Label'; Order = 64.5; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             SourceCombo        = @{ Type = 'ComboBox'; Order = 65; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2       = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
+
+            # StatusBar controls (Order 300+)
+            StatusLabel        = @{ Type = 'Label'; Order = 300; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 301; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
             
             # Primary content controls (Order 100+)
             ScriptsListView    = @{ Type = 'ListView'; Order = 100; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
@@ -431,9 +425,7 @@ class PSUtilApp {
         # Assign controls to class property
         $this.Controls = $createdControls
 
-        # Save references for status controls for easy access
-        $this.StatusLabel = $this.Controls.StatusLabel
-        $this.StatusProgressBar = $this.Controls.StatusProgressBar
+
 
         # Setup ListView columns using config
         foreach ($column in $this.Config.ListView.Columns) {
@@ -462,7 +454,6 @@ class PSUtilApp {
         $this.Controls.ExecuteBtn.Add_Click({ $app.OnExecute() })
         $this.Controls.SelectAllCheckBox.Add_CheckedChanged({ $app.OnSelectAll() })
         $this.Controls.ExecuteModeCombo.Add_SelectedIndexChanged({ $app.OnSwitchUser() })
-        $this.Controls.MachineCombo.Add_SelectedIndexChanged({ $app.OnSwitchMachine() })
         $this.Controls.SourceCombo.Add_SelectedIndexChanged({ $app.OnSwitchSource() })
         $this.Controls.FilterText.Add_TextChanged({ $app.OnFilter() })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
@@ -505,9 +496,6 @@ class PSUtilApp {
         $sel = $srcCombo.SelectedItem
         $idx = $srcCombo.SelectedIndex
 
-        # Only update previous index if not a header
-        $this.PrevSourceComboIndex = $idx
-
         if ($sel -eq $this.Config.SourceComboAllActionsPrefix) {
             $this.ReadActions($this.ScriptFiles)
         }
@@ -518,7 +506,7 @@ class PSUtilApp {
         elseif ($sel -like "$($this.Config.SourceComboFavouritePrefix)*") {
             $favName = $sel.Substring($this.Config.SourceComboFavouritePrefix.Length)
             # Try to load from Favourites directory first
-            $favPath = Join-Path (Join-Path $this.DataDir "Favourites") "$favName.txt"
+            $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$favName.txt"
             if (Test-Path $favPath) {
                 # --- GROUPED PROFILE SUPPORT ---
                 $grouped = $this.ReadGroupedProfile($favPath)
@@ -563,7 +551,6 @@ class PSUtilApp {
         $this.Machines | ForEach-Object { $this.Controls.MachineCombo.Items.Add($_.DisplayName) | Out-Null }
         if ($this.Machines.Count -gt 0) {
             $this.Controls.MachineCombo.SelectedIndex = 0
-            $this.CurrentMachine = $this.Machines[0].Name
         }
 
         # Populate SourceCombo: All Actions, per-file, Favourites
@@ -572,7 +559,7 @@ class PSUtilApp {
         $srcCombo.Items.Add($this.Config.SourceComboAllActionsPrefix) | Out-Null
 
         # --- Add favourite files from Favourites directory ---
-        $favouritesDir = Join-Path $this.DataDir "Favourites"
+        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
         if (Test-Path $favouritesDir) {
             $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
             foreach ($favFile in $favFiles) {
@@ -669,15 +656,11 @@ class PSUtilApp {
     }
 
     [hashtable]ExecuteScript([hashtable]$script) {
-        Write-Host "[DEBUG] ExecuteScript"
-        $command = $script.Command
-        $machine = $this.Machines | Where-Object { $_.Name -eq $this.CurrentMachine }
-        
+        Write-Host "[DEBUG] ExecuteScript"        
         try {
             $result = ""
-            # Assign the current machine based on $this.CurrentMachine
-            $machine = $this.Machines | Where-Object { $_.Name -eq $this.CurrentMachine }
-            # Assign file and line from the script hashtable if present
+            $machine = $this.Machines[$this.Controls.MachineCombo.SelectedIndex]
+            $command = $script.Command
             $file = $script.File
             $line = $script.LineNumber
             # You may also want to retrieve the command at the specified file and line
@@ -691,7 +674,7 @@ class PSUtilApp {
             if ($machine.Type -eq "SSH") {
                 $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$command'"
                 if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) { $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$($this.Config.Defaults.SudoCommand)$command'" }
-                elseif ($this.ExecutionMode.StartsWith($this.Config.Defaults.AsPrefix) -and $this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
+                elseif ($this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
                     $targetUser = $this.ExecutionMode.Substring(3)
                     $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$($this.Config.Defaults.SudoUserCommand)$targetUser $command'"
                 }
@@ -703,7 +686,7 @@ class PSUtilApp {
                     Start-Process $this.Config.Defaults.PowerShellCommand -Verb $this.Config.Defaults.RunAsVerb -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
                     $result = $this.Config.Messages.ExecuteAsAdmin
                 }
-                elseif ($this.ExecutionMode.StartsWith($this.Config.Defaults.AsPrefix) -and $this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
+                elseif ($this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
                     $targetUser = $this.ExecutionMode.Substring(3)
                     $cred = Get-Credential -UserName $targetUser -Message "$($this.Config.Messages.UserPasswordPrompt)$targetUser"
                     if ($cred) {
@@ -740,12 +723,6 @@ class PSUtilApp {
         else { $selectedText }
     }
 
-    [void]OnSwitchMachine() {
-        Write-host "[DEBUG] OnSwitchMachine"
-        $idx = $this.Controls.MachineCombo.SelectedIndex
-        if ($idx -ge 0) { $this.CurrentMachine = $this.Machines[$idx].Name }
-    }
-
     [void]ReadActions([array]$scriptFiles) {
         Write-Host "[DEBUG] ReadActions $($scriptFiles -join ',')"
         $actions = @()
@@ -761,7 +738,7 @@ class PSUtilApp {
                     }
                 }
                 if (!$scriptContent) {
-                    $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
+                    $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Config.Owner)/$($this.Config.Repo)/refs/heads/$($this.Config.Branch)/$scriptFile"
                     $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
                 }
                 $parsedScripts = $this.ParseScriptFile($scriptContent, $scriptFile)
@@ -786,12 +763,12 @@ class PSUtilApp {
         }
         $this.UpdateExecuteButtonText()
     }
+
     [void]UpdateExecuteButtonText() {
         Write-Host "[DEBUG] UpdateExecuteButtonText"
         $checkedCount = ($this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }).Count
         $this.Controls.ExecuteBtn.Text = $this.Config.Controls.ExecuteBtnTemplate -f $checkedCount
     }
-
 
     [void]OnFilter() {
         Write-Host "[DEBUG] OnFilter"
@@ -829,7 +806,7 @@ class PSUtilApp {
         $lst.Dock = 'Top'
         $lst.Height = 80
         # List existing .txt favourites
-        $favouritesDir = Join-Path $this.DataDir "Favourites"
+        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
         $existingFavs = @()
         if (Test-Path $favouritesDir) {
             $existingFavs = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" } | Select-Object -ExpandProperty BaseName
@@ -847,7 +824,7 @@ class PSUtilApp {
                     $tag = $item.Tag
                     $refs += "$($tag.Description)"
                 }
-                $favPath = Join-Path (Join-Path $this.DataDir "Favourites") "$name.txt"
+                $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$name.txt"
                 $refs | Set-Content $favPath -Force
                 $this.LoadData()
                 $this.HideSecondaryPanel()
@@ -869,14 +846,14 @@ class PSUtilApp {
         if (!$currentScript) { $currentScript = $PSCommandPath }
         
         if ($currentScript -match $this.Config.Patterns.HTTPUrl) {
-            return "$($this.Owner.ToUpper())/$($this.Repo.ToUpper())$($this.Config.Defaults.GitHubText)"
+            return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())$($this.Config.Defaults.GitHubText)"
         }
         elseif ($currentScript -and (Test-Path $currentScript)) {
             $scriptDir = Split-Path $currentScript -Parent
             return "$scriptDir$($this.Config.Defaults.LocalText)"
         }
         else {
-            return "$($this.Owner.ToUpper())/$($this.Repo.ToUpper())$($this.Config.Defaults.RemoteText)"
+            return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())$($this.Config.Defaults.RemoteText)"
         }
     }
     
@@ -884,7 +861,6 @@ class PSUtilApp {
         Write-Host "[DEBUG] OnFormShown"
         $this.MainForm.Activate()
         $this.LoadData()
-        if ($this.CurrentCollection) { $this.LoadCollectionScripts() }
     }
 
     [hashtable]ReadGroupedProfile([string]$profilePath) {
@@ -933,7 +909,7 @@ class PSUtilApp {
                 }
             }
             if (!$scriptContent) {
-                $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Owner)/$($this.Repo)/refs/heads/$($this.Branch)/$scriptFile"
+                $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Config.Owner)/$($this.Config.Repo)/refs/heads/$($this.Config.Branch)/$scriptFile"
                 try { $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content } catch { $scriptContent = $null }
             }
             if ($scriptContent) {
@@ -970,22 +946,6 @@ class PSUtilApp {
             }
         }
         $this.UpdateExecuteButtonText()
-    }
-}
-
-function ReadFavouritesFromFile {
-    param([string]$Path)
-    if (Test-Path $Path) {
-        $ProfileLines = Get-Content -Path $Path -ErrorAction SilentlyContinue
-        if (-not $ProfileLines) {
-            Write-Warning "Selected profile '$Path' is empty or does not exist."
-            return
-        }
-        # ...rest of your logic...
-    }
-    else {
-        Write-Warning "Selected file '$Path' does not exist."
-        return
     }
 }
 
