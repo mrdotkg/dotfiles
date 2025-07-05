@@ -5,279 +5,305 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# Configuration - All constants and strings centralized for modularity
+# Minimal configuration for PSUtilApp
 $Global:Config = @{
-    ScriptFilesBlacklist        = @("gui.ps1", "psutil.ps1", "taaest.ps1")
-    # Repository settings
-    Owner                       = "mrdotkg"
-    Repo                        = "dotfiles" 
-    Branch                      = "main"
-    
-    # Paths and directories
+    ScriptFilesBlacklist        = @('gui.ps1', 'psutil.ps1', 'taaest.ps1')
     DataDir                     = "$env:USERPROFILE\Documents\PSUtil Local Data"
-    SubDirs                     = @("Favourites", "Logs", "Scripts") # <-- Fix: Use "Favourites" not "Favorites"
+    SubDirs                     = @('Favourites', 'Logs', 'Scripts')
     SSHConfigPath               = "$env:USERPROFILE\.ssh\config"
-    
-    # UI Settings
-    Window                      = @{
-        Title               = ""
-        Width               = 600
-        Height              = 700
-        BackgroundColor     = [System.Drawing.Color]::FromArgb(241, 243, 249)
-        AccentColorFallback = [System.Drawing.Color]::FromArgb(44, 151, 222)
-        Position            = "CenterScreen"
-        Padding             = '5,5,5,5'
-        AlwaysOnTop         = $true
-    }
-    
-    # Panel dimensions
-    Panels                      = @{
-        ToolbarHeight       = 35
-        StatusBarHeight     = 25
-        SidebarWidth        = 150
-        SecondaryPanelWidth = 300
-        SplitterWidth       = 3
-        ContentPadding      = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for content area
-        ToolbarPadding      = '0, 5, 0, 5' # Left, Top, Right, Bottom padding for toolbar
-        StatusPadding       = '0, 0, 0, 0' # Left, Top, Right, Bottom padding for status bar
-        SidebarPadding      = '5, 0, 0, 0' # Left, Top, Right, Bottom padding for sidebar
-        SecondaryPadding    = '0, 2, 0, 0' # Left, Top, Right, Bottom padding for secondary panel
-    }
-    
-    # Control dimensions and text
-    Controls                    = @{
-        # Standard dimensions for consistency
-        Dock               = 'Left'
-        Width              = 120
-        Height             = 25
-        Padding            = '0, 0, 0, 0' # Left, Top, Right, Bottom padding
-        BackColor          = [System.Drawing.Color]::White # Default control background color    
-        ForeColor          = [System.Drawing.Color]::Black # Default control foreground color
-        # Font settings to control ComboBox height
-        FontName           = "Segoe UI"
-        FontSize           = 10.0
-        
-        # Control text
-        SelectAllText      = "Check All"
-        ExecuteBtnText     = "▶ Run 0"
-        ExecuteBtnTemplate = "▶ Run {0}"
-        FilterPlaceholder  = "Filter..."
-        
-        # Sidebar button texts
-        CopyCommandText    = "Copy"
-        RunLaterText       = "Schedule Later"
-        AddCommandText     = "Save To Collection"
-    }
-    
-    # ListView columns
-    ListView                    = @{
-        Columns = @(
-            @{ Name = "Task List"; Width = 400 }
-            @{ Name = "Command"; Width = 100 }
-            @{ Name = "File"; Width = 100 }
-            @{ Name = "Status"; Width = 100 }
-        )
-    }
-    
-    # Script file extensions
+    SourceComboAllActionsPrefix = 'All Tasks'
+    SourceComboFilePrefix       = '📃 '
+    SourceComboFavouritePrefix  = '✨ '
     ScriptExtensions            = @{
-        Remote = @('.ps1', '.sh', '.bash', '.py', '.rb', '.js', '.bat', '.cmd')
-        Local  = @('*.ps1', '*.sh', '*.py', '*.rb', '*.js', '*.bat', '*.cmd')
+        Local  = @('*.ps1')
+        Remote = @('.ps1')
     }
-    
-    # File extensions and patterns
-    FileExtensions              = @{
-        Text = "*.txt"
+    SourceInfo                  = @{
+        BackslashSeparator = '\'
+        SlashSeparator     = '/'
+        DirectoryTypes     = @{ File = 'file'; Dir = 'dir' }
+        ErrorFetchingDir   = 'Error fetching directory: '
     }
-    
-    # Default values and text constants
-    Defaults                    = @{
-        CollectionDefault  = "All Commands"
-        CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
-        CurrentUserText    = "$env:USERNAME (Logged In)"
-        AdminText          = "Administrator"
-        OtherUserText      = "Other User..."
-        ExecutionModes     = @("CurrentUser", "Admin")
-        LocalhostName      = "localhost"
-        LocalMachinePrefix = "🖥️ "
-        LocalMachineText   = " (This PC)"
-        SSHCommandPrefix   = "ssh "
-        SudoCommand        = "sudo "
-        SudoUserCommand    = "sudo -u "
-        CurrentUserMode    = "CurrentUser"
-        AdminMode          = "Admin"
-        PowerShellCommand  = "powershell"
-        CommandArgument    = "-Command"
-        RunAsVerb          = "RunAs"
-        WaitParameter      = "-Wait"
-    }
-    
-    # Status messages
     Messages                    = @{
-        NoScriptFound      = "No script files found in the specified directory."
-        NoScriptsSelected  = "No scripts selected."
-        ExecutionError     = "Execution error: "
-        FatalError         = "Fatal error: "
-        FatalErrorTitle    = "Fatal Error"
-        StackTrace         = "Stack trace: "
-        InitError          = "Error during PSUtilApp initialization: "
-        LoadError          = "Error loading script files: "
-        GitHubError        = "Could not fetch script files from GitHub: "
-        LocalError         = "Error scanning local directory for script files: "
-        CollectionError    = "Failed to load collection scripts: "
-        ScriptFileError    = "Failed to load script file: "
-        ExecuteAsAdmin     = "Executed as Administrator"
-        ExecuteAsUser      = "Executed as "
-        CancelledByUser    = "Cancelled by user"
-        CredentialsPrompt  = "Enter credentials for script execution"
-        UserPasswordPrompt = "Enter password for "
-        Running            = "Running..."
-        Ready              = "Ready"
-        Completed          = "Completed"
-        Failed             = "Failed"
-        ExecuteFileDesc    = "Execute "
-        LoadScriptError    = "Failed to load script file: "
+        NoScriptFound      = 'No script files found.'
+        GitHubError        = 'Error loading from GitHub: '
+        LoadError          = 'Error loading scripts: '
+        Ready              = 'Ready'
+        Running            = 'Running...'
+        Completed          = 'Completed'
+        Failed             = 'Failed'
+        NoScriptsSelected  = 'Please select at least one task to execute.'
+        ExecutionError     = 'Execution error: '
+        ExecuteFileDesc    = 'Run entire file: '
+        ExecuteAsAdmin     = 'Executed as Administrator.'
+        ExecuteAsUser      = 'Executed as user: '
+        UserPasswordPrompt = 'Enter password for user: '
+        CredentialsPrompt  = 'Enter credentials:'
+        CancelledByUser    = 'Cancelled by user.'
+        FatalError         = 'Fatal error: '
+        FatalErrorTitle    = 'Fatal Error'
+        StackTrace         = 'Stack trace: '
     }
-    
-    # Status colors
     Colors                      = @{
-        Ready     = [System.Drawing.Color]::Black
+        White     = [System.Drawing.Color]::White
         Running   = [System.Drawing.Color]::LightYellow
         Completed = [System.Drawing.Color]::LightGreen
         Failed    = [System.Drawing.Color]::LightCoral
-        Filtered  = [System.Drawing.Color]::LightGray
         Text      = [System.Drawing.Color]::Black
-        White     = [System.Drawing.Color]::White
+        Filtered  = [System.Drawing.Color]::Gray
     }
-    
-    # Regex patterns
+    Window                      = @{
+        Title           = 'PSUtil Script Runner'
+        Width           = 1100
+        Height          = 700
+        Padding         = '10,10,10,10'
+        Position        = 'CenterScreen'
+        BackgroundColor = [System.Drawing.Color]::WhiteSmoke
+    }
+    Panels                      = @{
+        ToolbarHeight       = 38
+        ToolbarPadding      = '2,2,2,2'
+        StatusBarHeight     = 28
+        StatusPadding       = '2,2,2,2'
+        SidebarWidth        = 220
+        SidebarPadding      = '8,8,8,8'
+        SecondaryPanelWidth = 320
+        SecondaryPadding    = '8,8,8,8'
+        SplitterWidth       = 6
+        ContentPadding      = '8,8,8,8'
+    }
+    Controls                    = @{
+        FontName           = 'Segoe UI'
+        FontSize           = 10
+        Dock               = 'None'
+        Width              = 120
+        Height             = 28
+        Padding            = '2,2,2,2'
+        BackColor          = [System.Drawing.Color]::White
+        ForeColor          = [System.Drawing.Color]::Black
+        SelectAllText      = 'Select All'
+        FilterPlaceholder  = 'Filter tasks...'
+        ExecuteBtnText     = 'Run Selected'
+        CopyCommandText    = 'Copy Command'
+        RunLaterText       = 'Run Later'
+        AddCommandText     = 'Add Command'
+        ExecuteBtnTemplate = 'Run Selected ({0})'
+    }
+    ListView                    = @{
+        Columns = @(
+            @{ Name = 'Task'; Width = 320 },
+            @{ Name = 'Command'; Width = 320 },
+            @{ Name = 'File'; Width = 120 },
+            @{ Name = 'Status'; Width = 90 }
+        )
+    }
     Patterns                    = @{
-        SSHHost           = '^Host\s+(.+)$'
-        SSHExclude        = '[*?]'
-        InlineComments    = '^\s*#'
-        MultiLineComments = '<#([\s\S]*?)#>'
-        CommentLine       = '^#'
-        HTTPUrl           = '^https?://'
-        CommentPrefix     = '#'
-        WhitespacePattern = '\s+'
-        NewlinePattern    = "`n"
+        NewlinePattern = "`r?`n"
+        HTTPUrl        = '^https?://'
     }
-    
-    # API URLs
+    Defaults                    = @{
+        SSHCommandPrefix  = 'ssh '
+        SudoCommand       = 'sudo '
+        SudoUserCommand   = 'sudo -u '
+        PowerShellCommand = 'powershell.exe'
+        RunAsVerb         = 'runas'
+        CommandArgument   = '-Command'
+        WaitParameter     = '-Wait'
+        AdminMode         = 'Admin'
+        AdminText         = 'Administrator'
+        CurrentUserMode   = 'CurrentUser'
+        OtherUserText     = 'Other User'
+        RemoteText        = ' (Remote)'
+    }
     URLs                        = @{
-        GitHubAPI = "https://api.github.com/repos"
-        GitHubRaw = "https://raw.githubusercontent.com"
+        GitHubAPI = 'https://api.github.com/repos'
+        GitHubRaw = 'https://raw.githubusercontent.com'
     }
-    
-    # Registry paths
-    Registry                    = @{
-        AccentColor      = "HKCU:\Software\Microsoft\Windows\DWM"
-        AccentColorValue = "AccentColor"
+    Owner                       = 'your-github-username'
+    Repo                        = 'your-repo-name'
+    Branch                      = 'main'
+}
+
+class PSUtilTaskSource {
+    [string]$Name
+    [string]$Type
+    PSUtilTaskSource([string]$name, [string]$type) {
+        $this.Name = $name
+        $this.Type = $type
     }
-    
-    # Source info constants
-    SourceInfo                  = @{
-        ErrorFetchingDir   = "Error fetching directory "
-        DirectoryTypes     = @{
-            File = "file"
-            Dir  = "dir"
+    [array]GetTasks() {
+        throw [System.NotImplementedException]::new('GetTasks must be implemented by subclasses')
+    }
+}
+
+# AllTasksSource: aggregates all ScriptFile tasks
+class AllTasksSource : PSUtilTaskSource {
+    [PSUtilApp]$App
+    AllTasksSource([PSUtilApp]$app) : base($app.Config.SourceComboAllActionsPrefix, "AllTasks") {
+        $this.App = $app
+    }
+    [array]GetTasks() {
+        $allTasks = @()
+        foreach ($src in $this.App.Sources | Where-Object { $_.Type -eq "ScriptFile" }) {
+            if ($src -is [PSUtilTaskSource]) {
+                $allTasks += $src.GetTasks()
+            }
         }
-        SlashSeparator     = "/"
-        BackslashSeparator = "\"
-        RefSeparator       = "/refs/heads/"
+        return $allTasks
     }
-    SourceComboAllActionsPrefix = "All Tasks"                # Use star emoji as all actions prefix
-    SourceComboFilePrefix       = "📃 "                        # Use document emoji as file prefix
-    SourceComboFavouritePrefix  = "✨ "                        # Use gem emoji as favourite prefix
+}
+
+# FavouriteSource: represents a favourite file
+class FavouriteSource : PSUtilTaskSource {
+    [PSUtilApp]$App
+    [string]$FavouriteName
+    FavouriteSource([PSUtilApp]$app, [string]$favName) : base($favName, "Favourite") {
+        $this.App = $app
+        $this.FavouriteName = $favName
+    }
+    [array]GetTasks() {
+        $favPath = Join-Path (Join-Path $this.App.Config.DataDir "Favourites") ("$($this.FavouriteName).txt")
+        if (Test-Path $favPath) {
+            $grouped = $this.App.ReadGroupedProfile($favPath)
+            $tasks = @()
+            foreach ($group in $grouped.Keys) {
+                $tasks += $grouped[$group]
+            }
+            return $tasks
+        }
+        return @()
+    }
+}
+
+class PSUtilTask {
+    [string]$Description
+    [string]$Command
+    [string]$File
+    [int]$LineNumber
+    PSUtilTask([string]$desc, [string]$cmd, [string]$file, [int]$line) {
+        $this.Description = $desc
+        $this.Command = $cmd
+        $this.File = $file
+        $this.LineNumber = $line
+    }
+}
+
+
+# LocalScriptFileSource: represents a single script file as a source
+class LocalScriptFileSource : PSUtilTaskSource {
+    [PSUtilApp]$App
+    [string]$FilePath
+    [string]$RelativePath
+    LocalScriptFileSource([PSUtilApp]$app, [string]$filePath, [string]$relativePath) : base($relativePath, "ScriptFile") {
+        $this.App = $app
+        $this.FilePath = $filePath
+        $this.RelativePath = $relativePath
+    }
+    [array]GetTasks() {
+        $tasks = @()
+        $config = $this.App.Config
+        if (Test-Path $this.FilePath) {
+            $content = Get-Content $this.FilePath -Raw
+            $parsed = $this.App.ParseScriptFile($content, $this.RelativePath)
+            foreach ($t in $parsed) {
+                $tasks += [PSUtilTask]::new($t.Description, $t.Command, $t.File, $t.LineNumber)
+            }
+        }
+        return $tasks
+    }
 }
 
 class PSUtilApp {
-    # Core properties
     [hashtable]$Config
     [hashtable]$Controls = @{}
     [array]$Machines = @()
-    [array]$Sources = @()
-    [array]$Users = @() # New member variable for user types
+    [array]$Sources = @() # List of PSUtilTaskSource
+    [array]$Users = @()
     [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser"
     $MainForm;
+    [hashtable]$Plugins = @{}
+    [hashtable]$Theme = @{}
+    [hashtable]$I18N = @{}
+    [hashtable]$State = @{}
+
+    # Registry for discoverable sources
+    static [hashtable]$SourceRegistry = @{}
+
+    static [void]RegisterSourceType([string]$type, [scriptblock]$factory) {
+        [PSUtilApp]::SourceRegistry[$type] = $factory
+    }
+
+    [void]LoadSources() {
+        $this.Sources = @()
+        # Add AllTasksSource
+        $this.Sources += [AllTasksSource]::new($this)
+        # Add FavouriteSource for each favourite file
+        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
+        if (Test-Path $favouritesDir) {
+            $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
+            foreach ($favFile in $favFiles) {
+                $this.Sources += [FavouriteSource]::new($this, $favFile.BaseName)
+            }
+        }
+        # Add ScriptFile sources from registry
+        foreach ($type in [PSUtilApp]::SourceRegistry.Keys) {
+            $factory = [PSUtilApp]::SourceRegistry[$type]
+            $result = & $factory $this
+            if ($result) {
+                foreach ($src in $result) {
+                    $this.Sources += $src
+                }
+            }
+        }
+        # Debug output for loaded sources
+        Write-Host ("[DEBUG] Sources after LoadSources: " + ($this.Sources | ForEach-Object { "[Type=$($_.GetType().Name), Name=$($_.Name)]" } | Out-String))
+    }
 
     PSUtilApp() {
         Write-Host "[DEBUG] PSUtilApp Constructor"
         $this.Config = $Global:Config
         $this.Initialize()
-        $this.CreateInterface()
+        $this.InitControls()
     }
 
     [void]Initialize() {
         Write-Host "[DEBUG] Initialize"
-        # Setup directories using config
-        @($this.Config.DataDir) + ($this.Config.SubDirs | ForEach-Object { "$($this.Config.DataDir)\$_" }) | 
-        ForEach-Object { if (!(Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null } }
+        $this.InitDirectories()
+        $this.InitUsers()
+        $this.InitMachines()
+        $this.LoadSources()
+    }
 
-        # Initialize Users array (Logged In, Administrator)
+    [void]InitDirectories() {
+        # Setup directories using config
+        $dirs = @($this.Config.DataDir) + ($this.Config.SubDirs | ForEach-Object { "$($this.Config.DataDir)\$_" })
+        foreach ($dir in $dirs) {
+            if (!(Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        }
+    }
+
+    [void]InitUsers() {
+        # Minimal user setup
         $this.Users = @(
             @{ Name = $env:USERNAME; DisplayName = "$env:USERNAME (Logged In)"; Type = "LoggedIn" },
             @{ Name = "Administrator"; DisplayName = "Administrator"; Type = "Administrator" }
         )
+    }
 
-        # Load machines
-        $this.Machines = @(@{ Name = $env:COMPUTERNAME; DisplayName = "$($this.Config.Defaults.LocalMachinePrefix)$env:COMPUTERNAME$($this.Config.Defaults.LocalMachineText)"; Type = $this.Config.Defaults.LocalMachineText.Trim() })
+    [void]InitMachines() {
+        # Minimal machine setup
+        $this.Machines = @(@{ Name = $env:COMPUTERNAME; DisplayName = $env:COMPUTERNAME; Type = "Local" })
         if ((Test-Path $this.Config.SSHConfigPath)) {
             (Get-Content $this.Config.SSHConfigPath -ErrorAction SilentlyContinue) | ForEach-Object {
-                if ($_ -match $this.Config.Patterns.SSHHost -and $Matches[1] -notmatch $this.Config.Patterns.SSHExclude -and $Matches[1] -ne $this.Config.Defaults.LocalhostName) {
-                    $this.Machines += @{ Name = $Matches[1]; DisplayName = "$($this.Config.Defaults.LocalMachinePrefix)$($Matches[1])"; Type = "SSH" }
+                if ($_ -match '^Host\s+(.+)$' -and $Matches[1] -notmatch '[*?]' -and $Matches[1] -ne "localhost") {
+                    $this.Machines += @{ Name = $Matches[1]; DisplayName = $Matches[1]; Type = "SSH" }
                 }
             }
-        }
-
-        # --- Combine all sources into one variable and initialize it ---
-        $this.Sources = @()
-        $this.Sources += @{ Type = "AllActions"; Name = $this.Config.SourceComboAllActionsPrefix }
-        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
-        if (Test-Path $favouritesDir) {
-            $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
-            foreach ($favFile in $favFiles) {
-                $this.Sources += @{ Type = "Favourite"; Name = $favFile.BaseName }
-            }
-        }
-
-        # Populate ScriptFile sources directly into Sources
-        $scriptFiles = @()
-        try {
-            $sourceInfo = $this.GetSourceInfo()
-            if ($sourceInfo.Contains("(Local)")) {
-                $scriptDir = $sourceInfo.Replace(" (Local)", "")
-                foreach ($ext in $this.Config.ScriptExtensions.Local) {
-                    $files = Get-ChildItem -Path $scriptDir -Filter $ext -File -Recurse -ErrorAction SilentlyContinue
-                    foreach ($file in $files) {
-                        $relativePath = $file.FullName.Substring($scriptDir.Length + 1).Replace($this.Config.SourceInfo.BackslashSeparator, $this.Config.SourceInfo.SlashSeparator)
-                        if ($scriptFiles -notcontains $relativePath) { $scriptFiles += $relativePath }
-                    }
-                }
-                if ($scriptFiles.Count -eq 0) { Write-Warning "$($this.Config.Messages.NoScriptFound)" }
-            }
-            else {
-                try {
-                    $scriptFiles = $this.GetRemoteScriptFilesRecursive("")
-                }
-                catch { 
-                    Write-Warning "$($this.Config.Messages.GitHubError)$_"
-                }
-            }
-        }
-        catch {
-            Write-Warning "$($this.Config.Messages.LoadError)$_"
-        }
-        # Remove blacklisted files from $scriptFiles
-        if ($this.Config.ScriptFilesBlacklist) {
-            $blacklist = $this.Config.ScriptFilesBlacklist
-            $scriptFiles = $scriptFiles | Where-Object { $blacklist -notcontains $_ }
-        }
-        foreach ($file in $scriptFiles) {
-            $this.Sources += @{ Type = "ScriptFile"; Name = $file }
         }
     }
+
+    # [void]InitSources() method removed: replaced by OOP LoadSources and source classes
 
     [array]GetRemoteScriptFilesRecursive([string]$path) {
         Write-Host "[DEBUG] GetRemoteScriptFilesRecursive $path"
@@ -300,8 +326,8 @@ class PSUtilApp {
         return $files
     }
 
-    [void]CreateInterface() {
-        Write-Host "[DEBUG] CreateInterface"
+    [void]InitControls() {
+        Write-Host "[DEBUG] InitControls"
         $sourceInfo = $this.GetSourceInfo()
         $createdControls = @{}
         $app = $this
@@ -314,27 +340,21 @@ class PSUtilApp {
             StartPosition = $this.Config.Window.Position; BackColor = $this.Config.Window.BackgroundColor
             Add_Shown = { $app.OnFormShown() }
         }
-        
+
         # Define controls with order for proper placement and future drag-drop
         $controlDefs = @{
-            # Main Layout Panels (Order 1-5)
+            # ...existing controlDefs hash as before...
             Toolbar            = @{ Type = 'Panel'; Order = 1; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
             StatusBar          = @{ Type = 'Panel'; Order = 2; Layout = 'Form'; Properties = @{ Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
             Sidebar            = @{ Type = 'Panel'; Order = 3; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent        = @{ Type = 'Panel'; Order = 4; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
-            
-            # Content Layout with Splitter (Order 5-8) - SecondaryContent first, then splitter, then PrimaryContent fills
             SecondaryContent   = @{ Type = 'Panel'; Order = 5; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
             ContentSplitter    = @{ Type = 'Splitter'; Order = 6; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
             PrimaryContent     = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
-            
-            # Toolbar controls (Order 10-70) - Left to Right: Select All, Filter, Spacers, Execute, Combos
             SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '25'; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } } 
             FilterText         = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
             MoreBtn            = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
             ExecuteBtn         = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
-            
-            # Sidebar controls (Order 80-89)
             CopyCommandBtn     = @{ Type = 'Button'; Order = 80; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelCopy    = @{ Type = 'Panel'; Order = 80.2; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             RunLaterBtn        = @{ Type = 'Button'; Order = 81; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
@@ -350,19 +370,12 @@ class PSUtilApp {
             SourceLabel        = @{ Type = 'Label'; Order = 64.5; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             SourceCombo        = @{ Type = 'ComboBox'; Order = 65; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2       = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
-
-            # StatusBar controls (Order 300+)
             StatusLabel        = @{ Type = 'Label'; Order = 300; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
             StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 301; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
-            
-            # Primary content controls (Order 100+)
             ScriptsListView    = @{ Type = 'ListView'; Order = 100; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
-            
-            # Secondary content controls (Order 200+) - Will be added dynamically based on selected tool
             SecondaryLabel     = @{ Type = 'Label'; Order = 200; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
             CloseSecondaryBtn  = @{ Type = 'Button'; Order = 201; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White; Add_Click = { $app.HideSecondaryPanel() }; } }
         }
-
 
         # Create controls in order
         $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } | ForEach-Object {
@@ -371,9 +384,13 @@ class PSUtilApp {
 
             $ctrl = New-Object "System.Windows.Forms.$($config.Type)"
 
+
             # Apply standard parameters as defaults (can be overridden by control-specific properties)
             $ctrl.Font = New-Object System.Drawing.Font($this.Config.Controls.FontName, $this.Config.Controls.FontSize)
-            $ctrl.Dock = $this.Config.Controls.Dock
+            # Only set default Dock if not Splitter (Splitter must be docked Left/Right/Top/Bottom)
+            if ($config.Type -ne 'Splitter') {
+                $ctrl.Dock = $this.Config.Controls.Dock
+            }
             $ctrl.Width = $this.Config.Controls.Width
             $ctrl.Height = $this.Config.Controls.Height
             $ctrl.Padding = $this.Config.Controls.Padding
@@ -421,8 +438,6 @@ class PSUtilApp {
 
         # Assign controls to class property
         $this.Controls = $createdControls
-
-
 
         # Setup ListView columns using config
         foreach ($column in $this.Config.ListView.Columns) {
@@ -501,34 +516,51 @@ class PSUtilApp {
         if ($idx -ge 0 -and $idx -lt $this.Sources.Count) {
             $selectedSource = $this.Sources[$idx]
         }
-
-        switch ($selectedSource.Type) {
-            "AllActions" {
-                $this.ReadActions($this.Sources.Where({ $_.Type -eq "ScriptFile" }).Name)
-            }
-            "ScriptFile" {
-                $this.ReadActions(@($selectedSource.Name))
-            }
-            "Favourite" {
-
-                $favName = $selectedSource.Name
-                $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$favName.txt"
-                if (Test-Path $favPath) {
-                    $grouped = $this.ReadGroupedProfile($favPath)
-                    if ($grouped.Count -gt 0) {
-                        $this.LoadGroupedActionsToListView($grouped)
-                    }
-                    else {
-                        [System.Windows.Forms.MessageBox]::Show("No matching actions found in scripts for this favourite file.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-                        $this.Controls.ScriptsListView.Items.Clear()
-                        $this.UpdateExecuteButtonText()
-                    }
+        if ($null -eq $selectedSource) {
+            $this.LoadTasksToListView(@())
+            return
+        }
+        if ($selectedSource -is [AllTasksSource]) {
+            $allTasks = $selectedSource.GetTasks()
+            $this.LoadTasksToListView($allTasks)
+        }
+        elseif ($selectedSource -is [FavouriteSource]) {
+            $favName = $selectedSource.FavouriteName
+            $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$favName.txt"
+            if (Test-Path $favPath) {
+                $grouped = $this.ReadGroupedProfile($favPath)
+                if ($grouped.Count -gt 0) {
+                    $this.LoadGroupedTasksToListView($grouped)
                 }
                 else {
-                    [System.Windows.Forms.MessageBox]::Show("No matching actions found for this favourite.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    [System.Windows.Forms.MessageBox]::Show("No matching tasks found in scripts for this favourite file.", "No Tasks", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
                     $this.Controls.ScriptsListView.Items.Clear()
                     $this.UpdateExecuteButtonText()
                 }
+            }
+            else {
+                [System.Windows.Forms.MessageBox]::Show("No matching tasks found for this favourite.", "No Tasks", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                $this.Controls.ScriptsListView.Items.Clear()
+                $this.UpdateExecuteButtonText()
+            }
+        }
+        elseif ($selectedSource -is [LocalScriptFileSource]) {
+            $tasks = $selectedSource.GetTasks()
+            $this.LoadTasksToListView($tasks)
+        }
+        else {
+            # Defensive: if not a known type, try to call GetTasks if it exists
+            if ($selectedSource -and ($selectedSource.PSObject.Methods.Name -contains 'GetTasks')) {
+                try {
+                    $tasks = $selectedSource.GetTasks()
+                    $this.LoadTasksToListView($tasks)
+                }
+                catch {
+                    $this.LoadTasksToListView(@())
+                }
+            }
+            else {
+                $this.LoadTasksToListView(@())
             }
         }
     }
@@ -558,17 +590,15 @@ class PSUtilApp {
             $this.Controls.MachineCombo.SelectedIndex = 0
         }
 
-        # Populate SourceCombo using Sources
+        # Populate SourceCombo using Sources (all are now objects)
         $srcCombo = $this.Controls.SourceCombo
         $srcCombo.Items.Clear()
         foreach ($src in $this.Sources) {
-            switch ($src.Type) {
-                "AllActions" { $srcCombo.Items.Add($src.Name) | Out-Null }
-                "Favourite" { $srcCombo.Items.Add("$($this.Config.SourceComboFavouritePrefix)$($src.Name)") | Out-Null }
-                "ScriptFile" { $srcCombo.Items.Add("$($this.Config.SourceComboFilePrefix)$($src.Name)") | Out-Null }
-            }
+            $srcCombo.Items.Add($src.Name) | Out-Null
         }
-        $srcCombo.SelectedIndex = 0 # "All Actions"
+        if ($srcCombo.Items.Count -gt 0) {
+            $srcCombo.SelectedIndex = 0 # "All Tasks"
+        }
 
         # Set execution mode default
         if ($this.Controls.ExecuteModeCombo.Items.Count -gt 0) {
@@ -720,9 +750,9 @@ class PSUtilApp {
         else { $selectedText }
     }
 
-    [void]ReadActions([array]$scriptFiles) {
-        Write-Host "[DEBUG] ReadActions $($scriptFiles -join ',')"
-        $actions = @()
+    [void]ReadTasks([array]$scriptFiles) {
+        Write-Host "[DEBUG] ReadTasks $($scriptFiles -join ',')"
+        $tasks = @()
         foreach ($scriptFile in $scriptFiles) {
             try {
                 $scriptContent = $null
@@ -738,24 +768,24 @@ class PSUtilApp {
                     $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Config.Owner)/$($this.Config.Repo)/refs/heads/$($this.Config.Branch)/$scriptFile"
                     $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
                 }
-                $parsedScripts = $this.ParseScriptFile($scriptContent, $scriptFile)
-                $actions += $parsedScripts
+                $parsedTasks = $this.ParseScriptFile($scriptContent, $scriptFile)
+                $tasks += $parsedTasks
             }
             catch { Write-Warning "$($this.Config.Messages.LoadScriptError)$scriptFile - $_" }
         }
-        $this.LoadActionsToListView($actions)
+        $this.LoadTasksToListView($tasks)
     }
 
-    [void]LoadActionsToListView([array]$actions) {
-        Write-Host "[DEBUG] LoadActionsToListView $($actions.Count)"
+    [void]LoadTasksToListView([array]$tasks) {
+        Write-Host "[DEBUG] LoadTasksToListView $($tasks.Count)"
         $this.Controls.ScriptsListView.Items.Clear()
         $this.Controls.ScriptsListView.Groups.Clear()
-        foreach ($script in $actions) {
-            $item = New-Object System.Windows.Forms.ListViewItem($script.Description)
-            $item.SubItems.Add($script.Command) | Out-Null
-            $item.SubItems.Add($script.File) | Out-Null
+        foreach ($task in $tasks) {
+            $item = New-Object System.Windows.Forms.ListViewItem($task.Description)
+            $item.SubItems.Add($task.Command) | Out-Null
+            $item.SubItems.Add($task.File) | Out-Null
             $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
-            $item.Tag = $script
+            $item.Tag = $task
             $this.Controls.ScriptsListView.Items.Add($item) | Out-Null
         }
         $this.UpdateExecuteButtonText()
@@ -780,7 +810,7 @@ class PSUtilApp {
         Write-Host "[DEBUG] OnAddToFavourite"
         $selectedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Selected }
         if (!$selectedItems) {
-            [System.Windows.Forms.MessageBox]::Show("Please select an action to add to Favourites.", "Add to Favourite", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Please select a task to add to Favourites.", "Add to Favourite", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
         $this.ShowFavouritePanel($selectedItems)
@@ -862,16 +892,16 @@ class PSUtilApp {
 
     [hashtable]ReadGroupedProfile([string]$profilePath) {
         Write-Host "[DEBUG] ReadGroupedProfile $profilePath"
-        # Parse a profile file into an ordered dictionary of groupName -> [actions]
-        $groupedScripts = [ordered]@{}
-        if (!(Test-Path $profilePath)) { return $groupedScripts }
+        # Parse a profile file into an ordered dictionary of groupName -> [tasks]
+        $groupedTasks = [ordered]@{}
+        if (!(Test-Path $profilePath)) { return $groupedTasks }
         $lines = Get-Content $profilePath -ErrorAction SilentlyContinue
-        if (-not $lines) { return $groupedScripts }
+        if (-not $lines) { return $groupedTasks }
         $currentGroup = "Group 1"
         foreach ($line in $lines) {
             $trimmed = $line.Trim()
             if ($trimmed -eq "") {
-                $currentGroup = "Group $($groupedScripts.Count + 1)"
+                $currentGroup = "Group $($groupedTasks.Count + 1)"
                 continue
             }
             elseif ($trimmed.StartsWith("#")) {
@@ -879,32 +909,34 @@ class PSUtilApp {
                 continue
             }
             else {
-                # Try to find the action by ID (line)
-                $action = $this.GetActionById($trimmed)
-                if ($action) {
-                    if (-not $groupedScripts.Contains($currentGroup)) {
-                        $groupedScripts[$currentGroup] = @()
+                # Try to find the task by ID (line)
+                $task = $this.GetTaskById($trimmed)
+                if ($task) {
+                    if (-not $groupedTasks.Contains($currentGroup)) {
+                        $groupedTasks[$currentGroup] = @()
                     }
-                    $groupedScripts[$currentGroup] += $action
+                    $groupedTasks[$currentGroup] += $task
                 }
             }
         }
-        return $groupedScripts
+        return $groupedTasks
     }
 
-    [hashtable]GetActionById([string]$id) {
-        Write-Host "[DEBUG] GetActionById $id"
-        # Try to find an action by ID in all script files (assume ID is in Description or Command)
+    [hashtable]GetTaskById([string]$id) {
+        Write-Host "[DEBUG] GetTaskById $id"
+        # Try to find a task by ID in all script files (assume ID is in Description or Command)
         foreach ($src in $this.Sources | Where-Object { $_.Type -eq 'ScriptFile' }) {
-            $scriptFile = $src.Name
+            # Use correct file path for LocalScriptFileSource
+            $scriptFile = $null
             $scriptContent = $null
-            $currentScript = $PSCommandPath
-            if ($currentScript -and (Test-Path $currentScript)) {
-                $scriptDir = Split-Path $currentScript -Parent
-                $fullPath = Join-Path $scriptDir $scriptFile.Replace($this.Config.SourceInfo.SlashSeparator, $this.Config.SourceInfo.BackslashSeparator)
-                if ((Test-Path $fullPath)) {
-                    $scriptContent = Get-Content $fullPath -Raw
-                }
+            if ($src -is [LocalScriptFileSource]) {
+                $scriptFile = $src.FilePath
+            }
+            else {
+                $scriptFile = $src.Name
+            }
+            if ($scriptFile -and (Test-Path $scriptFile)) {
+                $scriptContent = Get-Content $scriptFile -Raw
             }
             if (!$scriptContent) {
                 $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Config.Owner)/$($this.Config.Repo)/refs/heads/$($this.Config.Branch)/$scriptFile"
@@ -912,33 +944,33 @@ class PSUtilApp {
             }
             if ($scriptContent) {
                 $parsed = $this.ParseScriptFile($scriptContent, $scriptFile)
-                foreach ($action in $parsed) {
-                    if ($action.Description -eq $id -or $action.Command -eq $id) { return $action }
+                foreach ($task in $parsed) {
+                    if ($task.Description -eq $id -or $task.Command -eq $id) { return $task }
                 }
             }
         }
         return $null
     }
 
-    [void]LoadGroupedActionsToListView([hashtable]$groupedScripts) {
-        Write-Host "[DEBUG] LoadGroupedActionsToListView"
-        # Display grouped actions in the ListView using ListView groups
+    [void]LoadGroupedTasksToListView([hashtable]$groupedTasks) {
+        Write-Host "[DEBUG] LoadGroupedTasksToListView"
+        # Display grouped tasks in the ListView using ListView groups
         $lv = $this.Controls.ScriptsListView
         $lv.Items.Clear()
         $lv.Groups.Clear()
-        $groupCount = $groupedScripts.Keys.Count
-        foreach ($groupName in $groupedScripts.Keys) {
+        $groupCount = $groupedTasks.Keys.Count
+        foreach ($groupName in $groupedTasks.Keys) {
             $group = $null
             if ($groupCount -gt 1) {
                 $group = New-Object System.Windows.Forms.ListViewGroup($groupName, $groupName)
                 $lv.Groups.Add($group) | Out-Null
             }
-            foreach ($action in $groupedScripts[$groupName]) {
-                $item = New-Object System.Windows.Forms.ListViewItem($action.Description)
-                $item.SubItems.Add($action.Command) | Out-Null
-                $item.SubItems.Add($action.File) | Out-Null
+            foreach ($task in $groupedTasks[$groupName]) {
+                $item = New-Object System.Windows.Forms.ListViewItem($task.Description)
+                $item.SubItems.Add($task.Command) | Out-Null
+                $item.SubItems.Add($task.File) | Out-Null
                 $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
-                $item.Tag = $action
+                $item.Tag = $task
                 if ($group) { $item.Group = $group }
                 $lv.Items.Add($item) | Out-Null
             }
@@ -946,6 +978,27 @@ class PSUtilApp {
         $this.UpdateExecuteButtonText()
     }
 }
+
+# Register built-in sources before app creation
+[PSUtilApp]::RegisterSourceType("ScriptFile", {
+        param($app)
+        $sources = @()
+        $config = $app.Config
+        # Always use the directory containing psutil.ps1 for local script discovery
+        $currentScript = $MyInvocation.ScriptName
+        if (!$currentScript) { $currentScript = $PSCommandPath }
+        $scriptDir = Split-Path $currentScript -Parent
+        foreach ($ext in $config.ScriptExtensions.Local) {
+            $files = Get-ChildItem -Path $scriptDir -Filter $ext -File -Recurse -ErrorAction SilentlyContinue
+            foreach ($file in $files) {
+                $relativePath = $file.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
+                if ($config.ScriptFilesBlacklist -notcontains $relativePath) {
+                    $sources += [LocalScriptFileSource]::new($app, $file.FullName, $relativePath)
+                }
+            }
+        }
+        return $sources
+    })
 
 # Entry point with error handling
 try {
