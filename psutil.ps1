@@ -72,7 +72,7 @@ $Global:Config = @{
     # ListView columns
     ListView                    = @{
         Columns = @(
-            @{ Name = "Task List"; Width = 500 }
+            @{ Name = "Task List"; Width = 400 }
             @{ Name = "Command"; Width = 100 }
             @{ Name = "File"; Width = 100 }
             @{ Name = "Status"; Width = 100 }
@@ -94,17 +94,13 @@ $Global:Config = @{
     Defaults                    = @{
         CollectionDefault  = "All Commands"
         CollectionContent  = "# All Commands - Multiple Script Files`ndb.ps1`n# Add more script files below"
-        CurrentUserText    = "$env:USERNAME (Active)"
-        AdminText          = "Admin"
+        CurrentUserText    = "$env:USERNAME (Logged In)"
+        AdminText          = "Administrator"
         OtherUserText      = "Other User..."
         ExecutionModes     = @("CurrentUser", "Admin")
         LocalhostName      = "localhost"
-        FilePrefix         = ""
-        LocalText          = " (Local)"
-        RemoteText         = " (Remote)"
-        GitHubText         = " (GitHub)"
-        LocalMachinePrefix = ""
-        LocalMachineText   = " (Local)"
+        LocalMachinePrefix = "🖥️ "
+        LocalMachineText   = " (This PC)"
         SSHCommandPrefix   = "ssh "
         SudoCommand        = "sudo "
         SudoUserCommand    = "sudo -u "
@@ -199,9 +195,8 @@ class PSUtilApp {
     # Core properties
     [hashtable]$Config
     [hashtable]$Controls = @{}
-    [hashtable]$Sources = @{}
     [array]$Machines = @()
-    [array]$ScriptFiles = @()
+    [array]$AllSources = @()
     [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser"
     $MainForm;
@@ -220,7 +215,7 @@ class PSUtilApp {
         ForEach-Object { if (!(Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null } }
         
         # Load machines
-        $this.Machines = @(@{ Name = $env:COMPUTERNAME; DisplayName = "$($this.Config.Defaults.LocalMachinePrefix)$env:COMPUTERNAME$($this.Config.Defaults.LocalMachineText)"; Type = $this.Config.Defaults.LocalText.Trim() })
+        $this.Machines = @(@{ Name = $env:COMPUTERNAME; DisplayName = "$($this.Config.Defaults.LocalMachinePrefix)$env:COMPUTERNAME$($this.Config.Defaults.LocalMachineText)"; Type = $this.Config.Defaults.LocalMachineText.Trim() })
         if ((Test-Path $this.Config.SSHConfigPath)) {
             (Get-Content $this.Config.SSHConfigPath -ErrorAction SilentlyContinue) | ForEach-Object {
                 if ($_ -match $this.Config.Patterns.SSHHost -and $Matches[1] -notmatch $this.Config.Patterns.SSHExclude -and $Matches[1] -ne $this.Config.Defaults.LocalhostName) {
@@ -229,42 +224,54 @@ class PSUtilApp {
             }
         }
         
-        $this.ReadScripts()
-    }
+        # --- Combine all sources into one variable and initialize it ---
+        $this.AllSources = @()
+        $this.AllSources += @{ Type = "AllActions"; Name = $this.Config.SourceComboAllActionsPrefix }
+        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
+        if (Test-Path $favouritesDir) {
+            $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
+            foreach ($favFile in $favFiles) {
+                $this.AllSources += @{ Type = "Favourite"; Name = $favFile.BaseName }
+            }
+        }
 
-    [void]ReadScripts() {
-        Write-Host "[DEBUG] ReadScripts"
-        $this.ScriptFiles = @()
+        # Populate ScriptFile sources directly into AllSources
+        $scriptFiles = @()
         try {
             $sourceInfo = $this.GetSourceInfo()
             if ($sourceInfo.Contains("(Local)")) {
                 $scriptDir = $sourceInfo.Replace(" (Local)", "")
-                $this.LoadLocalScriptFiles($scriptDir)
+                foreach ($ext in $this.Config.ScriptExtensions.Local) {
+                    $files = Get-ChildItem -Path $scriptDir -Filter $ext -File -Recurse -ErrorAction SilentlyContinue
+                    foreach ($file in $files) {
+                        $relativePath = $file.FullName.Substring($scriptDir.Length + 1).Replace($this.Config.SourceInfo.BackslashSeparator, $this.Config.SourceInfo.SlashSeparator)
+                        if ($scriptFiles -notcontains $relativePath) { $scriptFiles += $relativePath }
+                    }
+                }
+                if ($scriptFiles.Count -eq 0) { Write-Warning "$($this.Config.Messages.NoScriptFound)" }
             }
             else {
-                $this.LoadRemoteScriptFiles()
+                try {
+                    $scriptFiles = $this.GetRemoteScriptFilesRecursive("")
+                }
+                catch { 
+                    Write-Warning "$($this.Config.Messages.GitHubError)$_"
+                }
             }
         }
         catch {
             Write-Warning "$($this.Config.Messages.LoadError)$_"
         }
-        # Remove blacklisted files from $this.ScriptFiles
+        # Remove blacklisted files from $scriptFiles
         if ($this.Config.ScriptFilesBlacklist) {
             $blacklist = $this.Config.ScriptFilesBlacklist
-            $this.ScriptFiles = $this.ScriptFiles | Where-Object { $blacklist -notcontains $_ }
+            $scriptFiles = $scriptFiles | Where-Object { $blacklist -notcontains $_ }
+        }
+        foreach ($file in $scriptFiles) {
+            $this.AllSources += @{ Type = "ScriptFile"; Name = $file }
         }
     }
-    
-    [void]LoadRemoteScriptFiles() {
-        Write-Host "[DEBUG] LoadRemoteScriptFiles"
-        try {
-            $this.ScriptFiles = $this.GetRemoteScriptFilesRecursive("")
-        }
-        catch { 
-            Write-Warning "$($this.Config.Messages.GitHubError)$_"
-        }
-    }
-    
+
     [array]GetRemoteScriptFilesRecursive([string]$path) {
         Write-Host "[DEBUG] GetRemoteScriptFilesRecursive $path"
         $files = @()
@@ -284,23 +291,6 @@ class PSUtilApp {
         }
         catch { Write-Warning "$($this.Config.SourceInfo.ErrorFetchingDir)$path : $_" }
         return $files
-    }
-    
-    [void]LoadLocalScriptFiles([string]$directory) {
-        Write-Host "[DEBUG] LoadLocalScriptFiles $directory"
-        try {
-            foreach ($ext in $this.Config.ScriptExtensions.Local) {
-                $files = Get-ChildItem -Path $directory -Filter $ext -File -Recurse -ErrorAction SilentlyContinue
-                foreach ($file in $files) {
-                    $relativePath = $file.FullName.Substring($directory.Length + 1).Replace($this.Config.SourceInfo.BackslashSeparator, $this.Config.SourceInfo.SlashSeparator)
-                    if ($this.ScriptFiles -notcontains $relativePath) { $this.ScriptFiles += $relativePath }
-                }
-            }
-            if ($this.ScriptFiles.Count -eq 0) { Write-Warning "$($this.Config.Messages.NoScriptFound)$_" }
-        }
-        catch {
-            Write-Warning "$($this.Config.Messages.LocalError)$_"
-        }
     }
 
     [void]CreateInterface() {
@@ -493,37 +483,39 @@ class PSUtilApp {
     [void]OnSwitchSource() {
         Write-Host "[DEBUG] OnSwitchSource"
         $srcCombo = $this.Controls.SourceCombo
-        $sel = $srcCombo.SelectedItem
         $idx = $srcCombo.SelectedIndex
+        $selectedSource = $null
+        if ($idx -ge 0 -and $idx -lt $this.AllSources.Count) {
+            $selectedSource = $this.AllSources[$idx]
+        }
 
-        if ($sel -eq $this.Config.SourceComboAllActionsPrefix) {
-            $this.ReadActions($this.ScriptFiles)
-        }
-        elseif ($sel -like "$($this.Config.SourceComboFilePrefix)*") {
-            $file = $sel.Substring($this.Config.SourceComboFilePrefix.Length)
-            $this.ReadActions(@($file))
-        }
-        elseif ($sel -like "$($this.Config.SourceComboFavouritePrefix)*") {
-            $favName = $sel.Substring($this.Config.SourceComboFavouritePrefix.Length)
-            # Try to load from Favourites directory first
-            $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$favName.txt"
-            if (Test-Path $favPath) {
-                # --- GROUPED PROFILE SUPPORT ---
-                $grouped = $this.ReadGroupedProfile($favPath)
-                if ($grouped.Count -gt 0) {
-                    $this.LoadGroupedActionsToListView($grouped)
+        switch ($selectedSource.Type) {
+            "AllActions" {
+                $this.ReadActions($this.AllSources.Where({ $_.Type -eq "ScriptFile" }).Name)
+            }
+            "ScriptFile" {
+                $this.ReadActions(@($selectedSource.Name))
+            }
+            "Favourite" {
+
+                $favName = $selectedSource.Name
+                $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$favName.txt"
+                if (Test-Path $favPath) {
+                    $grouped = $this.ReadGroupedProfile($favPath)
+                    if ($grouped.Count -gt 0) {
+                        $this.LoadGroupedActionsToListView($grouped)
+                    }
+                    else {
+                        [System.Windows.Forms.MessageBox]::Show("No matching actions found in scripts for this favourite file.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                        $this.Controls.ScriptsListView.Items.Clear()
+                        $this.UpdateExecuteButtonText()
+                    }
                 }
                 else {
-                    [System.Windows.Forms.MessageBox]::Show("No matching actions found in scripts for this favourite file.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    [System.Windows.Forms.MessageBox]::Show("No matching actions found for this favourite.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
                     $this.Controls.ScriptsListView.Items.Clear()
                     $this.UpdateExecuteButtonText()
                 }
-            }
-            else {
-                # No fallback to JSON-based favourite
-                [System.Windows.Forms.MessageBox]::Show("No matching actions found for this favourite.", "No Actions", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-                $this.Controls.ScriptsListView.Items.Clear()
-                $this.UpdateExecuteButtonText()
             }
         }
     }
@@ -553,24 +545,16 @@ class PSUtilApp {
             $this.Controls.MachineCombo.SelectedIndex = 0
         }
 
-        # Populate SourceCombo: All Actions, per-file, Favourites
+        # Populate SourceCombo using AllSources
         $srcCombo = $this.Controls.SourceCombo
         $srcCombo.Items.Clear()
-        $srcCombo.Items.Add($this.Config.SourceComboAllActionsPrefix) | Out-Null
-
-        # --- Add favourite files from Favourites directory ---
-        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
-        if (Test-Path $favouritesDir) {
-            $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
-            foreach ($favFile in $favFiles) {
-                $srcCombo.Items.Add("$($this.Config.SourceComboFavouritePrefix)$($favFile.BaseName)") | Out-Null
+        foreach ($src in $this.AllSources) {
+            switch ($src.Type) {
+                "AllActions" { $srcCombo.Items.Add($src.Name) | Out-Null }
+                "Favourite" { $srcCombo.Items.Add("$($this.Config.SourceComboFavouritePrefix)$($src.Name)") | Out-Null }
+                "ScriptFile" { $srcCombo.Items.Add("$($this.Config.SourceComboFilePrefix)$($src.Name)") | Out-Null }
             }
         }
-        
-        foreach ($file in ($this.ScriptFiles | Sort-Object)) {
-            $srcCombo.Items.Add("$($this.Config.SourceComboFilePrefix)$file") | Out-Null
-        }
-
         $srcCombo.SelectedIndex = 0 # "All Actions"
 
         # Set execution mode default
@@ -846,11 +830,11 @@ class PSUtilApp {
         if (!$currentScript) { $currentScript = $PSCommandPath }
         
         if ($currentScript -match $this.Config.Patterns.HTTPUrl) {
-            return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())$($this.Config.Defaults.GitHubText)"
+            return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())"
         }
         elseif ($currentScript -and (Test-Path $currentScript)) {
             $scriptDir = Split-Path $currentScript -Parent
-            return "$scriptDir$($this.Config.Defaults.LocalText)"
+            return $scriptDir
         }
         else {
             return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())$($this.Config.Defaults.RemoteText)"
@@ -898,7 +882,8 @@ class PSUtilApp {
     [hashtable]GetActionById([string]$id) {
         Write-Host "[DEBUG] GetActionById $id"
         # Try to find an action by ID in all script files (assume ID is in Description or Command)
-        foreach ($scriptFile in $this.ScriptFiles) {
+        foreach ($src in $this.AllSources | Where-Object { $_.Type -eq 'ScriptFile' }) {
+            $scriptFile = $src.Name
             $scriptContent = $null
             $currentScript = $PSCommandPath
             if ($currentScript -and (Test-Path $currentScript)) {
