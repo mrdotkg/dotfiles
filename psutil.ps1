@@ -196,7 +196,8 @@ class PSUtilApp {
     [hashtable]$Config
     [hashtable]$Controls = @{}
     [array]$Machines = @()
-    [array]$AllSources = @()
+    [array]$Sources = @()
+    [array]$Users = @() # New member variable for user types
     [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser"
     $MainForm;
@@ -213,7 +214,13 @@ class PSUtilApp {
         # Setup directories using config
         @($this.Config.DataDir) + ($this.Config.SubDirs | ForEach-Object { "$($this.Config.DataDir)\$_" }) | 
         ForEach-Object { if (!(Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null } }
-        
+
+        # Initialize Users array (Logged In, Administrator)
+        $this.Users = @(
+            @{ Name = $env:USERNAME; DisplayName = "$env:USERNAME (Logged In)"; Type = "LoggedIn" },
+            @{ Name = "Administrator"; DisplayName = "Administrator"; Type = "Administrator" }
+        )
+
         # Load machines
         $this.Machines = @(@{ Name = $env:COMPUTERNAME; DisplayName = "$($this.Config.Defaults.LocalMachinePrefix)$env:COMPUTERNAME$($this.Config.Defaults.LocalMachineText)"; Type = $this.Config.Defaults.LocalMachineText.Trim() })
         if ((Test-Path $this.Config.SSHConfigPath)) {
@@ -223,19 +230,19 @@ class PSUtilApp {
                 }
             }
         }
-        
+
         # --- Combine all sources into one variable and initialize it ---
-        $this.AllSources = @()
-        $this.AllSources += @{ Type = "AllActions"; Name = $this.Config.SourceComboAllActionsPrefix }
+        $this.Sources = @()
+        $this.Sources += @{ Type = "AllActions"; Name = $this.Config.SourceComboAllActionsPrefix }
         $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
         if (Test-Path $favouritesDir) {
             $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
             foreach ($favFile in $favFiles) {
-                $this.AllSources += @{ Type = "Favourite"; Name = $favFile.BaseName }
+                $this.Sources += @{ Type = "Favourite"; Name = $favFile.BaseName }
             }
         }
 
-        # Populate ScriptFile sources directly into AllSources
+        # Populate ScriptFile sources directly into Sources
         $scriptFiles = @()
         try {
             $sourceInfo = $this.GetSourceInfo()
@@ -268,7 +275,7 @@ class PSUtilApp {
             $scriptFiles = $scriptFiles | Where-Object { $blacklist -notcontains $_ }
         }
         foreach ($file in $scriptFiles) {
-            $this.AllSources += @{ Type = "ScriptFile"; Name = $file }
+            $this.Sources += @{ Type = "ScriptFile"; Name = $file }
         }
     }
 
@@ -453,14 +460,20 @@ class PSUtilApp {
         # $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
         $this.Controls.CloseSecondaryBtn.Add_Click({ $app.OnCloseSecondary() })
 
-        # Setup execution mode options using config
-        $this.Controls.ExecuteModeCombo.Items.AddRange(@($this.Config.Defaults.CurrentUserText, $this.Config.Defaults.AdminText))
+        # Setup execution mode options using $this.Users and all other enabled local users
+        $this.Controls.ExecuteModeCombo.Items.Clear()
+        foreach ($user in $this.Users) {
+            $this.Controls.ExecuteModeCombo.Items.Add($user.DisplayName) | Out-Null
+        }
+        # Add all other enabled local users (excluding current user and Administrator)
         try {
-            $otherUsers = Get-LocalUser | Where-Object { $_.Name -ne $env:USERNAME -and $_.Enabled } | Select-Object -ExpandProperty Name
-            $otherUsers | ForEach-Object { $this.Controls.ExecuteModeCombo.Items.Add("$_") | Out-Null }
+            $otherUsers = Get-LocalUser | Where-Object { $_.Name -ne $env:USERNAME -and $_.Name -ne "Administrator" -and $_.Enabled } | Select-Object -ExpandProperty Name
+            foreach ($ou in $otherUsers) {
+                $this.Controls.ExecuteModeCombo.Items.Add($ou) | Out-Null
+            }
         }
         catch {
-            $this.Controls.ExecuteModeCombo.Items.Add($this.Config.Defaults.OtherUserText) | Out-Null
+            # No additional users found or error
         }
 
         # Add "Add to Favourite..." to ListView context menu
@@ -485,13 +498,13 @@ class PSUtilApp {
         $srcCombo = $this.Controls.SourceCombo
         $idx = $srcCombo.SelectedIndex
         $selectedSource = $null
-        if ($idx -ge 0 -and $idx -lt $this.AllSources.Count) {
-            $selectedSource = $this.AllSources[$idx]
+        if ($idx -ge 0 -and $idx -lt $this.Sources.Count) {
+            $selectedSource = $this.Sources[$idx]
         }
 
         switch ($selectedSource.Type) {
             "AllActions" {
-                $this.ReadActions($this.AllSources.Where({ $_.Type -eq "ScriptFile" }).Name)
+                $this.ReadActions($this.Sources.Where({ $_.Type -eq "ScriptFile" }).Name)
             }
             "ScriptFile" {
                 $this.ReadActions(@($selectedSource.Name))
@@ -545,10 +558,10 @@ class PSUtilApp {
             $this.Controls.MachineCombo.SelectedIndex = 0
         }
 
-        # Populate SourceCombo using AllSources
+        # Populate SourceCombo using Sources
         $srcCombo = $this.Controls.SourceCombo
         $srcCombo.Items.Clear()
-        foreach ($src in $this.AllSources) {
+        foreach ($src in $this.Sources) {
             switch ($src.Type) {
                 "AllActions" { $srcCombo.Items.Add($src.Name) | Out-Null }
                 "Favourite" { $srcCombo.Items.Add("$($this.Config.SourceComboFavouritePrefix)$($src.Name)") | Out-Null }
@@ -882,7 +895,7 @@ class PSUtilApp {
     [hashtable]GetActionById([string]$id) {
         Write-Host "[DEBUG] GetActionById $id"
         # Try to find an action by ID in all script files (assume ID is in Description or Command)
-        foreach ($src in $this.AllSources | Where-Object { $_.Type -eq 'ScriptFile' }) {
+        foreach ($src in $this.Sources | Where-Object { $_.Type -eq 'ScriptFile' }) {
             $scriptFile = $src.Name
             $scriptContent = $null
             $currentScript = $PSCommandPath
