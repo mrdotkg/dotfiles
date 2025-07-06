@@ -54,40 +54,40 @@ $Global:Config = @{
     }
     Window                      = @{
         Title           = 'PSUtil Script Runner'
-        Width           = 1100
+        Width           = 700
         Height          = 700
         Padding         = '10,10,10,10'
         Position        = 'CenterScreen'
         BackgroundColor = [System.Drawing.Color]::WhiteSmoke
     }
     Panels                      = @{
-        ToolbarHeight       = 38
-        ToolbarPadding      = '2,2,2,2'
-        StatusBarHeight     = 28
-        StatusPadding       = '2,2,2,2'
+        ToolbarHeight       = 40
+        ToolbarPadding      = '10,5,10,10'
+        StatusBarHeight     = 30
+        StatusPadding       = '5,5,5,5'
         SidebarWidth        = 220
-        SidebarPadding      = '8,8,8,8'
+        SidebarPadding      = '5,5,5,5'
         SecondaryPanelWidth = 320
-        SecondaryPadding    = '8,8,8,8'
-        SplitterWidth       = 6
-        ContentPadding      = '8,8,8,8'
+        SecondaryPadding    = '5,5,5,5'
+        SplitterWidth       = 5
+        ContentPadding      = '10,0,10,0'
     }
     Controls                    = @{
         FontName           = 'Segoe UI'
         FontSize           = 10
         Dock               = 'None'
         Width              = 120
-        Height             = 28
+        Height             = 30
         Padding            = '2,2,2,2'
         BackColor          = [System.Drawing.Color]::White
         ForeColor          = [System.Drawing.Color]::Black
-        SelectAllText      = 'Select All'
+        SelectAllText      = ''
         FilterPlaceholder  = 'Filter tasks...'
-        ExecuteBtnText     = 'Run Selected'
+        ExecuteBtnText     = 'Run'
         CopyCommandText    = 'Copy Command'
         RunLaterText       = 'Run Later'
         AddCommandText     = 'Add Command'
-        ExecuteBtnTemplate = 'Run Selected ({0})'
+        ExecuteBtnTemplate = 'Run ({0})'
     }
     ListView                    = @{
         Columns = @(
@@ -200,16 +200,11 @@ class LocalScriptFileSource : PSUtilTaskSource {
         $this.RelativePath = $relativePath
     }
     [array]GetTasks() {
-        $tasks = @()
-        $config = $this.App.Config
         if (Test-Path $this.FilePath) {
-            $content = Get-Content $this.FilePath -Raw
-            $parsed = $this.App.ParseScriptFile($content, $this.RelativePath)
-            foreach ($t in $parsed) {
-                $tasks += [PSUtilTask]::new($t.Description, $t.Command, $t.File, $t.LineNumber)
-            }
+            return $this.App.ParseScriptFile((Get-Content $this.FilePath -Raw), $this.RelativePath) |
+            ForEach-Object { [PSUtilTask]::new($_.Description, $_.Command, $_.File, $_.LineNumber) }
         }
-        return $tasks
+        return @()
     }
 }
 
@@ -341,98 +336,75 @@ class PSUtilApp {
             Add_Shown = { $app.OnFormShown() }
         }
 
-        # Define controls with order for proper placement and future drag-drop
+        # Define controls with order for proper placement and future drag-drop (restored classic WinForms order, labels above combos)
         $controlDefs = @{
-            # ...existing controlDefs hash as before...
-            Toolbar            = @{ Type = 'Panel'; Order = 1; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
-            StatusBar          = @{ Type = 'Panel'; Order = 2; Layout = 'Form'; Properties = @{ Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
-            Sidebar            = @{ Type = 'Panel'; Order = 3; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
-            MainContent        = @{ Type = 'Panel'; Order = 4; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
-            SecondaryContent   = @{ Type = 'Panel'; Order = 5; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
-            ContentSplitter    = @{ Type = 'Splitter'; Order = 6; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
-            PrimaryContent     = @{ Type = 'Panel'; Order = 7; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
-            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 10; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = '25'; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } } 
-            FilterText         = @{ Type = 'TextBox'; Order = 20; Layout = 'Toolbar'; Properties = @{ PlaceholderText = $this.Config.Controls.FilterPlaceholder } }
-            MoreBtn            = @{ Type = 'Button'; Order = 30; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = 30; Dock = 'Right' } }
-            ExecuteBtn         = @{ Type = 'Button'; Order = 40; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
-            CopyCommandBtn     = @{ Type = 'Button'; Order = 80; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelCopy    = @{ Type = 'Panel'; Order = 80.2; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            RunLaterBtn        = @{ Type = 'Button'; Order = 81; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelRun     = @{ Type = 'Panel'; Order = 81.2; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            AddCommandBtn      = @{ Type = 'Button'; Order = 82; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelAdd     = @{ Type = 'Panel'; Order = 82.2; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            ExecuteModeLabel   = @{ Type = 'Label'; Order = 44.5; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
-            ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 45; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            SpacerPanelExec    = @{ Type = 'Panel'; Order = 45.2; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            MachineLabel       = @{ Type = 'Label'; Order = 49.5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
-            MachineCombo       = @{ Type = 'ComboBox'; Order = 50; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            SpacerPanelMachine = @{ Type = 'Panel'; Order = 50.2; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            SourceLabel        = @{ Type = 'Label'; Order = 64.5; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
-            SourceCombo        = @{ Type = 'ComboBox'; Order = 65; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            SpacerPanel2       = @{ Type = 'Panel'; Order = 75; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
-            StatusLabel        = @{ Type = 'Label'; Order = 300; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 301; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
-            ScriptsListView    = @{ Type = 'ListView'; Order = 100; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
-            SecondaryLabel     = @{ Type = 'Label'; Order = 200; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
-            CloseSecondaryBtn  = @{ Type = 'Button'; Order = 201; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White; Add_Click = { $app.HideSecondaryPanel() }; } }
+            Toolbar            = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
+            StatusBar          = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
+            Sidebar            = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
+            MainContent        = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
+            SecondaryContent   = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
+            ContentSplitter    = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
+            PrimaryContent     = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
+            FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; PlaceholderText = $this.Config.Controls.FilterPlaceholder; Margin = '0,0,0,0' } }
+            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = $this.Config.Controls.Height; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
+            MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
+            ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
+            ExecuteModeLabel   = @{ Type = 'Label'; Order = 1; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 2; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SpacerPanelExec    = @{ Type = 'Panel'; Order = 3; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
+            MachineLabel       = @{ Type = 'Label'; Order = 4; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            MachineCombo       = @{ Type = 'ComboBox'; Order = 5; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SpacerPanelMachine = @{ Type = 'Panel'; Order = 6; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
+            SourceLabel        = @{ Type = 'Label'; Order = 7; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            SourceCombo        = @{ Type = 'ComboBox'; Order = 8; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SpacerPanel2       = @{ Type = 'Panel'; Order = 9; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
+            CopyCommandBtn     = @{ Type = 'Button'; Order = 10; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelCopy    = @{ Type = 'Panel'; Order = 11; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            RunLaterBtn        = @{ Type = 'Button'; Order = 12; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelRun     = @{ Type = 'Panel'; Order = 13; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            AddCommandBtn      = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelAdd     = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            ScriptsListView    = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
+            SecondaryLabel     = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
+            CloseSecondaryBtn  = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White; Add_Click = { $app.HideSecondaryPanel() }; } }
+            StatusLabel        = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
         }
 
         # Create controls in order
         $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } | ForEach-Object {
             $name = $_.Key
             $config = $_.Value
-
             $ctrl = New-Object "System.Windows.Forms.$($config.Type)"
-
-
-            # Apply standard parameters as defaults (can be overridden by control-specific properties)
             $ctrl.Font = New-Object System.Drawing.Font($this.Config.Controls.FontName, $this.Config.Controls.FontSize)
-            # Only set default Dock if not Splitter (Splitter must be docked Left/Right/Top/Bottom)
-            if ($config.Type -ne 'Splitter') {
-                $ctrl.Dock = $this.Config.Controls.Dock
-            }
+            if ($config.Type -ne 'Splitter') { $ctrl.Dock = $this.Config.Controls.Dock }
             $ctrl.Width = $this.Config.Controls.Width
             $ctrl.Height = $this.Config.Controls.Height
             $ctrl.Padding = $this.Config.Controls.Padding
             $ctrl.BackColor = $this.Config.Controls.BackColor
             $ctrl.ForeColor = $this.Config.Controls.ForeColor
-
-            # Apply ComboBox-specific defaults
-            if ($config.Type -eq 'ComboBox') {
-                $ctrl.DropDownStyle = 'DropDownList'
-            }
-
-            # Apply Splitter-specific defaults
-            if ($config.Type -eq 'Splitter') {
-                $ctrl.MinExtra = 100
-                $ctrl.MinSize = 100
-            }
-
-            # Panel-specific defaults
-            if ($config.Type -eq 'Panel' -or $config.Type -eq 'CheckBox') {
-                $ctrl.BackColor = $this.MainForm.BackColor
-            }
-
-            # Apply control-specific properties (these override the defaults above)
+            if ($config.Type -eq 'ComboBox') { $ctrl.DropDownStyle = 'DropDownList' }
+            if ($config.Type -eq 'Splitter') { $ctrl.MinExtra = 100; $ctrl.MinSize = 100 }
+            if ($config.Type -eq 'Panel' -or $config.Type -eq 'CheckBox') { $ctrl.BackColor = $this.MainForm.BackColor }
             foreach ($kv in $config.Properties.GetEnumerator()) {
-                # Only assign if not an event property (Add_Click, Add_TextChanged, etc.)
-                if ($kv.Key -notmatch '^Add_') {
-                    $ctrl.($kv.Key) = $kv.Value
-                }
+                if ($kv.Key -notmatch '^Add_') { $ctrl.($kv.Key) = $kv.Value }
             }
-
+            # Remove forced width for FilterText (let controlDefs decide)
             $createdControls[$name] = $ctrl
         }
 
-        # Add controls to parents in reverse order (because of how WinForms stacking works with Dock=Left)
-        $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } -Descending | ForEach-Object {
+
+        # Add all controls (including panels) to their parent in ascending order of Order, using only Layout property
+        $controlDefs.GetEnumerator() | Sort-Object { $_.Value.Order } | ForEach-Object {
             $name = $_.Key
             $config = $_.Value
             $ctrl = $createdControls[$name]
-
-            $parent = if ($config.Layout -eq 'Form') { $this.MainForm } else { $createdControls[$config.Layout] }
-            if ($parent) { 
-                $parent.Controls.Add($ctrl)
+            $parentName = $config.Layout
+            if ($createdControls.ContainsKey($parentName)) {
+                $createdControls[$parentName].Controls.Add($ctrl)
+            }
+            elseif ($parentName -eq 'Form') {
+                $this.MainForm.Controls.Add($ctrl)
             }
         }
 
@@ -982,22 +954,18 @@ class PSUtilApp {
 # Register built-in sources before app creation
 [PSUtilApp]::RegisterSourceType("ScriptFile", {
         param($app)
-        $sources = @()
         $config = $app.Config
-        # Always use the directory containing psutil.ps1 for local script discovery
-        $currentScript = $MyInvocation.ScriptName
-        if (!$currentScript) { $currentScript = $PSCommandPath }
+        $currentScript = $MyInvocation.ScriptName; if (!$currentScript) { $currentScript = $PSCommandPath }
         $scriptDir = Split-Path $currentScript -Parent
-        foreach ($ext in $config.ScriptExtensions.Local) {
-            $files = Get-ChildItem -Path $scriptDir -Filter $ext -File -Recurse -ErrorAction SilentlyContinue
-            foreach ($file in $files) {
-                $relativePath = $file.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
-                if ($config.ScriptFilesBlacklist -notcontains $relativePath) {
-                    $sources += [LocalScriptFileSource]::new($app, $file.FullName, $relativePath)
-                }
-            }
+        @(Get-ChildItem -Path $scriptDir -Filter $config.ScriptExtensions.Local[0] -File -Recurse -ErrorAction SilentlyContinue) |
+        Where-Object {
+            $rel = $_.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
+            $config.ScriptFilesBlacklist -notcontains $rel
+        } |
+        ForEach-Object {
+            $rel = $_.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
+            [LocalScriptFileSource]::new($app, $_.FullName, $rel)
         }
-        return $sources
     })
 
 # Entry point with error handling
