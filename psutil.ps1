@@ -345,7 +345,7 @@ class PSUtilApp {
             SecondaryContent   = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
             ContentSplitter    = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
             PrimaryContent     = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
-            FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; PlaceholderText = $this.Config.Controls.FilterPlaceholder; Margin = '0,0,0,0' } }
+            FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
             SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
             MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
@@ -387,9 +387,10 @@ class PSUtilApp {
             if ($config.Type -eq 'Splitter') { $ctrl.MinExtra = 100; $ctrl.MinSize = 100 }
             if ($config.Type -eq 'Panel' -or $config.Type -eq 'CheckBox') { $ctrl.BackColor = $this.MainForm.BackColor }
             foreach ($kv in $config.Properties.GetEnumerator()) {
+                # Skip PlaceholderText for FilterText, handle manually for broader support
+                if ($name -eq 'FilterText' -and $kv.Key -eq 'PlaceholderText') { continue }
                 if ($kv.Key -notmatch '^Add_') { $ctrl.($kv.Key) = $kv.Value }
             }
-            # Remove forced width for FilterText (let controlDefs decide)
             $createdControls[$name] = $ctrl
         }
 
@@ -410,6 +411,26 @@ class PSUtilApp {
 
         # Assign controls to class property
         $this.Controls = $createdControls
+
+        # Manual placeholder logic for FilterText (broader support, including iex)
+        $filterTextBox = $this.Controls.FilterText
+        if ($filterTextBox) {
+            $placeholder = $this.Config.Controls.FilterPlaceholder
+            $filterTextBox.Text = $placeholder
+            $filterTextBox.ForeColor = [System.Drawing.Color]::Gray
+            $filterTextBox.Add_Enter({
+                    if ($this.Text -eq $placeholder) {
+                        $this.Text = ""
+                        $this.ForeColor = [System.Drawing.Color]::Black
+                    }
+                }.GetNewClosure())
+            $filterTextBox.Add_Leave({
+                    if ([string]::IsNullOrWhiteSpace($this.Text)) {
+                        $this.Text = $placeholder
+                        $this.ForeColor = [System.Drawing.Color]::Gray
+                    }
+                }.GetNewClosure())
+        }
 
         # Setup ListView columns using config
         foreach ($column in $this.Config.ListView.Columns) {
@@ -771,7 +792,10 @@ class PSUtilApp {
 
     [void]OnFilter() {
         Write-Host "[DEBUG] OnFilter"
-        $filter = $this.Controls.FilterText.Text.ToLower()
+        $filter = $this.Controls.FilterText.Text
+        $placeholder = $this.Config.Controls.FilterPlaceholder
+        if ($filter -eq $placeholder) { $filter = "" }
+        $filter = $filter.ToLower()
         $this.Controls.ScriptsListView.Items | ForEach-Object {
             $visible = !$filter -or $_.Text.ToLower().Contains($filter) -or $_.SubItems[1].Text.ToLower().Contains($filter)
             $_.ForeColor = if ($visible) { $this.Config.Colors.Text } else { $this.Config.Colors.Filtered }
