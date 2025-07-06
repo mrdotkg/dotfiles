@@ -53,7 +53,7 @@ $Global:Config = @{
         Filtered  = [System.Drawing.Color]::Gray
     }
     Window                      = @{
-        Title           = 'PSUtil Script Runner'
+        Title           = 'Run -'
         Width           = 700
         Height          = 700
         Padding         = '10,10,10,10'
@@ -62,15 +62,15 @@ $Global:Config = @{
     }
     Panels                      = @{
         ToolbarHeight       = 40
-        ToolbarPadding      = '10,5,10,10'
+        ToolbarPadding      = '10,5,10,7'
         StatusBarHeight     = 30
-        StatusPadding       = '5,5,5,5'
-        SidebarWidth        = 220
+        StatusPadding       = '10,0,2,10'
+        SidebarWidth        = 200
         SidebarPadding      = '5,5,5,5'
         SecondaryPanelWidth = 320
-        SecondaryPadding    = '5,5,5,5'
+        SecondaryPadding    = '5,5,10,5'
         SplitterWidth       = 5
-        ContentPadding      = '10,0,10,0'
+        ContentPadding      = '10,5,10,5'
     }
     Controls                    = @{
         FontName           = 'Segoe UI'
@@ -281,7 +281,7 @@ class PSUtilApp {
     [void]InitUsers() {
         # Minimal user setup
         $this.Users = @(
-            @{ Name = $env:USERNAME; DisplayName = "$env:USERNAME (Logged In)"; Type = "LoggedIn" },
+            @{ Name = $env:USERNAME; DisplayName = "$env:USERNAME (me)"; Type = "LoggedIn" },
             @{ Name = "Administrator"; DisplayName = "Administrator"; Type = "Administrator" }
         )
     }
@@ -338,8 +338,8 @@ class PSUtilApp {
 
         # Define controls with order for proper placement and future drag-drop (restored classic WinForms order, labels above combos)
         $controlDefs = @{
-            Toolbar            = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
-            StatusBar          = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
+            Toolbar            = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
+            StatusBar          = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
             Sidebar            = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent        = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
             SecondaryContent   = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
@@ -349,14 +349,14 @@ class PSUtilApp {
             SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = $this.Config.Controls.Height; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
             MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
-            ExecuteModeLabel   = @{ Type = 'Label'; Order = 1; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
-            ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 2; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            ExecuteModeLabel   = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 1; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelExec    = @{ Type = 'Panel'; Order = 3; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            MachineLabel       = @{ Type = 'Label'; Order = 4; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
-            MachineCombo       = @{ Type = 'ComboBox'; Order = 5; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            MachineLabel       = @{ Type = 'Label'; Order = 5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            MachineCombo       = @{ Type = 'ComboBox'; Order = 4; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelMachine = @{ Type = 'Panel'; Order = 6; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            SourceLabel        = @{ Type = 'Label'; Order = 7; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
-            SourceCombo        = @{ Type = 'ComboBox'; Order = 8; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SourceLabel        = @{ Type = 'Label'; Order = 8; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            SourceCombo        = @{ Type = 'ComboBox'; Order = 7; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2       = @{ Type = 'Panel'; Order = 9; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
             CopyCommandBtn     = @{ Type = 'Button'; Order = 10; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelCopy    = @{ Type = 'Panel'; Order = 11; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
