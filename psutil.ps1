@@ -346,7 +346,7 @@ class PSUtilApp {
             ContentSplitter    = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
             PrimaryContent     = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; PlaceholderText = $this.Config.Controls.FilterPlaceholder; Margin = '0,0,0,0' } }
-            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = $this.Config.Controls.Height; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
+            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
             MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
             ExecuteModeLabel   = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
