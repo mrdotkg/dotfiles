@@ -1,112 +1,142 @@
-# Windows OS Setup
+Here’s a detailed review of psutil.ps1, mapping what’s implemented and what’s missing, based on your app structure and the script’s content:
 
-## ISO
+What’s Implemented
 
-- Microwin ISO created by Chris Titus's WinUtil
+- Core Config: $Global:Config is well-defined, covering settings, UI, messages, colors, patterns, and more.
+- Main App Class: PSUtilApp is implemented, with state for Config, Controls, Machines, Sources, Users, Plugins, Theme, I18N, State, and static SourceRegistry.
+- Source System: Abstract class PSUtilTaskSource and concrete sources (AllTasksSource, FavouriteSource, LocalScriptFileSource) are present.
+- Task Object: PSUtilTask class with Description, Command, File, LineNumber.
+- Source Discovery: RegisterSourceType and LoadSources methods for dynamic source loading.
+- Directory/User/Machine Init: InitDirectories, InitUsers, InitMachines methods.
+- UI Construction: InitControls builds a WinForms UI with panels, buttons, list views, and event handlers.
+- Task Parsing: ParseScriptFile method to extract tasks from script files.
+- Task Execution: OnExecute method for running selected tasks, with status/progress updates.
+- Secondary Panels: ShowCopyCommandPanel, ShowRunLaterPanel, ShowAddCommandPanel for extra task actions.
+- Sidebar/Toolbar: Controls for source/machine/user selection, filtering, and batch actions.
+- Event Handlers: For all major UI actions (execute, select all, switch source, etc.).
+- Basic Plugin Hooks: Plugins hash table and SourceRegistry for extensibility.
 
-## Apps
+What’s Missing or Incomplete
 
-- AltSnap
-- AOE4
-- Autologon
-- AquaSnap
-- Discord
-- Ditto
-- Gigabytes Drivers and App Center Util
-- Git
-- GlazeWM
-- Nvidia Graphics Driver
-- Notepads
-- Neovim
-- Powershell 7
-- Steam
-- VSCode
-- Whatsapp
-- Wezterm
+- Save/Load Settings: No SaveSettings or LoadSettings methods for persisting/restoring app state and user preferences.
+- ApplyTheme/SetLanguage: No methods for applying themes or switching languages at runtime.
+- Plugin Loading: No dynamic loading/discovery of external plugin scripts or DLLs.
+- Remote/Network Sources: No implementation for remote/network sources (e.g., SSH, GitHub, etc.) beyond placeholders.
+- Task Scheduling: ShowRunLaterPanel UI exists, but actual scheduling logic is not implemented.
+- Add Command Logic: ShowAddCommandPanel UI exists, but logic to add/save new commands as tasks is not implemented.
+- User/Machine Management: Only minimal user/machine lists; no add/edit/remove or advanced management.
+- State Persistence: No code for saving/restoring window size, last source, or other runtime state.
+- Error Handling: Some try/catch, but not comprehensive error/logging throughout.
+- i18n/Theme Extensibility: No code for loading/applying external i18n or theme resources (for plugins or user customization).
+- Plugin UI: No mechanism for plugins to add custom UI controls or features.
+- Documentation/Help: No in-app help/about or user documentation integration.
+- Testing: No test harness or test mode for safe experimentation.
+- Advanced Features: No notifications, automation, or advanced scheduling.
 
-## Settings
+Summary Table
 
-### System
+| Area                | Status         | Notes                                                      |
+|---------------------|---------------|------------------------------------------------------------|
+| Config              | Implemented   | Comprehensive                                              |
+| App Class           | Implemented   | Core structure present                                     |
+| Source System       | Partial       | Local/Favourite/AllTasks only; no remote/network/plugins   |
+| Task Object         | Implemented   |                                                            |
+| UI                  | Implemented   | WinForms, event handlers, panels, sidebar                  |
+| Task Execution      | Implemented   | Batch execution, progress, status                          |
+| Task Scheduling     | Partial       | UI only, no backend logic                                  |
+| Add Command         | Partial       | UI only, no backend logic                                  |
+| Save/Load Settings  | Missing       |                                                            |
+| Theme/i18n          | Partial       | Config present, no runtime switching                       |
+| Plugin System       | Partial       | Registry present, no dynamic loading or UI extension       |
+| User/Machine Mgmt   | Minimal       | No add/edit/remove                                         |
+| State Persistence   | Missing       |                                                            |
+| Error Handling      | Partial       | Some try/catch, not comprehensive                          |
+| Documentation/Help  | Missing       |                                                            |
+| Testing             | Missing       |                                                            |
 
-- Windows zoom 100%
-- Windows theme dark
-- Disable Cleartype, install mactype, configure it.
-- Display 4k, HDR on, 120FPS
-- Disable all startup apps
-- Sign in with local account
-- Enable OpenSSH server, Client and remote ssh into this pc from macOs from over local network
-- Make powershell as default ssh shell.
+Let me know if you want a prioritized action plan or details on how to implement any missing features!
 
-### Taskbar
 
-- Hide Search Menu in taskbar
-- Disable Widgets, Weather
+Here’s a prioritized action plan to address the missing features in psutil.ps1, with a focus on robust, maintainable, and error-free implementation. I will proceed step by step, checking for stray code and syntax issues after each change.
 
-### Start Menu
+Top Priorities (Core Functionality & User Experience)
 
-- Remove apps from Start Menu
-- Uninstall bloat apps
+1. Save/Load Settings & State
+- Implement SaveSettings and LoadSettings methods in PSUtilApp.
+- Persist user preferences, window size, last source, and other runtime state to a file (e.g., db.json).
+- Load these settings on startup and apply them.
 
-### Folder
+2. ApplyTheme & SetLanguage
+- Implement ApplyTheme and SetLanguage methods.
+- Allow runtime switching of themes and languages using the config and i18n dictionaries.
+- Update UI controls dynamically when these are changed.
 
-- Default open Local Disc C
+3. Task Scheduling Logic
+- Implement backend logic for scheduling tasks (ShowRunLaterPanel).
+- Use Windows Task Scheduler or a simple background timer to run tasks at a later time.
 
-### MS Edge
+4. Add Command Logic
+- Implement logic to add/save new commands as tasks from ShowAddCommandPanel.
+- Persist new tasks to a file or in-memory list.
 
-- Setup Hotkey Super + E
-- Addressbar search engine - Google
+5. Plugin Loading & Extensibility
+- Implement dynamic loading/discovery of external plugin scripts (e.g., from a Plugins directory).
+- Allow plugins to register new Source types and add UI controls.
 
-### Git
+6. Remote/Network Sources
+- Implement at least one remote/network source (e.g., SSH or GitHub).
+- Fetch tasks/scripts from remote locations and display them in the UI.
 
-- Generate SSH key and configure on github
-- Git username
-- Git email
+7. User/Machine Management
+- Add UI and logic for adding, editing, and removing users/machines.
+- Persist these lists.
 
-### Neovim
+8. Error Handling & Logging
+- Add comprehensive try/catch blocks and logging throughout the app.
+- Display user-friendly error messages.
 
-- Setup Hotkey
-- Copy Config File
+9. i18n/Theme Extensibility
+- Allow loading/applying external i18n and theme resources (e.g., from JSON files or plugins).
 
-### Terminal
+10. Plugin UI Extension
+- Allow plugins to add custom UI controls or features to the main form.
 
-- Open Powershell 7 by default
-- Setup Hotkey Super + X
-- Copy Config file
+11. Documentation/Help
+- Add an in-app help/about section and link to user documentation.
 
-### Wezterm
+12. Testing
+- Add a test harness or test mode for safe experimentation.
 
-- Setup Hotkey
-- Copy Config file
+Next Steps
 
-Commands Requiring Admin Privileges (Examples):
-``` powershell
-# User and Group Management:
-Get-LocalUser, New-LocalUser, Remove-LocalUser, Rename-LocalUser (managing local user accounts) 
-Get-LocalGroup, New-LocalGroup, Remove-LocalGroup, Add-LocalGroupMember, Get-LocalGroupMember (managing local groups and their members) 
-Get-ADUser, New-ADUser, Remove-ADUser, Get-ADGroupMember (managing Active Directory users and groups - require domain administrator privileges) 
-Get-ADGroup, New-ADGroup, Remove-ADGroup
-Get-ADObject (when accessing objects with security descriptors) 
-#System Configuration and Security:
-Set-ExecutionPolicy (changing PowerShell execution policy) 
-Get-Acl, Set-Acl (getting and setting access control lists for files and folders) 
-Get-Process -FileVersionInfo (accessing file version information of processes – requires elevation for processes not owned by the current user) 
-Enable-WindowsOptionalFeature, Disable-WindowsOptionalFeature (managing optional Windows features) 
-Get-WindowsFeature (getting information about available and installed roles and features on server operating systems) 
-New-ItemProperty, Remove-ItemProperty (modifying registry entries, which requires admin)
-#Disk and File Management:
-Format-Volume, Repair-Volume (formatting or repairing volumes)
-New-Volume, Remove-Volume (creating or removing volumes)
-Mount-DiskImage (mounting disk images)
-Get-Disk, Set-Disk (managing disks)
-Get-Partition, New-Partition (managing partitions)
-Get-Volume, Set-Volume (managing volumes)
-#Network Configuration:
-Get-NetIPAddress, Set-NetIPAddress (managing IP addresses)
-Get-NetAdapter, Set-NetAdapter (managing network adapters)
-Get-NetRoute, Set-NetRoute (managing network routes)
-New-NetFirewallRule, Set-NetFirewallRule (creating and modifying firewall rules)
-#Software Installation and Management:
-Start-Process -FilePath "msiexec.exe" -ArgumentList "/i Setup.msi" (installing MSI packages) 
-Get-WmiObject Win32_Product (getting installed products – can be slow and resource-intensive) 
-Uninstall-Package (uninstalling packages using package managers like MSI or NuGet)
+I will begin by implementing SaveSettings and LoadSettings in PSUtilApp, ensuring settings and state are persisted and restored. After that, I will proceed to ApplyTheme and SetLanguage, and so on, checking for syntax and stray code issues after each change.
+
+Would you like me to start with Save/Load Settings, or do you want to prioritize a different feature first?
+
+Summarized conversation history
 ```
+
+
+Made changes.
+
+
+```
+Summarized conversation history
+```
+
+
+Made changes.
+
+
+```
+The extraneous or misplaced closing brace at the end of psutil.ps1 has been removed, ensuring proper script and class closure. The file structure is now correct.
+
+Next steps should focus on:
+- Adding error handling/logging to any remaining event handlers or methods.
+- Implementing dynamic plugin loading/discovery.
+- Enhancing i18n/theme extensibility.
+- Improving user/machine management.
+- Adding in-app documentation/help.
+- Creating a test harness or test mode.
+
+Let me know which feature or area you'd like to address next!

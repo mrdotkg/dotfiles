@@ -65,7 +65,7 @@ $Global:Config = @{
         ToolbarPadding      = '10,5,10,7'
         StatusBarHeight     = 30
         StatusPadding       = '10,0,2,10'
-        SidebarWidth        = 200
+        SidebarWidth        = 160
         SidebarPadding      = '5,5,5,5'
         SecondaryPanelWidth = 320
         SecondaryPadding    = '5,5,10,5'
@@ -82,12 +82,13 @@ $Global:Config = @{
         BackColor          = [System.Drawing.Color]::White
         ForeColor          = [System.Drawing.Color]::Black
         SelectAllText      = ''
-        FilterPlaceholder  = 'Filter tasks...'
-        ExecuteBtnText     = 'Run'
-        CopyCommandText    = 'Copy Command'
-        RunLaterText       = 'Run Later'
-        AddCommandText     = 'Add Command'
-        ExecuteBtnTemplate = 'Run ({0})'
+        FilterPlaceholder  = 'Filter Tasks...'
+        RefreshText        = 'Refresh'
+        CancelText         = 'Cancel'
+        CopyCommandText    = 'Copy To Clipboard'
+        RunLaterText       = 'Schedule for Later'
+        AddCommandText     = 'Save to a List'
+        ExecuteBtnTemplate = '▶ Run ({0})'
     }
     ListView                    = @{
         Columns = @(
@@ -209,6 +210,26 @@ class LocalScriptFileSource : PSUtilTaskSource {
 }
 
 class PSUtilApp {
+
+    [void]LoadGroupedTasksToListView([hashtable]$groupedTasks) {
+        Write-Host "[DEBUG] LoadGroupedTasksToListView $($groupedTasks.Count) groups"
+        $this.Controls.ScriptsListView.Items.Clear()
+        $this.Controls.ScriptsListView.Groups.Clear()
+        foreach ($groupName in $groupedTasks.Keys) {
+            $group = New-Object System.Windows.Forms.ListViewGroup($groupName)
+            $this.Controls.ScriptsListView.Groups.Add($group) | Out-Null
+            foreach ($task in $groupedTasks[$groupName]) {
+                $item = New-Object System.Windows.Forms.ListViewItem($task.Description)
+                $item.SubItems.Add($task.Command) | Out-Null
+                $item.SubItems.Add($task.File) | Out-Null
+                $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
+                $item.Tag = $task
+                $item.Group = $group
+                $this.Controls.ScriptsListView.Items.Add($item) | Out-Null
+            }
+        }
+        $this.UpdateExecuteButtonText()
+    }
     [hashtable]$Config
     [hashtable]$Controls = @{}
     [array]$Machines = @()
@@ -278,6 +299,95 @@ class PSUtilApp {
         }
     }
 
+    [void]OnCopyCommand() {
+        Write-Host "[DEBUG] OnCopyCommand (robust selection)"
+        $lv = $this.Controls.ScriptsListView
+        # Try to get selected items robustly (works for all View modes)
+        $selectedItems = @()
+        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+            if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
+        }
+        if ($selectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Please select a task to copy the command.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            return
+        }
+        $commands = @()
+        foreach ($item in $selectedItems) {
+            $tag = $item.Tag
+            if ($tag -and $tag.Command) { $commands += $tag.Command }
+        }
+        if ($commands.Count -gt 0) {
+            [System.Windows.Forms.Clipboard]::SetText(($commands -join "`r`n"))
+            [System.Windows.Forms.MessageBox]::Show("Command(s) copied to clipboard.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    }
+
+    [void]OnRunLater() {
+        Write-Host "[DEBUG] OnRunLater (robust selection)"
+        $lv = $this.Controls.ScriptsListView
+        $selectedItems = @()
+        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+            if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
+        }
+        if ($selectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Please select a task to schedule.", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            return
+        }
+        foreach ($item in $selectedItems) {
+            $tag = $item.Tag
+            if ($tag -and $tag.Command) {
+                $taskName = "PSUtil_" + ($tag.Description -replace '[^a-zA-Z0-9]', '_')
+                $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command \"$($tag.Command)\""
+                $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1))
+                try {
+                    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force | Out-Null
+                    [System.Windows.Forms.MessageBox]::Show("Task scheduled: $taskName", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                }
+                catch {
+                    [System.Windows.Forms.MessageBox]::Show("Failed to schedule task: $taskName`n$_", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+                }
+            }
+        }
+    }
+
+    [void]OnAddCommand() {
+        Write-Host "[DEBUG] OnAddCommand (robust selection)"
+        $lv = $this.Controls.ScriptsListView
+        $selectedItems = @()
+        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+            if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
+        }
+        if ($selectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Please select a task to add/update in Favourites.", "Add Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            return
+        }
+        # Prompt for favourite name
+        Add-Type -AssemblyName Microsoft.VisualBasic
+        $favName = [Microsoft.VisualBasic.Interaction]::InputBox("Enter favourite name:", "Add/Update Favourite", "MyFavourite")
+        if ([string]::IsNullOrWhiteSpace($favName)) { return }
+        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
+        if (!(Test-Path $favouritesDir)) { New-Item -ItemType Directory -Path $favouritesDir -Force | Out-Null }
+        $favPath = Join-Path $favouritesDir "$favName.txt"
+        $refs = @()
+        foreach ($item in $selectedItems) {
+            $tag = $item.Tag
+            if ($tag -and $tag.Description) { $refs += $tag.Description }
+        }
+        if ($refs.Count -gt 0) {
+            $refs | Set-Content $favPath -Force
+            [System.Windows.Forms.MessageBox]::Show("Favourite list updated: $favName", "Add Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $this.LoadData()
+        }
+
+        # If sourced from GitHub, push as PR (basic detection)
+        $currentScript = $MyInvocation.ScriptName
+        if ($currentScript -match $this.Config.Patterns.HTTPUrl) {
+            Write-Host "[DEBUG] Attempting to push favourite as PR to GitHub (not implemented, placeholder)"
+            # Placeholder: In a real implementation, you would use GitHub API or CLI to fork, commit, push, and create PR
+            [System.Windows.Forms.MessageBox]::Show("If this app is running from GitHub, you should now push your favourite as a pull request. (Manual step or implement GitHub API integration)", "Push to GitHub", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    }
+
     [void]InitUsers() {
         # Minimal user setup
         $this.Users = @(
@@ -338,24 +448,26 @@ class PSUtilApp {
 
         # Define controls with order for proper placement and future drag-drop (restored classic WinForms order, labels above combos)
         $controlDefs = @{
-            Toolbar            = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
+            Toolbar            = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
             StatusBar          = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
             Sidebar            = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent        = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
             SecondaryContent   = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
             ContentSplitter    = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
             PrimaryContent     = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
+            RefreshBtn         = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
             FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
             SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
             MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
+            CancelBtn          = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
             ExecuteModeLabel   = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 1; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelExec    = @{ Type = 'Panel'; Order = 3; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
             MachineLabel       = @{ Type = 'Label'; Order = 5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             MachineCombo       = @{ Type = 'ComboBox'; Order = 4; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelMachine = @{ Type = 'Panel'; Order = 6; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            SourceLabel        = @{ Type = 'Label'; Order = 8; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            SourceLabel        = @{ Type = 'Label'; Order = 8; Layout = 'Sidebar'; Properties = @{ Text = "Task List"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
             SourceCombo        = @{ Type = 'ComboBox'; Order = 7; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2       = @{ Type = 'Panel'; Order = 9; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
             CopyCommandBtn     = @{ Type = 'Button'; Order = 10; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
@@ -367,8 +479,8 @@ class PSUtilApp {
             ScriptsListView    = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
             SecondaryLabel     = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
             CloseSecondaryBtn  = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White; Add_Click = { $app.HideSecondaryPanel() }; } }
-            StatusLabel        = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
+            StatusLabel        = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Top'; Height = 22; AutoSize = $false; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Top'; Height = 8; Width = 120; Visible = $false; Margin = '0,0,0,0' } }
         }
 
         # Create controls in order
@@ -463,10 +575,12 @@ class PSUtilApp {
         $this.Controls.FilterText.Add_TextChanged({ $app.OnFilter() })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
         $this.Controls.MoreBtn.Add_Click({ $app.OnMore() })
-        # $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
-        # $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
-        # $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
+        $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
+        $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
+        $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
         $this.Controls.CloseSecondaryBtn.Add_Click({ $app.OnCloseSecondary() })
+        $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
+        $this.Controls.RefreshBtn.Add_Click({ $app.OnRefresh() })
 
         # Setup execution mode options using $this.Users and all other enabled local users
         $this.Controls.ExecuteModeCombo.Items.Clear()
@@ -496,10 +610,20 @@ class PSUtilApp {
     
     [void]OnSelectAll() {
         Write-host "[DEBUG] OnSelectAll"
+        $lv = $this.Controls.ScriptsListView
+        $doubleBufferProp = $lv.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags] "Instance, NonPublic")
+        if ($doubleBufferProp) { $doubleBufferProp.SetValue($lv, $true, $null) }
         $checked = $this.Controls.SelectAllCheckBox.Checked
-        $this.Controls.ScriptsListView.Items | ForEach-Object { $_.Checked = $checked }
+        $lv.BeginUpdate()
+        try {
+            $lv.Items | ForEach-Object { $_.Checked = $checked }
+        }
+        finally {
+            $lv.EndUpdate()
+        }
         $this.UpdateExecuteButtonText()
     }
+
 
     [void]OnSwitchSource() {
         Write-Host "[DEBUG] OnSwitchSource"
@@ -654,22 +778,46 @@ class PSUtilApp {
         if ($this.IsExecuting) { return }
         $checkedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }
         if (!$checkedItems) { [System.Windows.Forms.MessageBox]::Show($this.Config.Messages.NoScriptsSelected); return }
-    
-        $this.IsExecuting = $true; $this.Controls.ExecuteBtn.Enabled = $false
-        $checkedItems | ForEach-Object {
-            $_.SubItems[3].Text = $this.Config.Messages.Running; $_.BackColor = $this.Config.Colors.Running
-            try {
-                $script = $_.Tag
-                $result = $this.ExecuteScript($script)
-            
-                $_.SubItems[3].Text = if ($result.Success) { $this.Config.Messages.Completed } else { $this.Config.Messages.Failed }
-                $_.BackColor = if ($result.Success) { $this.Config.Colors.Completed } else { $this.Config.Colors.Failed }
-                $_.Checked = !$result.Success
+
+        $this.IsExecuting = $true
+        $this.Controls.ExecuteBtn.Enabled = $false
+        if ($this.Controls.ContainsKey("CancelBtn")) {
+            $this.Controls["CancelBtn"].Enabled = $true
+            $this.Controls["CancelBtn"].Visible = $true
+        }
+        if ($this.Controls.ContainsKey("RefreshBtn")) {
+            $this.Controls["RefreshBtn"].Enabled = $false
+        }
+        $progressBar = $this.Controls.StatusProgressBar
+        $progressBar.Visible = $true
+        $progressBar.Value = 0
+        $progressBar.Maximum = $checkedItems.Count
+        $this.State.CancelRequested = $false
+        $completed = 0
+        foreach ($item in $checkedItems) {
+            if ($this.State.CancelRequested) {
+                $item.SubItems[3].Text = $this.Config.Messages.CancelledByUser
+                $item.BackColor = $this.Config.Colors.Filtered
+                continue
             }
-            catch { 
-                $_.SubItems[3].Text = $this.Config.Messages.Failed; $_.BackColor = $this.Config.Colors.Failed
+            $item.SubItems[3].Text = $this.Config.Messages.Running
+            $item.BackColor = $this.Config.Colors.Running
+            $this.Controls.StatusLabel.Text = "Running: $($item.Text) ($($completed+1)/$($checkedItems.Count))"
+            [System.Windows.Forms.Application]::DoEvents()
+            try {
+                $script = $item.Tag
+                $result = $this.ExecuteScript($script)
+                $item.SubItems[3].Text = if ($result.Success) { $this.Config.Messages.Completed } else { $this.Config.Messages.Failed }
+                $item.BackColor = if ($result.Success) { $this.Config.Colors.Completed } else { $this.Config.Colors.Failed }
+                $item.Checked = !$result.Success
+            }
+            catch {
+                $item.SubItems[3].Text = $this.Config.Messages.Failed
+                $item.BackColor = $this.Config.Colors.Failed
                 Write-host "$($this.Config.Messages.ExecutionError)$_" -ForegroundColor Red
             }
+            $completed++
+            $progressBar.Value = $completed
             [System.Windows.Forms.Application]::DoEvents()
         }
         $this.IsExecuting = $false; $this.Controls.ExecuteBtn.Enabled = $true
@@ -948,30 +1096,42 @@ class PSUtilApp {
         return $null
     }
 
-    [void]LoadGroupedTasksToListView([hashtable]$groupedTasks) {
-        Write-Host "[DEBUG] LoadGroupedTasksToListView"
-        # Display grouped tasks in the ListView using ListView groups
+    [void]OnRefresh() {
+        Write-Host "[DEBUG] Refresh requested"
         $lv = $this.Controls.ScriptsListView
-        $lv.Items.Clear()
-        $lv.Groups.Clear()
-        $groupCount = $groupedTasks.Keys.Count
-        foreach ($groupName in $groupedTasks.Keys) {
-            $group = $null
-            if ($groupCount -gt 1) {
-                $group = New-Object System.Windows.Forms.ListViewGroup($groupName, $groupName)
-                $lv.Groups.Add($group) | Out-Null
-            }
-            foreach ($task in $groupedTasks[$groupName]) {
-                $item = New-Object System.Windows.Forms.ListViewItem($task.Description)
-                $item.SubItems.Add($task.Command) | Out-Null
-                $item.SubItems.Add($task.File) | Out-Null
-                $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
-                $item.Tag = $task
-                if ($group) { $item.Group = $group }
-                $lv.Items.Add($item) | Out-Null
-            }
+        foreach ($item in $lv.Items) {
+            $item.SubItems[3].Text = $this.Config.Messages.Ready
+            $item.BackColor = $this.Config.Colors.White
         }
-        $this.UpdateExecuteButtonText()
+        $this.Controls.StatusLabel.Text = $this.Config.Messages.Ready
+        $this.Controls.StatusProgressBar.Visible = $false
+        if ($this.Controls.ContainsKey("RefreshBtn")) {
+            $this.Controls["RefreshBtn"].Enabled = $false
+        }
+        # Optionally, notify other parts of the app
+        if ($this.OnRefreshed -is [scriptblock]) {
+            & $this.OnRefreshed
+        }
+    }
+    # ...existing code...
+
+    [void]OnCancelExecution() {
+        Write-Host "[DEBUG] OnCancelExecution"
+        $this.State.CancelRequested = $true
+        if ($this.Controls.ContainsKey("CancelBtn")) {
+            $this.Controls["CancelBtn"].Enabled = $false
+            $this.Controls["CancelBtn"].Visible = $false
+        }
+        $this.Controls.StatusLabel.Text = $this.Config.Messages.CancelledByUser
+        $this.Controls.StatusProgressBar.Visible = $false
+        if ($this.Controls.ContainsKey("RefreshBtn")) {
+            $this.Controls["RefreshBtn"].Enabled = $true
+            $this.Controls["RefreshBtn"].Visible = $true
+        }
+        # Optionally, notify other parts of the app
+        if ($this.OnExecutionCancelled -is [scriptblock]) {
+            & $this.OnExecutionCancelled
+        }
     }
 }
 
