@@ -133,7 +133,7 @@ class PSUtilTaskSource {
         $this.Type = $type
     }
     [array]GetTasks() {
-        throw [System.NotImplementedException]::new('GetTasks must be implemented by subclasses')
+        throw 'GetTasks must be implemented by subclasses'
     }
 }
 
@@ -308,7 +308,7 @@ class PSUtilApp {
             if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
         }
         if ($selectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to copy the command.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $this.SetStatusMessage("Please select a task to copy the command.", 'Orange')
             return
         }
         $commands = @()
@@ -317,8 +317,8 @@ class PSUtilApp {
             if ($tag -and $tag.Command) { $commands += $tag.Command }
         }
         if ($commands.Count -gt 0) {
-            [System.Windows.Forms.Clipboard]::SetText(($commands -join "`r`n"))
-            [System.Windows.Forms.MessageBox]::Show("Command(s) copied to clipboard.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $commands -join "`r`n" | Set-Clipboard
+            $this.SetStatusMessage("Command(s) copied to clipboard.", 'Green')
         }
     }
 
@@ -330,7 +330,7 @@ class PSUtilApp {
             if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
         }
         if ($selectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to schedule.", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $this.SetStatusMessage("Please select a task to schedule.", 'Orange')
             return
         }
         foreach ($item in $selectedItems) {
@@ -341,10 +341,10 @@ class PSUtilApp {
                 $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1))
                 try {
                     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force | Out-Null
-                    [System.Windows.Forms.MessageBox]::Show("Task scheduled: $taskName", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    $this.SetStatusMessage("Task scheduled: $taskName", 'Green')
                 }
                 catch {
-                    [System.Windows.Forms.MessageBox]::Show("Failed to schedule task: $taskName`n$_", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+                    $this.SetStatusMessage("Failed to schedule task: $taskName - $_", 'Red')
                 }
             }
         }
@@ -358,34 +358,11 @@ class PSUtilApp {
             if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
         }
         if ($selectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to add/update in Favourites.", "Add Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $this.SetStatusMessage("Please select a task to add/update in Favourites.", 'Orange')
             return
         }
-        # Prompt for favourite name
-        Add-Type -AssemblyName Microsoft.VisualBasic
-        $favName = [Microsoft.VisualBasic.Interaction]::InputBox("Enter favourite name:", "Add/Update Favourite", "MyFavourite")
-        if ([string]::IsNullOrWhiteSpace($favName)) { return }
-        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
-        if (!(Test-Path $favouritesDir)) { New-Item -ItemType Directory -Path $favouritesDir -Force | Out-Null }
-        $favPath = Join-Path $favouritesDir "$favName.txt"
-        $refs = @()
-        foreach ($item in $selectedItems) {
-            $tag = $item.Tag
-            if ($tag -and $tag.Description) { $refs += $tag.Description }
-        }
-        if ($refs.Count -gt 0) {
-            $refs | Set-Content $favPath -Force
-            [System.Windows.Forms.MessageBox]::Show("Favourite list updated: $favName", "Add Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-            $this.LoadData()
-        }
-
-        # If sourced from GitHub, push as PR (basic detection)
-        $currentScript = $MyInvocation.ScriptName
-        if ($currentScript -match $this.Config.Patterns.HTTPUrl) {
-            Write-Host "[DEBUG] Attempting to push favourite as PR to GitHub (not implemented, placeholder)"
-            # Placeholder: In a real implementation, you would use GitHub API or CLI to fork, commit, push, and create PR
-            [System.Windows.Forms.MessageBox]::Show("If this app is running from GitHub, you should now push your favourite as a pull request. (Manual step or implement GitHub API integration)", "Push to GitHub", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-        }
+        # Use the secondary panel for input instead of VisualBasic InputBox
+        $this.ShowFavouritePanel($selectedItems)
     }
 
     [void]InitUsers() {
@@ -418,7 +395,8 @@ class PSUtilApp {
             else { "$($this.Config.URLs.GitHubAPI)/$($this.Config.Owner)/$($this.Config.Repo)/contents" }
             $apiResponse = Invoke-WebRequest $url | ConvertFrom-Json
             foreach ($item in $apiResponse) {
-                if ($item.type -eq $this.Config.SourceInfo.DirectoryTypes.File -and $this.Config.ScriptExtensions.Remote -contains [System.IO.Path]::GetExtension($item.name)) {
+                $extension = if ($item.name.Contains('.')) { $item.name.Substring($item.name.LastIndexOf('.')) } else { '' }
+                if ($item.type -eq $this.Config.SourceInfo.DirectoryTypes.File -and $this.Config.ScriptExtensions.Remote -contains $extension) {
                     $files += if ($path) { "$path$($this.Config.SourceInfo.SlashSeparator)$($item.name)" } else { $item.name }
                 }
                 elseif ($item.type -eq $this.Config.SourceInfo.DirectoryTypes.Dir) {
@@ -458,7 +436,7 @@ class PSUtilApp {
             PrimaryContent     = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             RefreshBtn         = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
             FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
-            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
+            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
             MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
             CancelBtn          = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
@@ -651,13 +629,13 @@ class PSUtilApp {
                     $this.LoadGroupedTasksToListView($grouped)
                 }
                 else {
-                    [System.Windows.Forms.MessageBox]::Show("No matching tasks found in scripts for this favourite file.", "No Tasks", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    $this.SetStatusMessage("No matching tasks found in scripts for this favourite file.", 'Orange')
                     $this.Controls.ScriptsListView.Items.Clear()
                     $this.UpdateExecuteButtonText()
                 }
             }
             else {
-                [System.Windows.Forms.MessageBox]::Show("No matching tasks found for this favourite.", "No Tasks", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                $this.SetStatusMessage("No matching tasks found for this favourite.", 'Orange')
                 $this.Controls.ScriptsListView.Items.Clear()
                 $this.UpdateExecuteButtonText()
             }
@@ -822,7 +800,7 @@ class PSUtilApp {
             }
             $completed++
             $progressBar.Value = $completed
-            [System.Windows.Forms.Application]::DoEvents()
+            $this.RefreshUI()
         }
         $this.IsExecuting = $false; $this.Controls.ExecuteBtn.Enabled = $true
     }
@@ -958,7 +936,7 @@ class PSUtilApp {
         Write-Host "[DEBUG] OnAddToFavourite"
         $selectedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Selected }
         if (!$selectedItems) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to add to Favourites.", "Add to Favourite", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            $this.SetStatusMessage("Please select a task to add to Favourites.", 'Orange')
             return
         }
         $this.ShowFavouritePanel($selectedItems)
@@ -993,7 +971,10 @@ class PSUtilApp {
         $btnSave.Dock = 'Top'
         $btnSave.Add_Click({
                 $name = $txt.Text.Trim()
-                if (!$name) { [System.Windows.Forms.MessageBox]::Show("Enter a name."); return }
+                if (!$name) { 
+                    $this.SetStatusMessage("Enter a name for the favourite.", 'Orange')
+                    return 
+                }
                 $refs = @()
                 foreach ($item in $selectedItems) {
                     $tag = $item.Tag
