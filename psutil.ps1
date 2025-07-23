@@ -1,5 +1,5 @@
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
-Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+Add-Type -AssemblyName System.Windows.Forms
 
 # PowerShell GUI utility for executing scripts
 
@@ -45,12 +45,12 @@ $Global:Config = @{
         StackTrace         = 'Stack trace: '
     }
     Colors                      = @{
-        White     = [System.Drawing.Color]::White
-        Running   = [System.Drawing.Color]::LightYellow
-        Completed = [System.Drawing.Color]::LightGreen
-        Failed    = [System.Drawing.Color]::LightCoral
-        Text      = [System.Drawing.Color]::Black
-        Filtered  = [System.Drawing.Color]::Gray
+        White     = 'White'
+        Running   = 'LightYellow'
+        Completed = 'LightGreen'
+        Failed    = 'LightCoral'
+        Text      = 'Black'
+        Filtered  = 'Gray'
     }
     Window                      = @{
         Title           = 'Run -'
@@ -58,7 +58,7 @@ $Global:Config = @{
         Height          = 700
         Padding         = '10,10,10,10'
         Position        = 'CenterScreen'
-        BackgroundColor = [System.Drawing.Color]::WhiteSmoke
+        BackgroundColor = 'WhiteSmoke'
     }
     Panels                      = @{
         ToolbarHeight       = 40
@@ -79,8 +79,8 @@ $Global:Config = @{
         Width              = 120
         Height             = 30
         Padding            = '2,2,2,2'
-        BackColor          = [System.Drawing.Color]::White
-        ForeColor          = [System.Drawing.Color]::Black
+        BackColor          = 'White'
+        ForeColor          = 'Black'
         SelectAllText      = ''
         FilterPlaceholder  = 'Filter Tasks...'
         RefreshText        = 'Refresh'
@@ -133,7 +133,7 @@ class PSUtilTaskSource {
         $this.Type = $type
     }
     [array]GetTasks() {
-        throw [System.NotImplementedException]::new('GetTasks must be implemented by subclasses')
+        throw 'GetTasks must be implemented by subclasses'
     }
 }
 
@@ -308,7 +308,7 @@ class PSUtilApp {
             if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
         }
         if ($selectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to copy the command.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $this.SetStatusMessage("Please select a task to copy the command.", 'Orange')
             return
         }
         $commands = @()
@@ -317,8 +317,8 @@ class PSUtilApp {
             if ($tag -and $tag.Command) { $commands += $tag.Command }
         }
         if ($commands.Count -gt 0) {
-            [System.Windows.Forms.Clipboard]::SetText(($commands -join "`r`n"))
-            [System.Windows.Forms.MessageBox]::Show("Command(s) copied to clipboard.", "Copy Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $commands -join "`r`n" | Set-Clipboard
+            $this.SetStatusMessage("Command(s) copied to clipboard.", 'Green')
         }
     }
 
@@ -330,7 +330,7 @@ class PSUtilApp {
             if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
         }
         if ($selectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to schedule.", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $this.SetStatusMessage("Please select a task to schedule.", 'Orange')
             return
         }
         foreach ($item in $selectedItems) {
@@ -341,10 +341,10 @@ class PSUtilApp {
                 $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1))
                 try {
                     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force | Out-Null
-                    [System.Windows.Forms.MessageBox]::Show("Task scheduled: $taskName", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    $this.SetStatusMessage("Task scheduled: $taskName", 'Green')
                 }
                 catch {
-                    [System.Windows.Forms.MessageBox]::Show("Failed to schedule task: $taskName`n$_", "Run Later", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+                    $this.SetStatusMessage("Failed to schedule task: $taskName - $_", 'Red')
                 }
             }
         }
@@ -358,34 +358,11 @@ class PSUtilApp {
             if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
         }
         if ($selectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to add/update in Favourites.", "Add Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            $this.SetStatusMessage("Please select a task to add/update in Favourites.", 'Orange')
             return
         }
-        # Prompt for favourite name
-        Add-Type -AssemblyName Microsoft.VisualBasic
-        $favName = [Microsoft.VisualBasic.Interaction]::InputBox("Enter favourite name:", "Add/Update Favourite", "MyFavourite")
-        if ([string]::IsNullOrWhiteSpace($favName)) { return }
-        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
-        if (!(Test-Path $favouritesDir)) { New-Item -ItemType Directory -Path $favouritesDir -Force | Out-Null }
-        $favPath = Join-Path $favouritesDir "$favName.txt"
-        $refs = @()
-        foreach ($item in $selectedItems) {
-            $tag = $item.Tag
-            if ($tag -and $tag.Description) { $refs += $tag.Description }
-        }
-        if ($refs.Count -gt 0) {
-            $refs | Set-Content $favPath -Force
-            [System.Windows.Forms.MessageBox]::Show("Favourite list updated: $favName", "Add Command", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-            $this.LoadData()
-        }
-
-        # If sourced from GitHub, push as PR (basic detection)
-        $currentScript = $MyInvocation.ScriptName
-        if ($currentScript -match $this.Config.Patterns.HTTPUrl) {
-            Write-Host "[DEBUG] Attempting to push favourite as PR to GitHub (not implemented, placeholder)"
-            # Placeholder: In a real implementation, you would use GitHub API or CLI to fork, commit, push, and create PR
-            [System.Windows.Forms.MessageBox]::Show("If this app is running from GitHub, you should now push your favourite as a pull request. (Manual step or implement GitHub API integration)", "Push to GitHub", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-        }
+        # Use the secondary panel for input instead of VisualBasic InputBox
+        $this.ShowFavouritePanel($selectedItems)
     }
 
     [void]InitUsers() {
@@ -418,7 +395,8 @@ class PSUtilApp {
             else { "$($this.Config.URLs.GitHubAPI)/$($this.Config.Owner)/$($this.Config.Repo)/contents" }
             $apiResponse = Invoke-WebRequest $url | ConvertFrom-Json
             foreach ($item in $apiResponse) {
-                if ($item.type -eq $this.Config.SourceInfo.DirectoryTypes.File -and $this.Config.ScriptExtensions.Remote -contains [System.IO.Path]::GetExtension($item.name)) {
+                $extension = if ($item.name.Contains('.')) { $item.name.Substring($item.name.LastIndexOf('.')) } else { '' }
+                if ($item.type -eq $this.Config.SourceInfo.DirectoryTypes.File -and $this.Config.ScriptExtensions.Remote -contains $extension) {
                     $files += if ($path) { "$path$($this.Config.SourceInfo.SlashSeparator)$($item.name)" } else { $item.name }
                 }
                 elseif ($item.type -eq $this.Config.SourceInfo.DirectoryTypes.Dir) {
@@ -438,13 +416,14 @@ class PSUtilApp {
         $app = $this
 
         # Main Form
-        $this.MainForm = New-Object System.Windows.Forms.Form -Property @{
-            Text = "$($this.Config.Window.Title) $([System.IO.Path]::GetFileName($sourceInfo).Substring(0,1).ToUpper() + [System.IO.Path]::GetFileName($sourceInfo).Substring(1))";
-            Size = New-Object System.Drawing.Size($this.Config.Window.Width, $this.Config.Window.Height)
-            Padding = $this.Config.Window.Padding
-            StartPosition = $this.Config.Window.Position; BackColor = $this.Config.Window.BackgroundColor
-            Add_Shown = { $app.OnFormShown() }
-        }
+        $this.MainForm = New-Object System.Windows.Forms.Form
+        $this.MainForm.Text = "$($this.Config.Window.Title) $((Split-Path $sourceInfo -Leaf).Substring(0,1).ToUpper() + (Split-Path $sourceInfo -Leaf).Substring(1))"
+        $this.MainForm.Width = $this.Config.Window.Width
+        $this.MainForm.Height = $this.Config.Window.Height
+        $this.MainForm.Padding = $this.Config.Window.Padding
+        $this.MainForm.StartPosition = $this.Config.Window.Position
+        $this.MainForm.BackColor = $this.Config.Window.BackgroundColor
+        $this.MainForm.Add_Shown({ $app.OnFormShown() })
 
         # Define controls with order for proper placement and future drag-drop (restored classic WinForms order, labels above combos)
         $controlDefs = @{
@@ -453,21 +432,21 @@ class PSUtilApp {
             Sidebar            = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent        = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
             SecondaryContent   = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
-            ContentSplitter    = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = [System.Drawing.Color]::LightGray; BorderStyle = 'FixedSingle' } }
+            ContentSplitter    = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = 'LightGray'; BorderStyle = 'FixedSingle' } }
             PrimaryContent     = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             RefreshBtn         = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
             FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
-            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,5,0,0'; BackColor = 'Transparent' } }
+            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
             MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
             CancelBtn          = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
-            ExecuteModeLabel   = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            ExecuteModeLabel   = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
             ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 1; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelExec    = @{ Type = 'Panel'; Order = 3; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            MachineLabel       = @{ Type = 'Label'; Order = 5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            MachineLabel       = @{ Type = 'Label'; Order = 5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
             MachineCombo       = @{ Type = 'ComboBox'; Order = 4; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelMachine = @{ Type = 'Panel'; Order = 6; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            SourceLabel        = @{ Type = 'Label'; Order = 8; Layout = 'Sidebar'; Properties = @{ Text = "Task List"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Regular); BackColor = 'Transparent' } }
+            SourceLabel        = @{ Type = 'Label'; Order = 8; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
             SourceCombo        = @{ Type = 'ComboBox'; Order = 7; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanel2       = @{ Type = 'Panel'; Order = 9; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
             CopyCommandBtn     = @{ Type = 'Button'; Order = 10; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
@@ -477,10 +456,10 @@ class PSUtilApp {
             AddCommandBtn      = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelAdd     = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             ScriptsListView    = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
-            SecondaryLabel     = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter'; Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold) } }
-            CloseSecondaryBtn  = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = [System.Drawing.Color]::LightCoral; ForeColor = $this.Config.Colors.White; Add_Click = { $app.HideSecondaryPanel() }; } }
-            StatusLabel        = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Top'; Height = 22; AutoSize = $false; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Top'; Height = 8; Width = 120; Visible = $false; Margin = '0,0,0,0' } }
+            SecondaryLabel     = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter' } }
+            CloseSecondaryBtn  = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White'; Add_Click = { $app.HideSecondaryPanel() }; } }
+            StatusLabel        = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
         }
 
         # Create controls in order
@@ -488,7 +467,6 @@ class PSUtilApp {
             $name = $_.Key
             $config = $_.Value
             $ctrl = New-Object "System.Windows.Forms.$($config.Type)"
-            $ctrl.Font = New-Object System.Drawing.Font($this.Config.Controls.FontName, $this.Config.Controls.FontSize)
             if ($config.Type -ne 'Splitter') { $ctrl.Dock = $this.Config.Controls.Dock }
             $ctrl.Width = $this.Config.Controls.Width
             $ctrl.Height = $this.Config.Controls.Height
@@ -529,17 +507,17 @@ class PSUtilApp {
         if ($filterTextBox) {
             $placeholder = $this.Config.Controls.FilterPlaceholder
             $filterTextBox.Text = $placeholder
-            $filterTextBox.ForeColor = [System.Drawing.Color]::Gray
+            $filterTextBox.ForeColor = 'Gray'
             $filterTextBox.Add_Enter({
                     if ($this.Text -eq $placeholder) {
                         $this.Text = ""
-                        $this.ForeColor = [System.Drawing.Color]::Black
+                        $this.ForeColor = 'Black'
                     }
                 }.GetNewClosure())
             $filterTextBox.Add_Leave({
-                    if ([string]::IsNullOrWhiteSpace($this.Text)) {
+                    if (-not $this.Text -or $this.Text.Trim() -eq '') {
                         $this.Text = $placeholder
-                        $this.ForeColor = [System.Drawing.Color]::Gray
+                        $this.ForeColor = 'Gray'
                     }
                 }.GetNewClosure())
         }
@@ -561,14 +539,15 @@ class PSUtilApp {
             $menuItem.Checked = $false
             $colIdx = $i
             $menuItem.Add_Click({
-                    param($sender, $e)
-                    $app.ToggleListViewColumn($sender, $e, $colIdx)
+                    param($menuSender, $menuArgs)
+                    $app.ToggleListViewColumn($menuSender, $menuArgs, $colIdx)
                 }.GetNewClosure())
         }
         $this.Controls.ScriptsListView.ContextMenuStrip = $contextMenu
 
         # Setup events (must be done after controls are created)
         $this.Controls.ExecuteBtn.Add_Click({ $app.OnExecute() })
+        $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
         $this.Controls.SelectAllCheckBox.Add_CheckedChanged({ $app.OnSelectAll() })
         $this.Controls.ExecuteModeCombo.Add_SelectedIndexChanged({ $app.OnSwitchUser() })
         $this.Controls.SourceCombo.Add_SelectedIndexChanged({ $app.OnSwitchSource() })
@@ -650,13 +629,13 @@ class PSUtilApp {
                     $this.LoadGroupedTasksToListView($grouped)
                 }
                 else {
-                    [System.Windows.Forms.MessageBox]::Show("No matching tasks found in scripts for this favourite file.", "No Tasks", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    $this.SetStatusMessage("No matching tasks found in scripts for this favourite file.", 'Orange')
                     $this.Controls.ScriptsListView.Items.Clear()
                     $this.UpdateExecuteButtonText()
                 }
             }
             else {
-                [System.Windows.Forms.MessageBox]::Show("No matching tasks found for this favourite.", "No Tasks", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                $this.SetStatusMessage("No matching tasks found for this favourite.", 'Orange')
                 $this.Controls.ScriptsListView.Items.Clear()
                 $this.UpdateExecuteButtonText()
             }
@@ -681,7 +660,7 @@ class PSUtilApp {
             }
         }
     }
-    [void]ToggleListViewColumn($sender, $e, [int]$colIdx) {
+    [void]ToggleListViewColumn($menuSender, $e, [int]$colIdx) {
         Write-host "[DEBUG] ToggleListViewColumn $colIdx"
         $lv = $this.Controls.ScriptsListView
         if ($lv -and $lv.Columns -and $this.Config.ListView.Columns) {
@@ -689,11 +668,11 @@ class PSUtilApp {
             if ($columns.Count -gt $colIdx) {
                 if ($columns[$colIdx].Width -eq 0) {
                     $columns[$colIdx].Width = $this.Config.ListView.Columns[$colIdx].Width
-                    $sender.Checked = $true
+                    $menuSender.Checked = $true
                 }
                 else {
                     $columns[$colIdx].Width = 0
-                    $sender.Checked = $false
+                    $menuSender.Checked = $false
                 }
             }
         }
@@ -777,7 +756,10 @@ class PSUtilApp {
         Write-Host "[DEBUG] OnExecute"
         if ($this.IsExecuting) { return }
         $checkedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }
-        if (!$checkedItems) { [System.Windows.Forms.MessageBox]::Show($this.Config.Messages.NoScriptsSelected); return }
+        if (!$checkedItems) { 
+            $this.SetStatusMessage($this.Config.Messages.NoScriptsSelected, 'Red')
+            return 
+        }
 
         $this.IsExecuting = $true
         $this.Controls.ExecuteBtn.Enabled = $false
@@ -802,8 +784,8 @@ class PSUtilApp {
             }
             $item.SubItems[3].Text = $this.Config.Messages.Running
             $item.BackColor = $this.Config.Colors.Running
-            $this.Controls.StatusLabel.Text = "Running: $($item.Text) ($($completed+1)/$($checkedItems.Count))"
-            [System.Windows.Forms.Application]::DoEvents()
+            $this.SetStatusMessage("Executing: $($item.Text) ($($completed+1)/$($checkedItems.Count))", 'Blue')
+            $this.RefreshUI()
             try {
                 $script = $item.Tag
                 $result = $this.ExecuteScript($script)
@@ -818,7 +800,7 @@ class PSUtilApp {
             }
             $completed++
             $progressBar.Value = $completed
-            [System.Windows.Forms.Application]::DoEvents()
+            $this.RefreshUI()
         }
         $this.IsExecuting = $false; $this.Controls.ExecuteBtn.Enabled = $true
     }
@@ -954,7 +936,7 @@ class PSUtilApp {
         Write-Host "[DEBUG] OnAddToFavourite"
         $selectedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Selected }
         if (!$selectedItems) {
-            [System.Windows.Forms.MessageBox]::Show("Please select a task to add to Favourites.", "Add to Favourite", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            $this.SetStatusMessage("Please select a task to add to Favourites.", 'Orange')
             return
         }
         $this.ShowFavouritePanel($selectedItems)
@@ -989,7 +971,10 @@ class PSUtilApp {
         $btnSave.Dock = 'Top'
         $btnSave.Add_Click({
                 $name = $txt.Text.Trim()
-                if (!$name) { [System.Windows.Forms.MessageBox]::Show("Enter a name."); return }
+                if (!$name) { 
+                    $this.SetStatusMessage("Enter a name for the favourite.", 'Orange')
+                    return 
+                }
                 $refs = @()
                 foreach ($item in $selectedItems) {
                     $tag = $item.Tag
@@ -1133,6 +1118,26 @@ class PSUtilApp {
             & $this.OnExecutionCancelled
         }
     }
+
+    # Status management methods
+    [void]SetStatusMessage([string]$message, [string]$color = 'Black') {
+        Write-Host "[DEBUG] SetStatusMessage: $message"
+        $this.Controls.StatusLabel.Text = $message
+        $this.Controls.StatusLabel.ForeColor = $color
+    }
+
+    [void]ResetStatus() {
+        Write-Host "[DEBUG] ResetStatus"
+        $this.Controls.StatusLabel.Text = $this.Config.Messages.Ready
+        $this.Controls.StatusLabel.ForeColor = 'Black'
+    }
+
+    # UI Helper methods
+    [void]RefreshUI() {
+        # Allow brief pause for UI to update naturally
+        # This is more PowerShell-native than DoEvents()
+        Start-Sleep -Milliseconds 1
+    }
 }
 
 # Register built-in sources before app creation
@@ -1158,15 +1163,28 @@ try {
     $app.MainForm.ShowDialog() | Out-Null 
 }
 catch {
-    Write-Error "$($Global:Config.Messages.FatalError)$_"
-    Write-Error "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)"
-    # Ensure MessageBox is available for error display
+    $errorMessage = "$($Global:Config.Messages.FatalError)$_"
+    $traceInfo = "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)"
+    
+    Write-Error $errorMessage
+    Write-Error $traceInfo
+    
+    # Show error using PowerShell's native notification
     try {
-        [System.Windows.Forms.MessageBox]::Show("$($Global:Config.Messages.FatalError)$_`n`n$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)", $Global:Config.Messages.FatalErrorTitle, [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        # Try to use Windows Toast notification if BurntToast module is available
+        if (Get-Module -ListAvailable -Name BurntToast) {
+            Import-Module BurntToast -ErrorAction SilentlyContinue
+            New-BurntToastNotification -Text "PSUtil Error", $errorMessage -AppLogo $null -Silent
+        }
+        else {
+            throw "BurntToast not available"
+        }
     }
     catch {
-        # Fallback to Write-Host if MessageBox fails
-        Write-Host "$($Global:Config.Messages.FatalError)$_" -ForegroundColor Red
-        Write-Host "$($Global:Config.Messages.StackTrace)$($_.ScriptStackTrace)" -ForegroundColor Red
+        # Fallback to simple console output
+        Write-Host $errorMessage -ForegroundColor Red
+        Write-Host $traceInfo -ForegroundColor Red
+        Write-Host "Press any key to continue..." -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     }
 }
