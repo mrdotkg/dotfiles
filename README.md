@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Shell Script Utility (shellutil.sh)
 
 A shell script utility inspired by `psutil.ps1` that parses shell scripts for comments and their corresponding commands, providing a GUI interface to run those commands.
@@ -313,4 +312,3 @@ Add these missing methods to the main class:
 ---
 
 **Status**: 95% complete - Ready for launch after fixing missing methods
->>>>>>> 4f1e413fecd67fed132c3124bb02b5465291331c
