@@ -1,3 +1,21 @@
+<#
+This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
+Features:
+- TODO Submit new collections and scripts to repository
+- FIXME Write commands to PowerShell history
+- FIXME Improve execution UI performance - sluttering
+- FIXME Fix Move List item down.
+- TODO Enable command scheduling
+- TODO Add native system notifications
+- TODO Show hotkey tooltips in help
+- TODO Maintain script execution order
+- TODO Use %Temp% directory by default
+- TODO Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
+- TODO Create Start Menu and Desktop shortcuts
+- TODO Add context menu - reload scripts, move items up and down, Copy col1, col2..to clipboard, export selected commands to Clipboard
+- TODO Add the column sort on click of a column, update column header with these alt code chars ⬇, ⬆,↑↓, ↑↑, ↓↓
+- TODO Make Group items look distinct by setting up a different background color
+#>
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Windows.Forms
 

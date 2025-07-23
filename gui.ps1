@@ -1,30 +1,3 @@
-<#
-This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
-Features:
-- TODO Submit new collections and scripts to repository
-- BUG only the first group, its actual name is being overridden by default
-- FIXME Write commands to PowerShell history
-- FIXME The list view is updating when it should not been eg seaerch box click and leave. get rid of all such.
-- FIXME Move Status Action Button Panel from Status panel to the Toolbar to the right of Run button.
-- FIXME term 'Queued' is not recognized as a name of a cmdlet
-- FIXME Improve execution UI performance - sluttering
-- FIXME Instead of showing status inside time, show it as a separate column
-- FIXME Fix Move List item down.
-- TODO Enable command scheduling
-- TODO Add native system notifications
-- TODO Show hotkey tooltips in help
-- TODO Maintain script execution order
-- TODO Use %Temp% directory by default
-- TODO Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
-- TODO Create Start Menu and Desktop shortcuts
-- TODO Add context menu - reload scripts, move items up and down, Copy col1, col2..to clipboard, export selected commands to Clipboard
-- TODO Add cancel action item to the status actions
-- TODO Add the column sort on click of a column, update column header with these alt code chars ⬇, ⬆,↑↓, ↑↑, ↓↓
-- TODO Read SSh Config, list remote machines execute on them.
-- TODO Make Group items look distinct by setting up a different background color
-- TODO Do not make list item bold on select, make them bold only if Run as Admin is checked
-
-#>
 $script:Config = @{
     ApiUrl        = $null  
     DatabaseFile  = "db.json"           
@@ -121,7 +94,7 @@ function Update-TitleBarTheme {
     }
     
     $accentColorChanged = ($script:LastDetectedAccentColor -eq $null) -or 
-                         ($script:LastDetectedAccentColor.ToArgb() -ne $newAccentColor.ToArgb())
+    ($script:LastDetectedAccentColor.ToArgb() -ne $newAccentColor.ToArgb())
     
     # Update titlebar if theme changed
     if ($script:LastDetectedTheme -ne $isDarkMode) {

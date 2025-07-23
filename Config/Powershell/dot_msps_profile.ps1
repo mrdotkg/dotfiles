@@ -113,7 +113,7 @@ function Edit-Profile {
     }
 }
 
-function Reload-Profile {
+function Invoke-ProfileReload {
     & $PROFILE
     Write-Host "Profile reloaded!" -ForegroundColor Green
 }
