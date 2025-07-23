@@ -1,0 +1,74 @@
+# =============================================================================
+# Dot's Starship Configuration
+# A clean, informative prompt for PowerShell and other shells
+# =============================================================================
+
+format = """
+[╭─user───❯](bold blue) $username
+[┣─system─❯](bold yellow) $hostname
+[┣─project❯](bold red) $directory$rust$git_branch$git_status$package$golang$terraform$docker_context$python$docker_context$nodejs
+[╰─cmd────❯](bold green) 
+"""
+
+[username]
+format = "[$user]($style) "
+style_user = "green bold"
+style_root = "red bold"
+show_always = true
+
+[hostname]
+ssh_only = false
+format = "[$hostname]($style) "
+trim_at = "."
+style = "yellow bold"
+
+[directory]
+truncation_length = 3
+truncation_symbol = "…/"
+home_symbol = " ~"
+read_only_style = "197"
+read_only = "  "
+format = "at [$path]($style)[$read_only]($read_only_style) "
+
+[git_branch]
+symbol = " "
+format = "on [$symbol$branch]($style) "
+truncation_length = 4
+truncation_symbol = "…/"
+style = "bold green"
+
+[git_status]
+format = '[\($all_status$ahead_behind\)]($style) '
+style = "bold green"
+conflicted = "🏳"
+up_to_date = " "
+untracked = " "
+ahead = "⇡${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+behind = "⇣${count}"
+stashed = " "
+modified = " "
+staged = '[++\($count\)](green)'
+renamed = "襁"
+deleted = " "
+
+[golang]
+format = "via [🏎💨 $version](bold cyan) "
+
+[nodejs]
+format = "via [⬢ $version](bold green) "
+
+[python]
+format = "via [🐍 $version](bold yellow) "
+
+[rust]
+format = "via [⚙️ $version](red bold) "
+
+[docker_context]
+format = "via [🐋 $context](blue bold) "
+
+[terraform]
+format = "via [💠 $version](bold purple) "
+
+[package]
+format = "via [📦 $version](yellow bold) "
