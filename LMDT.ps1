@@ -17,7 +17,8 @@ Features:
 - TODO Make Group items look distinct by setting up a different background color
 #>
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
-Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName System.Windows.Forms
 
 # PowerShell GUI utility for executing scripts
 
@@ -26,7 +27,7 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 # Minimal configuration for PSUtilApp
 $Global:Config = @{
     ScriptFilesBlacklist        = @('gui.ps1', 'psutil.ps1', 'taaest.ps1')
-    DataDir                     = "$env:USERPROFILE\Documents\PSUtil Local Data"
+    DataDir                     = (Split-Path $PSCommandPath -Parent)  # Use script directory instead of Documents
     SubDirs                     = @('Favourites', 'Logs', 'Scripts', 'Templates')
     SSHConfigPath               = "$env:USERPROFILE\.ssh\config"
     SourceComboAllActionsPrefix = 'All Tasks'
@@ -139,8 +140,8 @@ $Global:Config = @{
         GitHubAPI = 'https://api.github.com/repos'
         GitHubRaw = 'https://raw.githubusercontent.com'
     }
-    Owner                       = 'your-github-username'
-    Repo                        = 'your-repo-name'
+    Owner                       = 'mrdotkg'
+    Repo                        = 'dotfiles'
     Branch                      = 'main'
 }
 
@@ -242,8 +243,28 @@ class LocalScriptFileSource : PSUtilTaskSource {
         $this.RelativePath = $relativePath
     }
     [array]GetTasks() {
-        if (Test-Path $this.FilePath) {
-            return $this.App.ParseScriptFile((Get-Content $this.FilePath -Raw), $this.RelativePath) |
+        $scriptContent = $null
+        
+        # Try local file first (only if it's a real local path)
+        if ($this.FilePath -and (Test-Path $this.FilePath) -and $this.FilePath -notmatch '^https?://') {
+            $scriptContent = Get-Content $this.FilePath -Raw
+        }
+        
+        # Fallback to remote GitHub file
+        if (!$scriptContent) {
+            try {
+                $scriptUrl = "$($this.App.Config.URLs.GitHubRaw)/$($this.App.Config.Owner)/$($this.App.Config.Repo)/refs/heads/$($this.App.Config.Branch)/$($this.RelativePath)"
+                $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content
+                Write-Host "[DEBUG] LocalScriptFileSource.GetTasks - Downloaded remote: $($this.RelativePath)" -ForegroundColor Cyan
+            }
+            catch {
+                Write-Warning "[DEBUG] LocalScriptFileSource.GetTasks - Failed to download: $($this.RelativePath) - $_"
+                return @()
+            }
+        }
+        
+        if ($scriptContent) {
+            return $this.App.ParseScriptFile($scriptContent, $this.RelativePath) |
             ForEach-Object { [PSUtilTask]::new($_.Description, $_.Command, $_.File, $_.LineNumber) }
         }
         return @()
@@ -283,6 +304,7 @@ class PSUtilApp {
     [hashtable]$Theme = @{}
     [hashtable]$I18N = @{}
     [hashtable]$State = @{}
+    [hashtable]$TaskCache = @{} # Cache for all parsed tasks for fast template lookup
 
     # Registry for discoverable sources
     static [hashtable]$SourceRegistry = @{}
@@ -331,6 +353,11 @@ class PSUtilApp {
         }
         # Debug output for loaded sources
         Write-Host ("[DEBUG] Sources after LoadSources: " + ($this.Sources | ForEach-Object { "[Type=$($_.GetType().Name), Name=$($_.Name)]" } | Out-String))
+        
+        # Rebuild task cache after loading sources
+        if ($this.TaskCache -ne $null) {
+            $this.BuildTaskCache()
+        }
     }
 
     PSUtilApp() {
@@ -346,6 +373,7 @@ class PSUtilApp {
         $this.InitUsers()
         $this.InitMachines()
         $this.LoadSources()
+        $this.BuildTaskCache()
     }
 
     [void]InitDirectories() {
@@ -363,59 +391,64 @@ class PSUtilApp {
         Write-Host "[DEBUG] InitializeDefaultTemplates"
         $templatesDir = Join-Path $this.Config.DataDir "Templates"
         
-        # Create default templates only if Templates directory is empty
+        # Check if templates already exist - don't create defaults if they do
         $existingTemplates = Get-ChildItem -Path $templatesDir -Filter "*.txt" -ErrorAction SilentlyContinue
-        if ($existingTemplates.Count -eq 0) {
-            
-            # Windows 11 Debloat Template
-            $debloatTemplate = @(
-                "# Template: Windows 11 Debloat",
-                "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
-                "# Tasks: 6",
-                "",
-                "Remove Xbox Gaming Services",
-                "Remove Microsoft Teams Personal", 
-                "Remove Windows 11 Widgets",
-                "Disable Cortana",
-                "Disable Windows Telemetry",
-                "Configure Privacy Settings"
-            )
-            $debloatPath = Join-Path $templatesDir "Windows 11 Debloat.txt"
-            $debloatTemplate | Set-Content $debloatPath -Force
-            
-            # Developer Environment Template
-            $devTemplate = @(
-                "# Template: Developer Environment",
-                "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
-                "# Tasks: 6",
-                "",
-                "Install Git",
-                "Install Visual Studio Code",
-                "Install Node.js LTS",
-                "Install Docker Desktop",
-                "Configure Git Global Settings",
-                "Install PowerShell 7"
-            )
-            $devPath = Join-Path $templatesDir "Developer Environment.txt"
-            $devTemplate | Set-Content $devPath -Force
-            
-            # Content Creator Template
-            $contentTemplate = @(
-                "# Template: Content Creator Setup",
-                "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
-                "# Tasks: 5",
-                "",
-                "Install OBS Studio",
-                "Install GIMP",
-                "Install Audacity",
-                "Install VLC Media Player",
-                "Configure OBS Settings"
-            )
-            $contentPath = Join-Path $templatesDir "Content Creator Setup.txt"
-            $contentTemplate | Set-Content $contentPath -Force
-            
-            Write-Host "[DEBUG] Created default templates"
+        if ($existingTemplates.Count -gt 0) {
+            Write-Host "[DEBUG] Found $($existingTemplates.Count) existing templates, skipping default creation" -ForegroundColor Green
+            return
         }
+        
+        # Create default templates only if Templates directory is empty
+        Write-Host "[DEBUG] No templates found, creating defaults" -ForegroundColor Yellow
+        
+        # Windows 11 Debloat Template
+        $debloatTemplate = @(
+            "# Template: Windows 11 Debloat",
+            "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+            "# Tasks: 6",
+            "",
+            "Remove Xbox Gaming Services",
+            "Remove Microsoft Teams Personal", 
+            "Remove Windows 11 Widgets",
+            "Disable Cortana",
+            "Disable Windows Telemetry",
+            "Configure Privacy Settings"
+        )
+        $debloatPath = Join-Path $templatesDir "Windows 11 Debloat.txt"
+        $debloatTemplate | Set-Content $debloatPath -Force
+        
+        # Developer Environment Template
+        $devTemplate = @(
+            "# Template: Developer Environment",
+            "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+            "# Tasks: 6",
+            "",
+            "Install Git",
+            "Install Visual Studio Code",
+            "Install Node.js LTS",
+            "Install Docker Desktop",
+            "Configure Git Global Settings",
+            "Install PowerShell 7"
+        )
+        $devPath = Join-Path $templatesDir "Developer Environment.txt"
+        $devTemplate | Set-Content $devPath -Force
+        
+        # Content Creator Template
+        $contentTemplate = @(
+            "# Template: Content Creator Setup",
+            "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+            "# Tasks: 5",
+            "",
+            "Install OBS Studio",
+            "Install GIMP",
+            "Install Audacity",
+            "Install VLC Media Player",
+            "Configure OBS Settings"
+        )
+        $contentPath = Join-Path $templatesDir "Content Creator Setup.txt"
+        $contentTemplate | Set-Content $contentPath -Force
+        
+        Write-Host "[DEBUG] Created default templates"
     }
 
     [void]OnCopyCommand() {
@@ -670,8 +703,8 @@ class PSUtilApp {
         
         # Add column click handler for sorting
         $this.Controls.ScriptsListView.Add_ColumnClick({
-                param($sender, $e)
-                $app.OnColumnClick($sender, $e)
+                param($listView, $e)
+                $app.OnColumnClick($listView, $e)
             }.GetNewClosure())
         
         # Hide extra columns initially (show only Script)
@@ -702,7 +735,7 @@ class PSUtilApp {
             })
 
         $this.Controls.ScriptsListView.Add_DragEnter({
-                param($sender, $e)
+                param($listView, $e)
                 if ($e.Data.GetDataPresent("System.Windows.Forms.ListViewItem")) {
                     $e.Effect = 1 # Move
                 }
@@ -716,13 +749,25 @@ class PSUtilApp {
             })
 
         $this.Controls.ScriptsListView.Add_DragOver({
-                param($sender, $e)
+                param($listView, $e)
+                
+                # Ensure assemblies are loaded in this context
+                Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
 
                 if ($e.Data.GetDataPresent("System.Windows.Forms.ListViewItem")) {
                     $e.Effect = 1 # Move
 
-                    $pt = $sender.PointToClient([System.Windows.Forms.Cursor]::Position)
-                    $targetItem = $sender.GetItemAt($pt.X, $pt.Y)
+                    # Use reflection to get cursor position to avoid type resolution issues
+                    try {
+                        $cursorType = [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms").GetType("System.Windows.Forms.Cursor")
+                        $cursorPos = $cursorType.GetProperty("Position").GetValue($null)
+                        $pt = $listView.PointToClient($cursorPos)
+                    }
+                    catch {
+                        # Fallback: use event position if available
+                        $pt = New-Object System.Drawing.Point($e.X, $e.Y)
+                    }
+                    $targetItem = $listView.GetItemAt($pt.X, $pt.Y)
 
                     if ($targetItem) {
                         $targetIndex = $targetItem.Index
@@ -731,25 +776,25 @@ class PSUtilApp {
                         $midPoint = $itemBounds.Top + ($itemBounds.Height / 2)
                         if ($pt.Y -gt $midPoint) {
 
-                            $sender.InsertionMark.Index = $targetIndex
-                            $sender.InsertionMark.AppearsAfterItem = $true
+                            $listView.InsertionMark.Index = $targetIndex
+                            $listView.InsertionMark.AppearsAfterItem = $true
 
                             Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT AFTER" -ForegroundColor Green
                         }
                         else {
 
-                            $sender.InsertionMark.Index = $targetIndex
-                            $sender.InsertionMark.AppearsAfterItem = $false
+                            $listView.InsertionMark.Index = $targetIndex
+                            $listView.InsertionMark.AppearsAfterItem = $false
 
                             Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT BEFORE" -ForegroundColor Green
                         }
                     }
                     else {
                         # If we hit empty space, find the closest item based on Y coordinate
-                        if ($sender.Items.Count -eq 0) {
+                        if ($listView.Items.Count -eq 0) {
                             # Empty list
-                            $sender.InsertionMark.Index = 0
-                            $sender.InsertionMark.AppearsAfterItem = $false
+                            $listView.InsertionMark.Index = 0
+                            $listView.InsertionMark.AppearsAfterItem = $false
                             Write-Host "DragOver: Empty list - INSERT AT INDEX 0" -ForegroundColor Magenta
                         }
                         else {
@@ -757,8 +802,8 @@ class PSUtilApp {
                             $closestItem = $null
                             $closestDistance = [double]::MaxValue
                         
-                            for ($i = 0; $i -lt $sender.Items.Count; $i++) {
-                                $item = $sender.Items[$i]
+                            for ($i = 0; $i -lt $listView.Items.Count; $i++) {
+                                $item = $listView.Items[$i]
                                 $itemCenter = $item.Bounds.Top + ($item.Bounds.Height / 2)
                                 $distance = [Math]::Abs($pt.Y - $itemCenter)
                             
@@ -774,27 +819,27 @@ class PSUtilApp {
                                 $midPoint = $itemBounds.Top + ($itemBounds.Height / 2)
                             
                                 if ($pt.Y -gt $midPoint) {
-                                    $sender.InsertionMark.Index = $targetIndex
-                                    $sender.InsertionMark.AppearsAfterItem = $true
+                                    $listView.InsertionMark.Index = $targetIndex
+                                    $listView.InsertionMark.AppearsAfterItem = $true
                                     Write-Host "DragOver: Closest '$($closestItem.Text)' (Index: $targetIndex) - INSERT AFTER" -ForegroundColor Yellow
                                 }
                                 else {
-                                    $sender.InsertionMark.Index = $targetIndex
-                                    $sender.InsertionMark.AppearsAfterItem = $false
+                                    $listView.InsertionMark.Index = $targetIndex
+                                    $listView.InsertionMark.AppearsAfterItem = $false
                                     Write-Host "DragOver: Closest '$($closestItem.Text)' (Index: $targetIndex) - INSERT BEFORE" -ForegroundColor Yellow
                                 }
                             }
                             else {
                                 # Fallback to checking if we're at the very end
-                                $lastItem = $sender.Items[$sender.Items.Count - 1]
+                                $lastItem = $listView.Items[$listView.Items.Count - 1]
                                 if ($pt.Y -gt $lastItem.Bounds.Bottom) {
-                                    $sender.InsertionMark.Index = $sender.Items.Count - 1
-                                    $sender.InsertionMark.AppearsAfterItem = $true
+                                    $listView.InsertionMark.Index = $listView.Items.Count - 1
+                                    $listView.InsertionMark.AppearsAfterItem = $true
                                     Write-Host "DragOver: END OF LIST - INSERT AFTER LAST ITEM" -ForegroundColor Magenta
                                 }
                                 else {
-                                    $sender.InsertionMark.Index = 0
-                                    $sender.InsertionMark.AppearsAfterItem = $false
+                                    $listView.InsertionMark.Index = 0
+                                    $listView.InsertionMark.AppearsAfterItem = $false
                                     Write-Host "DragOver: BEGINNING OF LIST - INSERT BEFORE FIRST ITEM" -ForegroundColor Magenta
                                 }
                             }
@@ -803,29 +848,29 @@ class PSUtilApp {
                 }
                 else {
                     $e.Effect = 0 # None
-                    $sender.InsertionMark.Index = -1
+                    $listView.InsertionMark.Index = -1
                 }
             })
 
         $this.Controls.ScriptsListView.Add_DragDrop({
-                param($sender, $e)
+                param($listView, $e)
                 $draggedItem = $e.Data.GetData("System.Windows.Forms.ListViewItem")
                 if ($draggedItem) {
-                    $targetIndex = $sender.InsertionMark.Index
+                    $targetIndex = $listView.InsertionMark.Index
                     if ($targetIndex -ge 0) {
 
                         Write-Host "=== DRAG DROP DEBUG ===" -ForegroundColor Yellow
                         Write-Host "Dragged Item: '$($draggedItem.Text)' (Index: $($draggedItem.Index))" -ForegroundColor Cyan
                         Write-Host "Target Index: $targetIndex" -ForegroundColor Cyan
-                        Write-Host "Appears After: $($sender.InsertionMark.AppearsAfterItem)" -ForegroundColor Cyan
-                        Write-Host "ListView Groups Count: $($sender.Groups.Count)" -ForegroundColor Cyan
+                        Write-Host "Appears After: $($listView.InsertionMark.AppearsAfterItem)" -ForegroundColor Cyan
+                        Write-Host "ListView Groups Count: $($listView.Groups.Count)" -ForegroundColor Cyan
                         Write-Host "========================" -ForegroundColor Yellow
 
-                        $app.MoveListViewItem($sender, $draggedItem, $targetIndex, $sender.InsertionMark.AppearsAfterItem)
+                        $app.MoveListViewItem($listView, $draggedItem, $targetIndex, $listView.InsertionMark.AppearsAfterItem)
                     }
                 }
 
-                $sender.InsertionMark.Index = -1
+                $listView.InsertionMark.Index = -1
             }.GetNewClosure())
 
         # Setup events (must be done after controls are created)
@@ -1373,7 +1418,7 @@ class PSUtilApp {
                     return 
                 }
             
-                # Create template content with metadata
+                # Create template content with metadata and task descriptions only
                 $templateContent = @()
                 $templateContent += "# Template: $name"
                 $templateContent += "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
@@ -1382,6 +1427,7 @@ class PSUtilApp {
             
                 foreach ($item in $selectedItems) {
                     $tag = $item.Tag
+                    # Only store the description (comment) - this will be matched against task cache
                     $templateContent += $tag.Description
                 }
             
@@ -1398,7 +1444,7 @@ class PSUtilApp {
                 $this.LoadSources()
                 $this.LoadData()
                 $this.HideSecondaryPanel()
-                $this.SetStatusMessage("Template '$name' created successfully.", 'Green')
+                $this.SetStatusMessage("Template '$name' created successfully with $($selectedItems.Count) tasks.", 'Green')
             }.GetNewClosure())
         $panel.Controls.Add($btnSave)
         
@@ -1408,6 +1454,15 @@ class PSUtilApp {
         $btnCancel.Dock = 'Top'
         $btnCancel.Add_Click({ $this.HideSecondaryPanel() })
         $panel.Controls.Add($btnCancel)
+    }
+
+    [bool]IsRunningFromGitHub() {
+        Write-Host "[DEBUG] IsRunningFromGitHub"
+        $currentScript = $MyInvocation.ScriptName
+        if (!$currentScript) { $currentScript = $PSCommandPath }
+        $isGitHub = $currentScript -match $this.Config.Patterns.HTTPUrl
+        Write-Host "[DEBUG] Script path: $currentScript, IsGitHub: $isGitHub"
+        return $isGitHub
     }
 
     [string]GetSourceInfo() {
@@ -1435,63 +1490,146 @@ class PSUtilApp {
 
     [hashtable]ReadGroupedProfile([string]$profilePath) {
         Write-Host "[DEBUG] ReadGroupedProfile $profilePath"
-        # Parse a profile file into an ordered dictionary of groupName -> [tasks]
+        # Parse a template/profile file into an ordered dictionary of groupName -> [tasks]
         $groupedTasks = [ordered]@{}
-        if (!(Test-Path $profilePath)) { return $groupedTasks }
+        
+        if (!(Test-Path $profilePath)) { 
+            Write-Warning "[DEBUG] ReadGroupedProfile - File not found: $profilePath"
+            return $groupedTasks 
+        }
+        
         $lines = Get-Content $profilePath -ErrorAction SilentlyContinue
-        if (-not $lines) { return $groupedTasks }
+        if (-not $lines) { 
+            Write-Warning "[DEBUG] ReadGroupedProfile - File is empty: $profilePath"
+            return $groupedTasks 
+        }
+        
         $currentGroup = "Group 1"
+        $matchedCount = 0
+        $totalLines = 0
+        
         foreach ($line in $lines) {
             $trimmed = $line.Trim()
+            
+            # Skip empty lines - they create new groups
             if ($trimmed -eq "") {
                 $currentGroup = "Group $($groupedTasks.Count + 1)"
                 continue
             }
-            elseif ($trimmed.StartsWith("#")) {
-                $currentGroup = $trimmed.TrimStart("#").Trim()
+            
+            # Lines starting with # are group headers or comments
+            if ($trimmed.StartsWith("#")) {
+                $headerText = $trimmed.TrimStart("#").Trim()
+                # Skip metadata comments (Template:, Created:, Tasks:)
+                if ($headerText -notmatch "^(Template|Created|Tasks):\s") {
+                    $currentGroup = $headerText
+                }
                 continue
             }
             else {
-                # Try to find the task by ID (line)
+                $totalLines++
+                # Try to find the task by matching the description/comment
                 $task = $this.GetTaskById($trimmed)
                 if ($task) {
                     if (-not $groupedTasks.Contains($currentGroup)) {
                         $groupedTasks[$currentGroup] = @()
                     }
                     $groupedTasks[$currentGroup] += $task
+                    $matchedCount++
+                    Write-Host "[DEBUG] ReadGroupedProfile - Matched: '$trimmed' -> '$($task.Description)'" -ForegroundColor Green
+                }
+                else {
+                    Write-Warning "[DEBUG] ReadGroupedProfile - No task found for: '$trimmed'"
                 }
             }
         }
+        
+        Write-Host "[DEBUG] ReadGroupedProfile - Summary: $matchedCount/$totalLines tasks matched, $($groupedTasks.Count) groups created" -ForegroundColor Cyan
         return $groupedTasks
     }
 
-    [hashtable]GetTaskById([string]$id) {
-        Write-Host "[DEBUG] GetTaskById $id"
-        # Try to find a task by ID in all script files (assume ID is in Description or Command)
+    [void]BuildTaskCache() {
+        Write-Host "[DEBUG] BuildTaskCache - Building in-memory cache of all tasks"
+        $this.TaskCache.Clear()
+        
         foreach ($src in $this.Sources | Where-Object { $_.Type -eq 'ScriptFile' }) {
-            # Use correct file path for LocalScriptFileSource
-            $scriptFile = $null
-            $scriptContent = $null
-            if ($src -is [LocalScriptFileSource]) {
-                $scriptFile = $src.FilePath
-            }
-            else {
-                $scriptFile = $src.Name
-            }
-            if ($scriptFile -and (Test-Path $scriptFile)) {
-                $scriptContent = Get-Content $scriptFile -Raw
-            }
-            if (!$scriptContent) {
-                $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Config.Owner)/$($this.Config.Repo)/refs/heads/$($this.Config.Branch)/$scriptFile"
-                try { $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content } catch { $scriptContent = $null }
-            }
-            if ($scriptContent) {
-                $parsed = $this.ParseScriptFile($scriptContent, $scriptFile)
-                foreach ($task in $parsed) {
-                    if ($task.Description -eq $id -or $task.Command -eq $id) { return $task }
+            $scriptFile = $null  # Declare at foreach level
+            try {
+                $scriptContent = $null
+                
+                if ($src -is [LocalScriptFileSource]) {
+                    $scriptFile = $src.FilePath
+                    # Check if this is a remote file (URL-like path) or local file
+                    if ($scriptFile -match $this.Config.Patterns.HTTPUrl -or !(Test-Path $scriptFile)) {
+                        # This is a remote file reference
+                        $scriptFile = $src.RelativePath
+                    }
+                }
+                else {
+                    $scriptFile = $src.Name
+                }
+                
+                # Try to read local file first (only if it's a real local path)
+                if ($scriptFile -and (Test-Path $scriptFile) -and $scriptFile -notmatch $this.Config.Patterns.HTTPUrl) {
+                    $scriptContent = Get-Content $scriptFile -Raw
+                    Write-Host "[DEBUG] BuildTaskCache - Read local file: $scriptFile" -ForegroundColor Green
+                }
+                
+                # Fallback to remote file or if running from GitHub
+                if (!$scriptContent) {
+                    $scriptUrl = "$($this.Config.URLs.GitHubRaw)/$($this.Config.Owner)/$($this.Config.Repo)/refs/heads/$($this.Config.Branch)/$scriptFile"
+                    try { 
+                        $scriptContent = (Invoke-WebRequest $scriptUrl -ErrorAction Stop).Content 
+                        Write-Host "[DEBUG] BuildTaskCache - Downloaded remote file: $scriptFile" -ForegroundColor Cyan
+                    }
+                    catch { 
+                        Write-Host "[DEBUG] BuildTaskCache - Failed to download: $scriptFile" -ForegroundColor Yellow
+                        $scriptContent = $null 
+                    }
+                }
+                
+                if ($scriptContent) {
+                    $parsed = $this.ParseScriptFile($scriptContent, $scriptFile)
+                    foreach ($task in $parsed) {
+                        # Index by description (comment text) for template matching
+                        $key = $task.Description.Trim()
+                        if ($key -and !$this.TaskCache.ContainsKey($key)) {
+                            $this.TaskCache[$key] = $task
+                            Write-Host "[DEBUG] BuildTaskCache - Cached task: '$key'" -ForegroundColor DarkGreen
+                        }
+                    }
+                    Write-Host "[DEBUG] BuildTaskCache - Processed $($parsed.Count) tasks from: $scriptFile" -ForegroundColor Green
                 }
             }
+            catch {
+                Write-Warning "[DEBUG] BuildTaskCache - Error processing $scriptFile : $_"
+            }
         }
+        
+        Write-Host "[DEBUG] BuildTaskCache - Total cached tasks: $($this.TaskCache.Count)" -ForegroundColor Green
+    }
+
+    [hashtable]GetTaskById([string]$id) {
+        Write-Host "[DEBUG] GetTaskById: '$id'" -ForegroundColor Cyan
+        
+        # Clean the input ID
+        $cleanId = $id.Trim()
+        
+        # Try exact match first
+        if ($this.TaskCache.ContainsKey($cleanId)) {
+            Write-Host "[DEBUG] GetTaskById - Found exact match for: '$cleanId'" -ForegroundColor Green
+            return $this.TaskCache[$cleanId]
+        }
+        
+        # Try case-insensitive partial match
+        foreach ($key in $this.TaskCache.Keys) {
+            if ($key -like "*$cleanId*" -or $cleanId -like "*$key*") {
+                Write-Host "[DEBUG] GetTaskById - Found partial match: '$key' for '$cleanId'" -ForegroundColor Yellow
+                return $this.TaskCache[$key]
+            }
+        }
+        
+        Write-Host "[DEBUG] GetTaskById - No match found for: '$cleanId'" -ForegroundColor Red
         return $null
     }
 
@@ -1700,7 +1838,7 @@ class PSUtilApp {
         }
     }
 
-    [void]OnColumnClick($sender, $e) {
+    [void]OnColumnClick($listView, $e) {
         Write-Host "[DEBUG] OnColumnClick: Column $($e.Column)"
         
         # Initialize sorting state if not exists
@@ -1710,7 +1848,7 @@ class PSUtilApp {
         }
         
         $columnIndex = $e.Column
-        $column = $sender.Columns[$columnIndex]
+        $column = $listView.Columns[$columnIndex]
         
         # Determine sort order
         if ($this.State.SortColumn -eq $columnIndex) {
@@ -1724,7 +1862,7 @@ class PSUtilApp {
         }
         
         # Update column headers with sort indicators
-        foreach ($col in $sender.Columns) {
+        foreach ($col in $listView.Columns) {
             $originalText = $col.Text -replace ' [\^v]', ''
             $col.Text = $originalText
         }
@@ -1734,7 +1872,7 @@ class PSUtilApp {
         $column.Text = $column.Text + $sortIndicator
         
         # Perform the sort
-        $this.SortListView($sender, $columnIndex, $this.State.SortOrder)
+        $this.SortListView($listView, $columnIndex, $this.State.SortOrder)
     }
 
     [void]SortListView($listView, [int]$columnIndex, [string]$sortOrder) {
@@ -1810,22 +1948,46 @@ class PSUtilApp {
         param($app)
         $config = $app.Config
         $currentScript = $MyInvocation.ScriptName; if (!$currentScript) { $currentScript = $PSCommandPath }
-        $scriptDir = Split-Path $currentScript -Parent
-        @(Get-ChildItem -Path $scriptDir -Filter $config.ScriptExtensions.Local[0] -File -Recurse -ErrorAction SilentlyContinue) |
-        Where-Object {
-            $rel = $_.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
-            $config.ScriptFilesBlacklist -notcontains $rel
-        } |
-        ForEach-Object {
-            $rel = $_.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
-            [LocalScriptFileSource]::new($app, $_.FullName, $rel)
+        
+        if ($currentScript -match $config.Patterns.HTTPUrl) {
+            # Running from GitHub - scan remote repository
+            Write-Host "[DEBUG] Running from GitHub, scanning remote repository" -ForegroundColor Green
+            try {
+                $remoteFiles = $app.GetRemoteScriptFilesRecursive("")
+                Write-Host "[DEBUG] Found $($remoteFiles.Count) remote script files" -ForegroundColor Green
+                $remoteFiles | Where-Object { $config.ScriptFilesBlacklist -notcontains $_ } |
+                ForEach-Object {
+                    Write-Host "[DEBUG] Registering remote script: $_" -ForegroundColor Cyan
+                    [LocalScriptFileSource]::new($app, $_, $_)  # Remote files use relative path as both full and relative
+                }
+            }
+            catch {
+                Write-Warning "[DEBUG] Failed to scan remote repository: $_"
+                # Fallback to empty array if GitHub scanning fails
+                @()
+            }
+        }
+        else {
+            # Running locally - scan local directory
+            Write-Host "[DEBUG] Running locally, scanning local directory" -ForegroundColor Green
+            $scriptDir = Split-Path $currentScript -Parent
+            @(Get-ChildItem -Path $scriptDir -Filter $config.ScriptExtensions.Local[0] -File -Recurse -ErrorAction SilentlyContinue) |
+            Where-Object {
+                $rel = $_.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
+                $config.ScriptFilesBlacklist -notcontains $rel
+            } |
+            ForEach-Object {
+                $rel = $_.FullName.Substring($scriptDir.Length + 1).Replace($config.SourceInfo.BackslashSeparator, $config.SourceInfo.SlashSeparator)
+                [LocalScriptFileSource]::new($app, $_.FullName, $rel)
+            }
         }
     })
 
-# Entry point with error handling
+# Main execution block
 try {
+    # Create the application and show it
     $app = [PSUtilApp]::new()
-    $app.MainForm.ShowDialog() | Out-Null 
+    [void]$app.MainForm.ShowDialog()
 }
 catch {
     $errorMessage = "$($Global:Config.Messages.FatalError)$_"
