@@ -17,7 +17,7 @@ Features:
 - TODO Make Group items look distinct by setting up a different background color
 #>
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
-Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 # PowerShell GUI utility for executing scripts
 
@@ -27,11 +27,12 @@ Add-Type -AssemblyName System.Windows.Forms
 $Global:Config = @{
     ScriptFilesBlacklist        = @('gui.ps1', 'psutil.ps1', 'taaest.ps1')
     DataDir                     = "$env:USERPROFILE\Documents\PSUtil Local Data"
-    SubDirs                     = @('Favourites', 'Logs', 'Scripts')
+    SubDirs                     = @('Favourites', 'Logs', 'Scripts', 'Templates')
     SSHConfigPath               = "$env:USERPROFILE\.ssh\config"
     SourceComboAllActionsPrefix = 'All Tasks'
     SourceComboFilePrefix       = '📃 '
     SourceComboFavouritePrefix  = '✨ '
+    SourceComboTemplatePrefix   = '📋 '
     ScriptExtensions            = @{
         Local  = @('*.ps1')
         Remote = @('.ps1')
@@ -172,6 +173,28 @@ class AllTasksSource : PSUtilTaskSource {
     }
 }
 
+# TemplateSource: represents a template file
+class TemplateSource : PSUtilTaskSource {
+    [PSUtilApp]$App
+    [string]$TemplateName
+    TemplateSource([PSUtilApp]$app, [string]$templateName) : base($templateName, "Template") {
+        $this.App = $app
+        $this.TemplateName = $templateName
+    }
+    [array]GetTasks() {
+        $templatePath = Join-Path (Join-Path $this.App.Config.DataDir "Templates") ("$($this.TemplateName).txt")
+        if (Test-Path $templatePath) {
+            $grouped = $this.App.ReadGroupedProfile($templatePath)
+            $tasks = @()
+            foreach ($group in $grouped.Keys) {
+                $tasks += $grouped[$group]
+            }
+            return $tasks
+        }
+        return @()
+    }
+}
+
 # FavouriteSource: represents a favourite file
 class FavouriteSource : PSUtilTaskSource {
     [PSUtilApp]$App
@@ -272,12 +295,28 @@ class PSUtilApp {
         $this.Sources = @()
         # Add AllTasksSource
         $this.Sources += [AllTasksSource]::new($this)
-        # Add FavouriteSource for each favourite file
+        
+        # Add Template sources
+        $templatesDir = Join-Path $this.Config.DataDir "Templates"
+        if (Test-Path $templatesDir) {
+            $templateFiles = Get-ChildItem -Path $templatesDir -File | Where-Object { $_.Extension -eq ".txt" }
+            foreach ($templateFile in $templateFiles) {
+                $displayName = "$($this.Config.SourceComboTemplatePrefix)$($templateFile.BaseName)"
+                $templateSource = [TemplateSource]::new($this, $templateFile.BaseName)
+                $templateSource.Name = $displayName
+                $this.Sources += $templateSource
+            }
+        }
+        
+        # Add FavouriteSource for each favourite file (keep for backward compatibility)
         $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
         if (Test-Path $favouritesDir) {
             $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
             foreach ($favFile in $favFiles) {
-                $this.Sources += [FavouriteSource]::new($this, $favFile.BaseName)
+                $displayName = "$($this.Config.SourceComboFavouritePrefix)$($favFile.BaseName)"
+                $favouriteSource = [FavouriteSource]::new($this, $favFile.BaseName)
+                $favouriteSource.Name = $displayName
+                $this.Sources += $favouriteSource
             }
         }
         # Add ScriptFile sources from registry
@@ -314,6 +353,68 @@ class PSUtilApp {
         $dirs = @($this.Config.DataDir) + ($this.Config.SubDirs | ForEach-Object { "$($this.Config.DataDir)\$_" })
         foreach ($dir in $dirs) {
             if (!(Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        }
+        
+        # Initialize default templates
+        $this.InitializeDefaultTemplates()
+    }
+
+    [void]InitializeDefaultTemplates() {
+        Write-Host "[DEBUG] InitializeDefaultTemplates"
+        $templatesDir = Join-Path $this.Config.DataDir "Templates"
+        
+        # Create default templates only if Templates directory is empty
+        $existingTemplates = Get-ChildItem -Path $templatesDir -Filter "*.txt" -ErrorAction SilentlyContinue
+        if ($existingTemplates.Count -eq 0) {
+            
+            # Windows 11 Debloat Template
+            $debloatTemplate = @(
+                "# Template: Windows 11 Debloat",
+                "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+                "# Tasks: 6",
+                "",
+                "Remove Xbox Gaming Services",
+                "Remove Microsoft Teams Personal", 
+                "Remove Windows 11 Widgets",
+                "Disable Cortana",
+                "Disable Windows Telemetry",
+                "Configure Privacy Settings"
+            )
+            $debloatPath = Join-Path $templatesDir "Windows 11 Debloat.txt"
+            $debloatTemplate | Set-Content $debloatPath -Force
+            
+            # Developer Environment Template
+            $devTemplate = @(
+                "# Template: Developer Environment",
+                "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+                "# Tasks: 6",
+                "",
+                "Install Git",
+                "Install Visual Studio Code",
+                "Install Node.js LTS",
+                "Install Docker Desktop",
+                "Configure Git Global Settings",
+                "Install PowerShell 7"
+            )
+            $devPath = Join-Path $templatesDir "Developer Environment.txt"
+            $devTemplate | Set-Content $devPath -Force
+            
+            # Content Creator Template
+            $contentTemplate = @(
+                "# Template: Content Creator Setup",
+                "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+                "# Tasks: 5",
+                "",
+                "Install OBS Studio",
+                "Install GIMP",
+                "Install Audacity",
+                "Install VLC Media Player",
+                "Configure OBS Settings"
+            )
+            $contentPath = Join-Path $templatesDir "Content Creator Setup.txt"
+            $contentTemplate | Set-Content $contentPath -Force
+            
+            Write-Host "[DEBUG] Created default templates"
         }
     }
 
@@ -383,6 +484,22 @@ class PSUtilApp {
         $this.ShowFavouritePanel($selectedItems)
     }
 
+    [void]OnCreateTemplate() {
+        Write-Host "[DEBUG] OnCreateTemplate"
+        $lv = $this.Controls.ScriptsListView
+        $selectedItems = @()
+        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+            if ($lv.Items[$i].Selected -or $lv.Items[$i].Checked) { 
+                $selectedItems += $lv.Items[$i] 
+            }
+        }
+        if ($selectedItems.Count -eq 0) {
+            $this.SetStatusMessage("Please select tasks to create a template.", 'Orange')
+            return
+        }
+        $this.ShowTemplatePanel($selectedItems)
+    }
+
     [void]InitUsers() {
         # Minimal user setup
         $this.Users = @(
@@ -445,39 +562,41 @@ class PSUtilApp {
 
         # Define controls with order for proper placement and future drag-drop (restored classic WinForms order, labels above combos)
         $controlDefs = @{
-            Toolbar            = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
-            StatusBar          = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
-            Sidebar            = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
-            MainContent        = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
-            SecondaryContent   = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
-            ContentSplitter    = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = 'LightGray'; BorderStyle = 'FixedSingle' } }
-            PrimaryContent     = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
-            RefreshBtn         = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
-            FilterText         = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
-            SelectAllCheckBox  = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
-            MoreBtn            = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
-            ExecuteBtn         = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
-            CancelBtn          = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
-            ExecuteModeLabel   = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            ExecuteModeCombo   = @{ Type = 'ComboBox'; Order = 1; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            SpacerPanelExec    = @{ Type = 'Panel'; Order = 3; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            MachineLabel       = @{ Type = 'Label'; Order = 5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            MachineCombo       = @{ Type = 'ComboBox'; Order = 4; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            SpacerPanelMachine = @{ Type = 'Panel'; Order = 6; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
-            SourceLabel        = @{ Type = 'Label'; Order = 8; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            SourceCombo        = @{ Type = 'ComboBox'; Order = 7; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
-            SpacerPanel2       = @{ Type = 'Panel'; Order = 9; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
-            CopyCommandBtn     = @{ Type = 'Button'; Order = 10; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelCopy    = @{ Type = 'Panel'; Order = 11; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            RunLaterBtn        = @{ Type = 'Button'; Order = 12; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelRun     = @{ Type = 'Panel'; Order = 13; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            AddCommandBtn      = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelAdd     = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            ScriptsListView    = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true } }
-            SecondaryLabel     = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter' } }
-            CloseSecondaryBtn  = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White'; Add_Click = { $app.HideSecondaryPanel() }; } }
-            StatusLabel        = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            StatusProgressBar  = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
+            Toolbar             = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
+            StatusBar           = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
+            Sidebar             = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
+            MainContent         = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
+            SecondaryContent    = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
+            ContentSplitter     = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = 'LightGray'; BorderStyle = 'FixedSingle' } }
+            PrimaryContent      = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
+            RefreshBtn          = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
+            FilterText          = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
+            SelectAllCheckBox   = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
+            MoreBtn             = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
+            ExecuteBtn          = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
+            CancelBtn           = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
+            ExecuteModeLabel    = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            ExecuteModeCombo    = @{ Type = 'ComboBox'; Order = 1; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SpacerPanelExec     = @{ Type = 'Panel'; Order = 3; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
+            MachineLabel        = @{ Type = 'Label'; Order = 5; Layout = 'Sidebar'; Properties = @{ Text = "Target Machine"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            MachineCombo        = @{ Type = 'ComboBox'; Order = 4; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SpacerPanelMachine  = @{ Type = 'Panel'; Order = 6; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
+            SourceLabel         = @{ Type = 'Label'; Order = 8; Layout = 'Sidebar'; Properties = @{ Text = "Task List Source"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            SourceCombo         = @{ Type = 'ComboBox'; Order = 7; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
+            SpacerPanel2        = @{ Type = 'Panel'; Order = 9; Layout = 'Sidebar'; Properties = @{ Height = 8; BackColor = 'Transparent'; Dock = 'Fill'; } }
+            CopyCommandBtn      = @{ Type = 'Button'; Order = 10; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.CopyCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelCopy     = @{ Type = 'Panel'; Order = 11; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            RunLaterBtn         = @{ Type = 'Button'; Order = 12; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelRun      = @{ Type = 'Panel'; Order = 13; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            AddCommandBtn       = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelAdd      = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            CreateTemplateBtn   = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Create Template'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelTemplate = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
+            SecondaryLabel      = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter' } }
+            CloseSecondaryBtn   = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White'; Add_Click = { $app.HideSecondaryPanel() }; } }
+            StatusLabel         = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
+            StatusProgressBar   = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
         }
 
         # Create controls in order
@@ -545,6 +664,16 @@ class PSUtilApp {
             $this.Controls.ScriptsListView.Columns.Add($column.Name, $column.Width) | Out-Null
         }
         $columns = $this.Controls.ScriptsListView.Columns
+        
+        # Enable column reordering
+        $this.Controls.ScriptsListView.AllowColumnReorder = $true
+        
+        # Add column click handler for sorting
+        $this.Controls.ScriptsListView.Add_ColumnClick({
+                param($sender, $e)
+                $app.OnColumnClick($sender, $e)
+            }.GetNewClosure())
+        
         # Hide extra columns initially (show only Script)
 
         # Add context menu for column visibility dynamically based on config columns
@@ -563,6 +692,142 @@ class PSUtilApp {
         }
         $this.Controls.ScriptsListView.ContextMenuStrip = $contextMenu
 
+        # Setup drag and drop functionality for ListView
+        $this.Controls.ScriptsListView.Add_ItemDrag({ 
+                if ($this.SelectedItems.Count -gt 0) {
+                    $selectedItem = $this.SelectedItems[0]
+
+                    $this.DoDragDrop($selectedItem, 1) # 1 = Move
+                }
+            })
+
+        $this.Controls.ScriptsListView.Add_DragEnter({
+                param($sender, $e)
+                if ($e.Data.GetDataPresent("System.Windows.Forms.ListViewItem")) {
+                    $e.Effect = 1 # Move
+                }
+                else {
+                    $e.Effect = 0 # None
+                }
+            })
+
+        $this.Controls.ScriptsListView.Add_DragLeave({
+                $this.InsertionMark.Index = -1
+            })
+
+        $this.Controls.ScriptsListView.Add_DragOver({
+                param($sender, $e)
+
+                if ($e.Data.GetDataPresent("System.Windows.Forms.ListViewItem")) {
+                    $e.Effect = 1 # Move
+
+                    $pt = $sender.PointToClient([System.Windows.Forms.Cursor]::Position)
+                    $targetItem = $sender.GetItemAt($pt.X, $pt.Y)
+
+                    if ($targetItem) {
+                        $targetIndex = $targetItem.Index
+
+                        $itemBounds = $targetItem.Bounds
+                        $midPoint = $itemBounds.Top + ($itemBounds.Height / 2)
+                        if ($pt.Y -gt $midPoint) {
+
+                            $sender.InsertionMark.Index = $targetIndex
+                            $sender.InsertionMark.AppearsAfterItem = $true
+
+                            Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT AFTER" -ForegroundColor Green
+                        }
+                        else {
+
+                            $sender.InsertionMark.Index = $targetIndex
+                            $sender.InsertionMark.AppearsAfterItem = $false
+
+                            Write-Host "DragOver: Target '$($targetItem.Text)' (Index: $targetIndex) - INSERT BEFORE" -ForegroundColor Green
+                        }
+                    }
+                    else {
+                        # If we hit empty space, find the closest item based on Y coordinate
+                        if ($sender.Items.Count -eq 0) {
+                            # Empty list
+                            $sender.InsertionMark.Index = 0
+                            $sender.InsertionMark.AppearsAfterItem = $false
+                            Write-Host "DragOver: Empty list - INSERT AT INDEX 0" -ForegroundColor Magenta
+                        }
+                        else {
+                            # Find the closest item based on Y coordinate
+                            $closestItem = $null
+                            $closestDistance = [double]::MaxValue
+                        
+                            for ($i = 0; $i -lt $sender.Items.Count; $i++) {
+                                $item = $sender.Items[$i]
+                                $itemCenter = $item.Bounds.Top + ($item.Bounds.Height / 2)
+                                $distance = [Math]::Abs($pt.Y - $itemCenter)
+                            
+                                if ($distance -lt $closestDistance) {
+                                    $closestDistance = $distance
+                                    $closestItem = $item
+                                }
+                            }
+                        
+                            if ($closestItem) {
+                                $targetIndex = $closestItem.Index
+                                $itemBounds = $closestItem.Bounds
+                                $midPoint = $itemBounds.Top + ($itemBounds.Height / 2)
+                            
+                                if ($pt.Y -gt $midPoint) {
+                                    $sender.InsertionMark.Index = $targetIndex
+                                    $sender.InsertionMark.AppearsAfterItem = $true
+                                    Write-Host "DragOver: Closest '$($closestItem.Text)' (Index: $targetIndex) - INSERT AFTER" -ForegroundColor Yellow
+                                }
+                                else {
+                                    $sender.InsertionMark.Index = $targetIndex
+                                    $sender.InsertionMark.AppearsAfterItem = $false
+                                    Write-Host "DragOver: Closest '$($closestItem.Text)' (Index: $targetIndex) - INSERT BEFORE" -ForegroundColor Yellow
+                                }
+                            }
+                            else {
+                                # Fallback to checking if we're at the very end
+                                $lastItem = $sender.Items[$sender.Items.Count - 1]
+                                if ($pt.Y -gt $lastItem.Bounds.Bottom) {
+                                    $sender.InsertionMark.Index = $sender.Items.Count - 1
+                                    $sender.InsertionMark.AppearsAfterItem = $true
+                                    Write-Host "DragOver: END OF LIST - INSERT AFTER LAST ITEM" -ForegroundColor Magenta
+                                }
+                                else {
+                                    $sender.InsertionMark.Index = 0
+                                    $sender.InsertionMark.AppearsAfterItem = $false
+                                    Write-Host "DragOver: BEGINNING OF LIST - INSERT BEFORE FIRST ITEM" -ForegroundColor Magenta
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    $e.Effect = 0 # None
+                    $sender.InsertionMark.Index = -1
+                }
+            })
+
+        $this.Controls.ScriptsListView.Add_DragDrop({
+                param($sender, $e)
+                $draggedItem = $e.Data.GetData("System.Windows.Forms.ListViewItem")
+                if ($draggedItem) {
+                    $targetIndex = $sender.InsertionMark.Index
+                    if ($targetIndex -ge 0) {
+
+                        Write-Host "=== DRAG DROP DEBUG ===" -ForegroundColor Yellow
+                        Write-Host "Dragged Item: '$($draggedItem.Text)' (Index: $($draggedItem.Index))" -ForegroundColor Cyan
+                        Write-Host "Target Index: $targetIndex" -ForegroundColor Cyan
+                        Write-Host "Appears After: $($sender.InsertionMark.AppearsAfterItem)" -ForegroundColor Cyan
+                        Write-Host "ListView Groups Count: $($sender.Groups.Count)" -ForegroundColor Cyan
+                        Write-Host "========================" -ForegroundColor Yellow
+
+                        $app.MoveListViewItem($sender, $draggedItem, $targetIndex, $sender.InsertionMark.AppearsAfterItem)
+                    }
+                }
+
+                $sender.InsertionMark.Index = -1
+            }.GetNewClosure())
+
         # Setup events (must be done after controls are created)
         $this.Controls.ExecuteBtn.Add_Click({ $app.OnExecute() })
         $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
@@ -575,6 +840,7 @@ class PSUtilApp {
         $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
         $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
+        $this.Controls.CreateTemplateBtn.Add_Click({ $app.OnCreateTemplate() })
         $this.Controls.CloseSecondaryBtn.Add_Click({ $app.OnCloseSecondary() })
         $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
         $this.Controls.RefreshBtn.Add_Click({ $app.OnRefresh() })
@@ -598,6 +864,20 @@ class PSUtilApp {
         # Add "Add to Favourite..." to ListView context menu
         $addFavMenu = $contextMenu.Items.Add("Add to Favourite...")
         $addFavMenu.Add_Click({ $app.OnAddToFavourite() })
+        
+        # Add "Create Template..." to ListView context menu
+        $addTemplateMenu = $contextMenu.Items.Add("Create Template...")
+        $addTemplateMenu.Add_Click({ $app.OnCreateTemplate() })
+        
+        # Add separator
+        $contextMenu.Items.Add("-") | Out-Null
+        
+        # Add move up/down options
+        $moveUpMenu = $contextMenu.Items.Add("Move Up")
+        $moveUpMenu.Add_Click({ $app.MoveSelectedItemUp() })
+        
+        $moveDownMenu = $contextMenu.Items.Add("Move Down") 
+        $moveDownMenu.Add_Click({ $app.MoveSelectedItemDown() })
     }
     # Sidebar Event Handlers
     [void]OnMore() {
@@ -637,6 +917,26 @@ class PSUtilApp {
         if ($selectedSource -is [AllTasksSource]) {
             $allTasks = $selectedSource.GetTasks()
             $this.LoadTasksToListView($allTasks)
+        }
+        elseif ($selectedSource -is [TemplateSource]) {
+            $templateName = $selectedSource.TemplateName
+            $templatePath = Join-Path (Join-Path $this.Config.DataDir "Templates") "$templateName.txt"
+            if (Test-Path $templatePath) {
+                $grouped = $this.ReadGroupedProfile($templatePath)
+                if ($grouped.Count -gt 0) {
+                    $this.LoadGroupedTasksToListView($grouped)
+                }
+                else {
+                    $this.SetStatusMessage("No matching tasks found in scripts for this template.", 'Orange')
+                    $this.Controls.ScriptsListView.Items.Clear()
+                    $this.UpdateExecuteButtonText()
+                }
+            }
+            else {
+                $this.SetStatusMessage("Template file not found.", 'Orange')
+                $this.Controls.ScriptsListView.Items.Clear()
+                $this.UpdateExecuteButtonText()
+            }
         }
         elseif ($selectedSource -is [FavouriteSource]) {
             $favName = $selectedSource.FavouriteName
@@ -1014,6 +1314,102 @@ class PSUtilApp {
             })
     }
 
+    [void]ShowTemplatePanel($selectedItems) {
+        Write-Host "[DEBUG] ShowTemplatePanel"
+        $this.ShowSecondaryPanel("Create Template")
+        
+        $panel = $this.Controls.SecondaryContent
+        $panel.Controls.Clear()
+        
+        # Template name input
+        $lblName = New-Object System.Windows.Forms.Label
+        $lblName.Text = "Template Name:"
+        $lblName.Dock = 'Top'
+        $lblName.Height = 20
+        $panel.Controls.Add($lblName)
+        
+        $txtName = New-Object System.Windows.Forms.TextBox
+        $txtName.Dock = 'Top'
+        $panel.Controls.Add($txtName)
+        
+        # Spacer
+        $spacer1 = New-Object System.Windows.Forms.Panel
+        $spacer1.Height = 10
+        $spacer1.Dock = 'Top'
+        $spacer1.BackColor = 'Transparent'
+        $panel.Controls.Add($spacer1)
+        
+        # Selected tasks list
+        $lblTasks = New-Object System.Windows.Forms.Label
+        $lblTasks.Text = "Selected Tasks:"
+        $lblTasks.Dock = 'Top'
+        $lblTasks.Height = 20
+        $panel.Controls.Add($lblTasks)
+        
+        $lstTasks = New-Object System.Windows.Forms.ListBox
+        $lstTasks.Height = 120
+        $lstTasks.Dock = 'Top'
+        foreach ($item in $selectedItems) {
+            $tag = $item.Tag
+            $lstTasks.Items.Add($tag.Description) | Out-Null
+        }
+        $panel.Controls.Add($lstTasks)
+        
+        # Spacer
+        $spacer2 = New-Object System.Windows.Forms.Panel
+        $spacer2.Height = 10
+        $spacer2.Dock = 'Top'
+        $spacer2.BackColor = 'Transparent'
+        $panel.Controls.Add($spacer2)
+        
+        # Save button
+        $btnSave = New-Object System.Windows.Forms.Button
+        $btnSave.Text = "Create Template"
+        $btnSave.Dock = 'Top'
+        $btnSave.Add_Click({
+                $name = $txtName.Text.Trim()
+                if (!$name) { 
+                    $this.SetStatusMessage("Enter a name for the template.", 'Orange')
+                    return 
+                }
+            
+                # Create template content with metadata
+                $templateContent = @()
+                $templateContent += "# Template: $name"
+                $templateContent += "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+                $templateContent += "# Tasks: $($selectedItems.Count)"
+                $templateContent += ""
+            
+                foreach ($item in $selectedItems) {
+                    $tag = $item.Tag
+                    $templateContent += $tag.Description
+                }
+            
+                # Ensure Templates directory exists
+                $templatesDir = Join-Path $this.Config.DataDir "Templates"
+                if (!(Test-Path $templatesDir)) {
+                    New-Item -ItemType Directory -Path $templatesDir -Force | Out-Null
+                }
+            
+                $templatePath = Join-Path $templatesDir "$name.txt"
+                $templateContent | Set-Content $templatePath -Force
+            
+                # Reload sources to include new template
+                $this.LoadSources()
+                $this.LoadData()
+                $this.HideSecondaryPanel()
+                $this.SetStatusMessage("Template '$name' created successfully.", 'Green')
+            }.GetNewClosure())
+        $panel.Controls.Add($btnSave)
+        
+        # Cancel button
+        $btnCancel = New-Object System.Windows.Forms.Button
+        $btnCancel.Text = "Cancel"
+        $btnCancel.Dock = 'Top'
+        $btnCancel.Add_Click({ $this.HideSecondaryPanel() })
+        $panel.Controls.Add($btnCancel)
+    }
+
     [string]GetSourceInfo() {
         Write-Host "[DEBUG] GetSourceInfo"
         $currentScript = $MyInvocation.ScriptName
@@ -1155,6 +1551,257 @@ class PSUtilApp {
         # Allow brief pause for UI to update naturally
         # This is more PowerShell-native than DoEvents()
         Start-Sleep -Milliseconds 1
+    }
+
+    [void]ShowSecondaryPanel([string]$title) {
+        Write-Host "[DEBUG] ShowSecondaryPanel: $title"
+        $this.Controls.SecondaryLabel.Text = $title
+        $this.Controls.SecondaryContent.Visible = $true
+        $this.Controls.ContentSplitter.Visible = $true
+    }
+
+    [void]HideSecondaryPanel() {
+        Write-Host "[DEBUG] HideSecondaryPanel"
+        $this.Controls.SecondaryContent.Visible = $false
+        $this.Controls.ContentSplitter.Visible = $false
+    }
+
+    [void]OnCloseSecondary() {
+        Write-Host "[DEBUG] OnCloseSecondary"
+        $this.HideSecondaryPanel()
+    }
+
+    [void]MoveListViewItem($ListView, $Item, [int]$TargetIndex, [bool]$AppearsAfter = $false) {
+        Write-Host "[DEBUG] MoveListViewItem: Moving '$($Item.Text)' from index $($Item.Index) to target index $TargetIndex (AppearsAfter: $AppearsAfter)"
+        
+        $currentIndex = $Item.Index
+        $insertIndex = if ($AppearsAfter) { $TargetIndex + 1 } else { $TargetIndex }
+
+        Write-Host "[DEBUG] Current Index: $currentIndex, Calculated Insert Index: $insertIndex"
+
+        # Don't move if it's the same position
+        if ($currentIndex -eq $insertIndex) {
+            Write-Host "[DEBUG] Move cancelled - same position"
+            return
+        }
+
+        # Store item data
+        $itemData = @{
+            Text        = $Item.Text
+            SubItems    = @($Item.SubItems | ForEach-Object { $_.Text })
+            Checked     = $Item.Checked
+            BackColor   = $Item.BackColor
+            ForeColor   = $Item.ForeColor
+            Font        = $Item.Font
+            Group       = $Item.Group
+            Tag         = $Item.Tag
+            ToolTipText = $Item.ToolTipText
+        }
+
+        $ListView.BeginUpdate()
+        try {
+            # Remove the item first
+            $ListView.Items.RemoveAt($currentIndex)
+            Write-Host "[DEBUG] Item removed from index: $currentIndex"
+            
+            # Adjust insert index if the removed item was before the target
+            if ($insertIndex -gt $currentIndex) {
+                $insertIndex--
+                Write-Host "[DEBUG] Insert index adjusted to: $insertIndex (removed item was before target)"
+            }
+            
+            # Clamp to valid range
+            if ($insertIndex -gt $ListView.Items.Count) {
+                $insertIndex = $ListView.Items.Count
+                Write-Host "[DEBUG] Insert index clamped to list end: $insertIndex"
+            }
+
+            Write-Host "[DEBUG] Final insert index: $insertIndex"
+
+            # Create new item
+            $newItem = New-Object System.Windows.Forms.ListViewItem($itemData.Text)
+            for ($i = 1; $i -lt $itemData.SubItems.Count; $i++) {
+                $newItem.SubItems.Add($itemData.SubItems[$i]) | Out-Null
+            }
+            $newItem.Checked = $itemData.Checked
+            $newItem.BackColor = $itemData.BackColor
+            $newItem.ForeColor = $itemData.ForeColor
+            $newItem.Font = $itemData.Font
+            $newItem.Tag = $itemData.Tag
+            $newItem.ToolTipText = $itemData.ToolTipText
+
+            # Handle group assignment
+            if ($ListView.Groups.Count -gt 0) {
+                if ($insertIndex -lt $ListView.Items.Count) {
+                    $targetItem = $ListView.Items[$insertIndex]
+                    $newItem.Group = $targetItem.Group
+                }
+                elseif ($ListView.Items.Count -gt 0) {
+                    $lastItem = $ListView.Items[$ListView.Items.Count - 1]
+                    $newItem.Group = $lastItem.Group
+                }
+                else {
+                    $newItem.Group = $itemData.Group
+                }
+            }
+
+            # Insert the item
+            if ($insertIndex -ge $ListView.Items.Count) {
+                $ListView.Items.Add($newItem) | Out-Null
+                Write-Host "[DEBUG] Item added at end of list"
+            }
+            else {
+                $ListView.Items.Insert($insertIndex, $newItem) | Out-Null
+                Write-Host "[DEBUG] Item inserted at index: $insertIndex"
+            }
+
+            # Select the moved item
+            $ListView.SelectedItems.Clear()
+            $newItem.Selected = $true
+            $newItem.EnsureVisible()
+            
+            Write-Host "[DEBUG] Move completed - Item moved to index $($newItem.Index)"
+        }
+        finally {
+            $ListView.EndUpdate()
+            $this.UpdateExecuteButtonText()
+        }
+    }
+
+    [void]MoveSelectedItemUp() {
+        Write-Host "[DEBUG] MoveSelectedItemUp"
+        $lv = $this.Controls.ScriptsListView
+        if ($lv.SelectedItems.Count -eq 0) { 
+            $this.SetStatusMessage("Please select an item to move up.", 'Orange')
+            return 
+        }
+
+        $selectedItem = $lv.SelectedItems[0]
+        $currentIndex = $selectedItem.Index
+
+        if ($currentIndex -gt 0) {
+            $this.MoveListViewItem($lv, $selectedItem, $currentIndex - 1, $false)
+        }
+    }
+
+    [void]MoveSelectedItemDown() {
+        Write-Host "[DEBUG] MoveSelectedItemDown"
+        $lv = $this.Controls.ScriptsListView
+        if ($lv.SelectedItems.Count -eq 0) { 
+            $this.SetStatusMessage("Please select an item to move down.", 'Orange')
+            return 
+        }
+
+        $selectedItem = $lv.SelectedItems[0]
+        $currentIndex = $selectedItem.Index
+
+        if ($currentIndex -lt $lv.Items.Count - 1) {
+            $this.MoveListViewItem($lv, $selectedItem, $currentIndex + 1, $true)
+        }
+    }
+
+    [void]OnColumnClick($sender, $e) {
+        Write-Host "[DEBUG] OnColumnClick: Column $($e.Column)"
+        
+        # Initialize sorting state if not exists
+        if (-not $this.State.ContainsKey('SortColumn')) {
+            $this.State.SortColumn = -1
+            $this.State.SortOrder = 'Ascending'
+        }
+        
+        $columnIndex = $e.Column
+        $column = $sender.Columns[$columnIndex]
+        
+        # Determine sort order
+        if ($this.State.SortColumn -eq $columnIndex) {
+            # Same column clicked, toggle sort order
+            $this.State.SortOrder = if ($this.State.SortOrder -eq 'Ascending') { 'Descending' } else { 'Ascending' }
+        }
+        else {
+            # Different column clicked, default to ascending
+            $this.State.SortColumn = $columnIndex
+            $this.State.SortOrder = 'Ascending'
+        }
+        
+        # Update column headers with sort indicators
+        foreach ($col in $sender.Columns) {
+            $originalText = $col.Text -replace ' [\^v]', ''
+            $col.Text = $originalText
+        }
+        
+        # Add sort indicator to current column
+        $sortIndicator = if ($this.State.SortOrder -eq 'Ascending') { ' ^' } else { ' v' }
+        $column.Text = $column.Text + $sortIndicator
+        
+        # Perform the sort
+        $this.SortListView($sender, $columnIndex, $this.State.SortOrder)
+    }
+
+    [void]SortListView($listView, [int]$columnIndex, [string]$sortOrder) {
+        Write-Host "[DEBUG] SortListView: Column $columnIndex, Order $sortOrder"
+        
+        $listView.BeginUpdate()
+        try {
+            # Get all items with their data
+            $items = @()
+            foreach ($item in $listView.Items) {
+                $sortValue = if ($columnIndex -lt $item.SubItems.Count) { 
+                    $item.SubItems[$columnIndex].Text 
+                }
+                else { 
+                    $item.Text 
+                }
+                
+                $items += @{
+                    Item         = $item
+                    SortValue    = $sortValue
+                    OriginalData = @{
+                        Text        = $item.Text
+                        SubItems    = @($item.SubItems | ForEach-Object { $_.Text })
+                        Checked     = $item.Checked
+                        BackColor   = $item.BackColor
+                        ForeColor   = $item.ForeColor
+                        Font        = $item.Font
+                        Group       = $item.Group
+                        Tag         = $item.Tag
+                        ToolTipText = $item.ToolTipText
+                    }
+                }
+            }
+            
+            # Sort the items
+            if ($sortOrder -eq 'Ascending') {
+                $items = $items | Sort-Object { $_.SortValue }
+            }
+            else {
+                $items = $items | Sort-Object { $_.SortValue } -Descending
+            }
+            
+            # Clear and rebuild the ListView
+            $listView.Items.Clear()
+            
+            foreach ($itemData in $items) {
+                $newItem = New-Object System.Windows.Forms.ListViewItem($itemData.OriginalData.Text)
+                for ($i = 1; $i -lt $itemData.OriginalData.SubItems.Count; $i++) {
+                    $newItem.SubItems.Add($itemData.OriginalData.SubItems[$i]) | Out-Null
+                }
+                $newItem.Checked = $itemData.OriginalData.Checked
+                $newItem.BackColor = $itemData.OriginalData.BackColor
+                $newItem.ForeColor = $itemData.OriginalData.ForeColor
+                $newItem.Font = $itemData.OriginalData.Font
+                $newItem.Group = $itemData.OriginalData.Group
+                $newItem.Tag = $itemData.OriginalData.Tag
+                $newItem.ToolTipText = $itemData.OriginalData.ToolTipText
+                
+                $listView.Items.Add($newItem) | Out-Null
+            }
+            
+            Write-Host "[DEBUG] Sort completed - $($items.Count) items sorted"
+        }
+        finally {
+            $listView.EndUpdate()
+            $this.UpdateExecuteButtonText()
+        }
     }
 }
 
