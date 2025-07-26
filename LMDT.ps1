@@ -1,20 +1,12 @@
 <#
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
 Features:
-- TODO Submit new collections and scripts to repository
+- TODO Submit new templates
 - FIXME Write commands to PowerShell history
-- FIXME Improve execution UI performance - sluttering
-- FIXME Fix Move List item down.
+- FIXME Improve execution UI performance - stuttering
 - TODO Enable command scheduling
-- TODO Add native system notifications
-- TODO Show hotkey tooltips in help
-- TODO Maintain script execution order
-- TODO Use %Temp% directory by default
-- TODO Allow custom storage location (Documents/Winutil/Owner/Repo/Profiles)
-- TODO Create Start Menu and Desktop shortcuts
-- TODO Add context menu - reload scripts, move items up and down, Copy col1, col2..to clipboard, export selected commands to Clipboard
-- TODO Add the column sort on click of a column, update column header with these alt code chars ⬇, ⬆,↑↓, ↑↑, ↓↓
-- TODO Make Group items look distinct by setting up a different background color
+- TODO Add native system notifications, add tooltips where possible elsewhere show in status panel
+- TODO Use %Temp% dir by default, provide option to install locally which means Persist Data in %LocalAppData%, Create Start Menu LMDT.desktop
 #>
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing
@@ -355,7 +347,7 @@ class PSUtilApp {
         Write-Host ("[DEBUG] Sources after LoadSources: " + ($this.Sources | ForEach-Object { "[Type=$($_.GetType().Name), Name=$($_.Name)]" } | Out-String))
         
         # Rebuild task cache after loading sources
-        if ($this.TaskCache -ne $null) {
+        if ($null -ne $this.TaskCache) {
             $this.BuildTaskCache()
         }
     }
@@ -599,9 +591,9 @@ class PSUtilApp {
             StatusBar           = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
             Sidebar             = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent         = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
-            SecondaryContent    = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
-            ContentSplitter     = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $false; BackColor = 'LightGray'; BorderStyle = 'FixedSingle' } }
-            PrimaryContent      = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
+            SecondaryContent    = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
+            ContentSplitter     = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $true; BackColor = 'LightGray'; BorderStyle = 'FixedSingle' } }
+            PrimaryContent      = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             RefreshBtn          = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
             FilterText          = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
             SelectAllCheckBox   = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
@@ -627,7 +619,7 @@ class PSUtilApp {
             SpacerPanelTemplate = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
             SecondaryLabel      = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter' } }
-            CloseSecondaryBtn   = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White'; Add_Click = { $app.HideSecondaryPanel() }; } }
+            CloseSecondaryBtn   = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White' } }
             StatusLabel         = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
             StatusProgressBar   = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
         }
@@ -886,7 +878,7 @@ class PSUtilApp {
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
         $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
         $this.Controls.CreateTemplateBtn.Add_Click({ $app.OnCreateTemplate() })
-        $this.Controls.CloseSecondaryBtn.Add_Click({ $app.OnCloseSecondary() })
+        $this.Controls.CloseSecondaryBtn.Add_Click({ $app.HideSecondaryPanel() })
         $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
         $this.Controls.RefreshBtn.Add_Click({ $app.OnRefresh() })
 
@@ -1310,7 +1302,19 @@ class PSUtilApp {
         $this.ShowSecondaryPanel("⭐ Add to Favourite")
         # Simple UI: TextBox for name, ListBox for existing favourites, Save/Cancel buttons
         $panel = $this.Controls.SecondaryContent
-        $panel.Controls.Clear()
+        
+        # Don't clear all controls - preserve the header and close button
+        # Remove only the dynamic content controls
+        $controlsToRemove = @()
+        foreach ($ctrl in $panel.Controls) {
+            if ($ctrl -ne $this.Controls.SecondaryLabel -and $ctrl -ne $this.Controls.CloseSecondaryBtn) {
+                $controlsToRemove += $ctrl
+            }
+        }
+        foreach ($ctrl in $controlsToRemove) {
+            $panel.Controls.Remove($ctrl)
+        }
+        
         $lbl = New-Object System.Windows.Forms.Label
         $lbl.Text = "Favourite Name:"
         $lbl.Dock = 'Top'
@@ -1345,18 +1349,19 @@ class PSUtilApp {
                 }
                 $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$name.txt"
                 $refs | Set-Content $favPath -Force
-                $this.LoadData()
+                $this.LoadSources()  # Reload sources to include new favourite
+                $this.LoadData()     # Reload combo box data
                 $this.HideSecondaryPanel()
             }.GetNewClosure())
         $panel.Controls.Add($btnSave)
         $btnCancel = New-Object System.Windows.Forms.Button
         $btnCancel.Text = "Cancel"
-        $btnCancel.Dock = 'Top'
-        $btnCancel.Add_Click({ $this.HideSecondaryPanel() })
+        $btnCancel.Dock = 'Bottom'
+        $btnCancel.Add_Click({ $this.HideSecondaryPanel() }.GetNewClosure())
         $panel.Controls.Add($btnCancel)
         $lst.Add_SelectedIndexChanged({
                 if ($lst.SelectedItem) { $txt.Text = $lst.SelectedItem }
-            })
+            }.GetNewClosure())
     }
 
     [void]ShowTemplatePanel($selectedItems) {
@@ -1364,7 +1369,18 @@ class PSUtilApp {
         $this.ShowSecondaryPanel("Create Template")
         
         $panel = $this.Controls.SecondaryContent
-        $panel.Controls.Clear()
+        
+        # Don't clear all controls - preserve the header and close button
+        # Remove only the dynamic content controls
+        $controlsToRemove = @()
+        foreach ($ctrl in $panel.Controls) {
+            if ($ctrl -ne $this.Controls.SecondaryLabel -and $ctrl -ne $this.Controls.CloseSecondaryBtn) {
+                $controlsToRemove += $ctrl
+            }
+        }
+        foreach ($ctrl in $controlsToRemove) {
+            $panel.Controls.Remove($ctrl)
+        }
         
         # Template name input
         $lblName = New-Object System.Windows.Forms.Label
@@ -1451,8 +1467,8 @@ class PSUtilApp {
         # Cancel button
         $btnCancel = New-Object System.Windows.Forms.Button
         $btnCancel.Text = "Cancel"
-        $btnCancel.Dock = 'Top'
-        $btnCancel.Add_Click({ $this.HideSecondaryPanel() })
+        $btnCancel.Dock = 'Bottom'
+        $btnCancel.Add_Click({ $this.HideSecondaryPanel() }.GetNewClosure())
         $panel.Controls.Add($btnCancel)
     }
 
@@ -1471,7 +1487,7 @@ class PSUtilApp {
         if (!$currentScript) { $currentScript = $PSCommandPath }
         
         if ($currentScript -match $this.Config.Patterns.HTTPUrl) {
-            return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())"
+            return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())$($this.Config.Defaults.RemoteText)"
         }
         elseif ($currentScript -and (Test-Path $currentScript)) {
             $scriptDir = Split-Path $currentScript -Parent
@@ -1482,7 +1498,7 @@ class PSUtilApp {
         }
     }
     
-    [void]OnFormShown() { 
+    [void]OnFormShown() {
         Write-Host "[DEBUG] OnFormShown"
         $this.MainForm.Activate()
         $this.LoadData()
@@ -1650,7 +1666,6 @@ class PSUtilApp {
             & $this.OnRefreshed
         }
     }
-    # ...existing code...
 
     [void]OnCancelExecution() {
         Write-Host "[DEBUG] OnCancelExecution"
@@ -1695,13 +1710,11 @@ class PSUtilApp {
         Write-Host "[DEBUG] ShowSecondaryPanel: $title"
         $this.Controls.SecondaryLabel.Text = $title
         $this.Controls.SecondaryContent.Visible = $true
-        $this.Controls.ContentSplitter.Visible = $true
     }
 
     [void]HideSecondaryPanel() {
         Write-Host "[DEBUG] HideSecondaryPanel"
         $this.Controls.SecondaryContent.Visible = $false
-        $this.Controls.ContentSplitter.Visible = $false
     }
 
     [void]OnCloseSecondary() {
