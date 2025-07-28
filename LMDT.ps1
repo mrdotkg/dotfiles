@@ -1495,10 +1495,14 @@ class LMDTApp {
         if ($this.Controls.ContainsKey("RefreshBtn")) {
             $this.Controls["RefreshBtn"].Enabled = $false
         }
+        
+        # Show progress bar AFTER setting initial status message
+        $this.SetStatusMessage("Preparing to execute $($checkedItems.Count) tasks...", 'Blue')
         $progressBar = $this.Controls.StatusProgressBar
         $progressBar.Visible = $true
         $progressBar.Value = 0
         $progressBar.Maximum = $checkedItems.Count
+        
         $this.State.CancelRequested = $false
         $completed = 0
         foreach ($item in $checkedItems) {
@@ -1509,7 +1513,9 @@ class LMDTApp {
             }
             $item.SubItems[3].Text = $this.Config.Messages.Running
             $item.BackColor = $this.Config.Colors.Running
-            $this.SetStatusMessage("Executing: $($item.Text) ($($completed+1)/$($checkedItems.Count))", 'Blue')
+            
+            # Set status message WITHOUT hiding progress bar (use special method)
+            $this.SetStatusMessageWithProgress("Executing: $($item.Text) ($($completed+1)/$($checkedItems.Count))", 'Blue')
             $this.RefreshUI()
             try {
                 $script = $item.Tag
@@ -1527,58 +1533,103 @@ class LMDTApp {
             $progressBar.Value = $completed
             $this.RefreshUI()
         }
-        $this.IsExecuting = $false; $this.Controls.ExecuteBtn.Enabled = $true
+        
+        # Final status message will clean up everything including progress bar
+        $this.SetStatusMessage("Execution completed: $completed/$($checkedItems.Count) tasks processed.", 'Green')
+        $this.IsExecuting = $false
     }
 
-    [hashtable]ExecuteScript([hashtable]$script) {
+    [hashtable]ExecuteScript($script) {
         Write-Host "[DEBUG] ExecuteScript"        
         try {
             $result = ""
             $machine = $this.Machines[$this.Controls.MachineCombo.SelectedIndex]
-            $command = $script.Command
-            $file = $script.File
-            $line = $script.LineNumber
-            # You may also want to retrieve the command at the specified file and line
-            $command = $script.Command
+            
+            # Handle both LMDTTask objects and hashtables for backward compatibility
+            if ($script -is [LMDTTask]) {
+                $command = $script.Command
+                $file = $script.File
+                $line = $script.LineNumber
+            }
+            else {
+                # Assume it's a hashtable (legacy format)
+                $command = $script.Command
+                $file = $script.File
+                $line = $script.LineNumber
+            }
+            
+            # Get the actual command to execute
             if ($file -and (Test-Path $file)) {
                 $lines = Get-Content $file
                 if ($line -le $lines.Count -and $line -gt 0) {
                     $command = $lines[$line - 1]
                 }
             }
+            
+            # **HISTORY INTEGRATION: Add command to PowerShell history BEFORE execution**
+            try {
+                Add-History -InputObject $command
+                Write-Host "[DEBUG] Added to PowerShell history: $command" -ForegroundColor Green
+            }
+            catch {
+                Write-Warning "[DEBUG] Failed to add to history: $_"
+            }
+            
             if ($machine.Type -eq "SSH") {
                 $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$command'"
-                if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) { $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$($this.Config.Defaults.SudoCommand)$command'" }
-                elseif ($this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
-                    $targetUser = $this.ExecutionMode.Substring(3)
-                    $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$($this.Config.Defaults.SudoUserCommand)$targetUser $command'"
+                if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) { 
+                    $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$($this.Config.Defaults.SudoCommand)$command'" 
+                    Write-Host "[INFO] SSH admin execution: $sshCommand" -ForegroundColor Yellow
                 }
-                $result = Invoke-Expression $sshCommand
+                elseif ($this.ExecutionMode -ne $this.Config.Defaults.AdminText -and $this.ExecutionMode -ne $this.Config.Defaults.CurrentUserMode) {
+                    $targetUser = if ($this.ExecutionMode.StartsWith("As ")) { $this.ExecutionMode.Substring(3) } else { $this.ExecutionMode }
+                    $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$($this.Config.Defaults.SudoUserCommand)$targetUser $command'"
+                    Write-Host "[INFO] SSH user execution: $sshCommand" -ForegroundColor Yellow
+                }
+                else {
+                    Write-Host "[INFO] SSH execution: $sshCommand" -ForegroundColor Green
+                }
+                
+                # For SSH commands, also add the SSH command to history
+                try {
+                    Add-History -InputObject $sshCommand
+                    Write-Host "[DEBUG] Added SSH command to history: $sshCommand" -ForegroundColor Cyan
+                }
+                catch { 
+                    Write-Warning "[DEBUG] Failed to add SSH command to history: $_"
+                }
+                
+                # Execute SSH command - if it requires password, user must have SSH keys or handle authentication
+                try {
+                    $result = Invoke-Expression $sshCommand
+                    Write-Host "[INFO] SSH command executed successfully" -ForegroundColor Green
+                }
+                catch {
+                    Write-Warning "[INFO] SSH command failed (possibly due to authentication): $_"
+                    $result = "⚠️ SSH execution failed. Ensure SSH key authentication is configured or run manually: $sshCommand"
+                }
             }
             else {
                 # Local execution
                 if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) {
-                    Start-Process $this.Config.Defaults.PowerShellCommand -Verb $this.Config.Defaults.RunAsVerb -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
-                    $result = $this.Config.Messages.ExecuteAsAdmin
+                    # For administrator execution, provide guidance instead of credential prompt
+                    Write-Host "[INFO] Admin execution requested for: $command" -ForegroundColor Yellow
+                    $result = "⚠️ Admin execution mode selected. To run as administrator, please manually execute this command in an elevated PowerShell session."
                 }
-                elseif ($this.ExecutionMode -ne $this.Config.Defaults.AdminText) {
-                    $targetUser = $this.ExecutionMode.Substring(3)
-                    $cred = Get-Credential -UserName $targetUser -Message "$($this.Config.Messages.UserPasswordPrompt)$targetUser"
-                    if ($cred) {
-                        Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
-                        $result = "$($this.Config.Messages.ExecuteAsUser)$targetUser"
-                    }
-                    else { throw $this.Config.Messages.CancelledByUser }
+                elseif ($this.ExecutionMode -ne $this.Config.Defaults.AdminText -and $this.ExecutionMode -ne $this.Config.Defaults.CurrentUserMode) {
+                    # For other user execution, provide guidance instead of credential prompt
+                    $targetUser = if ($this.ExecutionMode.StartsWith("As ")) { $this.ExecutionMode.Substring(3) } else { $this.ExecutionMode }
+                    Write-Host "[INFO] User '$targetUser' execution requested for: $command" -ForegroundColor Yellow
+                    $result = "⚠️ Execution as user '$targetUser' selected. To run as this user, please manually execute this command in a PowerShell session running as '$targetUser'."
                 }
                 elseif ($this.ExecutionMode -eq $this.Config.Defaults.OtherUserText) {
-                    $cred = Get-Credential -Message $this.Config.Messages.CredentialsPrompt
-                    if ($cred) {
-                        Start-Process $this.Config.Defaults.PowerShellCommand -Credential $cred -ArgumentList $this.Config.Defaults.CommandArgument, $command $this.Config.Defaults.WaitParameter
-                        $result = "$($this.Config.Messages.ExecuteAsUser)$($cred.UserName)"
-                    }
-                    else { throw $this.Config.Messages.CancelledByUser }
+                    # For other user execution, provide guidance instead of credential prompt
+                    Write-Host "[INFO] Other user execution requested for: $command" -ForegroundColor Yellow
+                    $result = "⚠️ Other user execution mode selected. To run as a different user, please manually execute this command in a PowerShell session running as the target user."
                 }
                 else {
+                    # Current user execution - use Invoke-Expression (command already added to history above)
+                    Write-Host "[INFO] Executing as current user: $command" -ForegroundColor Green
                     $result = Invoke-Expression $command
                 }
             }
@@ -1648,8 +1699,8 @@ class LMDTApp {
     [void]SetStatusMessage([string]$message, [string]$color = 'Black') {
         Write-Host "[DEBUG] SetStatusMessage: $message"
         if ($this.Controls.StatusLabel) {
-            # First, clean up any existing template input controls to prevent overlapping
-            $this.CleanupStatusBar()
+            # First, completely clean up the status bar including progress bar and template controls
+            $this.CompleteStatusBarCleanup()
             
             # Now set the new message
             $this.Controls.StatusLabel.Text = $message
@@ -1668,6 +1719,72 @@ class LMDTApp {
             if ($appType) {
                 $appType::DoEvents()
             }
+        }
+    }
+
+    [void]SetStatusMessageWithProgress([string]$message, [string]$color = 'Blue') {
+        Write-Host "[DEBUG] SetStatusMessageWithProgress: $message"
+        if ($this.Controls.StatusLabel) {
+            # Clean up template input controls but keep progress bar visible
+            if ($this.State.TemplateInputControls -and $this.State.TemplateInputControls.Count -gt 0) {
+                $statusBar = $this.Controls.StatusBar
+                
+                # Remove all template input controls
+                foreach ($control in $this.State.TemplateInputControls) {
+                    if ($statusBar.Controls.Contains($control)) {
+                        $statusBar.Controls.Remove($control)
+                    }
+                }
+                
+                # Clear the state
+                $this.State.TemplateInputControls = @()
+                $this.State.TemplateItems = @()
+            }
+            
+            # Set the message and color
+            $this.Controls.StatusLabel.Text = $message
+            
+            try {
+                $this.Controls.StatusLabel.ForeColor = $color
+            }
+            catch {
+                $this.Controls.StatusLabel.ForeColor = 'Blue'
+            }
+            
+            # Force UI update
+            $appType = 'System.Windows.Forms.Application' -as [type]
+            if ($appType) {
+                $appType::DoEvents()
+            }
+        }
+    }
+
+    [void]CompleteStatusBarCleanup() {
+        Write-Host "[DEBUG] CompleteStatusBarCleanup"
+        
+        # Clean up template input controls
+        $this.CleanupStatusBar()
+        
+        # Hide and reset progress bar
+        if ($this.Controls.StatusProgressBar) {
+            $this.Controls.StatusProgressBar.Visible = $false
+            $this.Controls.StatusProgressBar.Value = 0
+        }
+        
+        # Hide cancel button if it's visible and reset to default state
+        if ($this.Controls.ContainsKey("CancelBtn")) {
+            $this.Controls["CancelBtn"].Enabled = $false
+            $this.Controls["CancelBtn"].Visible = $false
+        }
+        
+        # Re-enable refresh button if it was disabled during execution
+        if ($this.Controls.ContainsKey("RefreshBtn")) {
+            $this.Controls["RefreshBtn"].Enabled = $true
+        }
+        
+        # Re-enable execute button in case it was disabled
+        if ($this.Controls.ExecuteBtn) {
+            $this.Controls.ExecuteBtn.Enabled = $true
         }
     }
 
