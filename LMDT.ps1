@@ -10,7 +10,6 @@ Data Directory Configuration:
 
 Features:
 - ✅ Uses %Temp% directory by default with %LocalAppData% fallback option
-- TODO Submit new templates  
 - FIXME Write commands to PowerShell history
 - FIXME Improve execution UI performance - stuttering
 - TODO Enable command scheduling
@@ -314,8 +313,8 @@ $Global:Config = @{
     SubDirs                     = @('Logs', 'Scripts', 'Templates')
     SSHConfigPath               = "$env:USERPROFILE\.ssh\config"
     SourceComboAllActionsPrefix = 'All Tasks'
-    SourceComboFilePrefix       = '📃 '
-    SourceComboTemplatePrefix   = '📋 '
+    SourceComboFilePrefix       = 'File: '
+    SourceComboTemplatePrefix   = 'Template: '
     ScriptExtensions            = @{
         Local  = @('*.ps1')
         Remote = @('.ps1')
@@ -347,12 +346,12 @@ $Global:Config = @{
         StackTrace         = 'Stack trace: '
     }
     Colors                      = @{
-        White     = 'White'
-        Running   = 'LightYellow'
-        Completed = 'LightGreen'
-        Failed    = 'LightCoral'
-        Text      = 'Black'
-        Filtered  = 'Gray'
+        White     = [System.Drawing.Color]::White
+        Running   = [System.Drawing.Color]::LightGray
+        Completed = [System.Drawing.Color]::LightGray
+        Failed    = [System.Drawing.Color]::LightGray
+        Text      = [System.Drawing.Color]::Black
+        Filtered  = [System.Drawing.Color]::Gray
     }
     Window                      = @{
         Title           = 'LMDT -'
@@ -360,19 +359,16 @@ $Global:Config = @{
         Height          = 700
         Padding         = '10,10,10,10'
         Position        = 'CenterScreen'
-        BackgroundColor = 'WhiteSmoke'
+        BackgroundColor = [System.Drawing.SystemColors]::Control
     }
     Panels                      = @{
-        ToolbarHeight       = 40
-        ToolbarPadding      = '10,5,10,7'
-        StatusBarHeight     = 30
-        StatusPadding       = '10,0,2,10'
-        SidebarWidth        = 160
-        SidebarPadding      = '5,5,5,5'
-        SecondaryPanelWidth = 320
-        SecondaryPadding    = '5,5,10,5'
-        SplitterWidth       = 5
-        ContentPadding      = '10,5,10,5'
+        ToolbarHeight   = 40
+        ToolbarPadding  = '10,5,10,7'
+        StatusBarHeight = 30
+        StatusPadding   = '10,0,2,10'
+        SidebarWidth    = 160
+        SidebarPadding  = '5,5,5,5'
+        ContentPadding  = '10,5,10,5'
     }
     Controls                    = @{
         FontName           = 'Segoe UI'
@@ -381,15 +377,15 @@ $Global:Config = @{
         Width              = 120
         Height             = 30
         Padding            = '2,2,2,2'
-        BackColor          = 'White'
-        ForeColor          = 'Black'
+        BackColor          = [System.Drawing.Color]::White
+        ForeColor          = [System.Drawing.Color]::Black
         SelectAllText      = ''
         FilterPlaceholder  = 'Filter Tasks...'
         RefreshText        = 'Refresh'
         CancelText         = 'Cancel'
         CopyCommandText    = 'Copy To Clipboard'
         RunLaterText       = 'Schedule for Later'
-        ExecuteBtnTemplate = '▶ Run ({0})'
+        ExecuteBtnTemplate = 'Run ({0})'
     }
     ListView                    = @{
         Columns = @(
@@ -610,6 +606,11 @@ class LMDTApp {
     LMDTApp() {
         Write-Host "[DEBUG] LMDTApp Constructor"
         $this.Config = $Global:Config
+        $this.State.TemplateItems = @()
+        $this.State.TemplateInputControls = @()
+        $this.State.CancelRequested = $false
+        $this.State.LastSortColumn = -1
+        $this.State.SortDirection = 'Ascending'
         $this.Initialize()
         $this.InitControls()
     }
@@ -762,31 +763,120 @@ class LMDTApp {
             $this.SetStatusMessage("Please select tasks to create a template.", 'Orange')
             return
         }
-        $this.ShowTemplatePanel($selectedItems)
+        
+        # Create dynamic input controls in the status bar
+        $this.ShowTemplateInputUI($selectedItems)
+    }
+
+    [void]ShowTemplateInputUI($selectedItems) {
+        Write-Host "[DEBUG] ShowTemplateInputUI"
+        $statusBar = $this.Controls.StatusBar
+        $app = $this  # Capture app instance for closures
+        
+        # Clear existing controls except StatusLabel and StatusProgressBar
+        $controlsToRemove = @()
+        foreach ($control in $statusBar.Controls) {
+            if ($control -ne $this.Controls.StatusLabel -and $control -ne $this.Controls.StatusProgressBar) {
+                $controlsToRemove += $control
+            }
+        }
+        foreach ($control in $controlsToRemove) {
+            $statusBar.Controls.Remove($control)
+        }
+        
+        # Create template name input with label on left, controls on right
+        $controlHeight = 22
+        $verticalOffset = ($statusBar.Height - $controlHeight) / 2
+        
+        # Label on the left side
+        $inputLabel = New-Object System.Windows.Forms.Label
+        $inputLabel.Text = "Template Name:"
+        $inputLabel.Size = New-Object System.Drawing.Size(100, $controlHeight)
+        $inputLabel.Location = New-Object System.Drawing.Point(10, $verticalOffset)
+        $inputLabel.TextAlign = 'MiddleLeft'
+        $statusBar.Controls.Add($inputLabel)
+        
+        # Calculate right-aligned positions (working backwards from right edge)
+        $rightMargin = 10
+        $buttonWidth = 60
+        $textBoxWidth = 200
+        $spacing = 3
+        
+        # Input box (create first so it can be referenced in button handlers)
+        $inputBox = New-Object System.Windows.Forms.TextBox
+        $inputBox.Width = $textBoxWidth
+        $inputBox.Height = $controlHeight
+        $inputBox.Name = "TemplateNameInput"
+        $inputBox.Anchor = 'Top, Right'
+        
+        # Cancel button (rightmost)
+        $cancelBtn = New-Object System.Windows.Forms.Button
+        $cancelBtn.Text = "Cancel"
+        $cancelBtn.Width = $buttonWidth
+        $cancelBtn.Height = $controlHeight
+        $cancelBtn.Location = New-Object System.Drawing.Point(($statusBar.Width - $rightMargin - $buttonWidth), $verticalOffset)
+        $cancelBtn.Anchor = 'Top, Right'
+        $cancelBtn.Add_Click({
+                $app.HideTemplateInputUI()
+            }.GetNewClosure())
+        $statusBar.Controls.Add($cancelBtn)
+        
+        # Create button (to the left of cancel)
+        $saveBtn = New-Object System.Windows.Forms.Button
+        $saveBtn.Text = "Create"
+        $saveBtn.Width = $buttonWidth
+        $saveBtn.Height = $controlHeight
+        $saveBtn.Location = New-Object System.Drawing.Point(($cancelBtn.Location.X - $spacing - $buttonWidth), $verticalOffset)
+        $saveBtn.Anchor = 'Top, Right'
+        $saveBtn.Add_Click({
+                $templateName = $inputBox.Text.Trim()
+                if ($templateName) {
+                    $app.CreateTemplateFromItems($templateName, $selectedItems)
+                    $app.HideTemplateInputUI()
+                }
+                else {
+                    $app.SetStatusMessage("Please enter a template name.", 'Orange')
+                }
+            }.GetNewClosure())
+        $statusBar.Controls.Add($saveBtn)
+        
+        # Position and add input box (to the left of create button)
+        $inputBox.Location = New-Object System.Drawing.Point(($saveBtn.Location.X - $spacing - $textBoxWidth), $verticalOffset)
+        $statusBar.Controls.Add($inputBox)
+        
+        # Set focus and message
+        $inputBox.Focus()
+        $this.Controls.StatusLabel.Text = "Enter template name for $($selectedItems.Count) selected tasks:"
+        
+        # Store reference for cleanup
+        $this.State.TemplateInputControls = @($inputLabel, $inputBox, $saveBtn, $cancelBtn)
+        $this.State.TemplateItems = $selectedItems
+    }
+
+    [void]HideTemplateInputUI() {
+        Write-Host "[DEBUG] HideTemplateInputUI"
+        # Use the centralized cleanup method
+        $this.CleanupStatusBar()
+        $this.SetStatusMessage("Ready", 'Black')
     }
 
     [void]OnInstall() {
         Write-Host "[DEBUG] OnInstall - Starting installation process"
         
-        # Show confirmation dialog using dynamic type resolution
-        $msgBoxType = 'System.Windows.Forms.MessageBox' -as [type]
-        $result = $msgBoxType::Show(
-            "This will install LMDT to your system with Start Menu and Desktop shortcuts, and enable CLI commands in all terminals.`n`nProceed with installation?",
-            "Install LMDT",
-            'YesNo',
-            'Question'
-        )
+        # Use status bar for confirmation instead of message box
+        $this.SetStatusMessage("Click Install again to confirm system installation with shortcuts and CLI access", 'Blue')
         
-        if ($result -eq 'Yes') {
+        # Check if this is the confirmation click
+        if ($this.Controls.InstallBtn.Text -eq "Confirm Install") {
             try {
-                $this.SetStatusMessage("Installing LMDT to system...", 'Green')
+                $this.SetStatusMessage("Installing LMDT to system...", 'Blue')
                 $this.Controls.InstallBtn.Enabled = $false
                 $this.Controls.InstallBtn.Text = "Installing..."
                 
                 # Progress callback for user feedback
                 $progressCallback = {
                     param($message)
-                    $this.SetStatusMessage($message, 'Green')
+                    $this.SetStatusMessage($message, 'Blue')
                     $appType = 'System.Windows.Forms.Application' -as [type]
                     $appType::DoEvents()
                 }
@@ -794,31 +884,21 @@ class LMDTApp {
                 # Run the installation
                 Install-LMDTToComputer -ProgressCallback $progressCallback
                 
-                $this.SetStatusMessage("Installation completed successfully! Restart your terminal to use CLI commands.", 'Green')
+                $this.SetStatusMessage("Installation completed successfully! Restart terminal for CLI access.", 'Green')
                 $this.Controls.InstallBtn.Text = "Installed"
                 $this.Controls.InstallBtn.BackColor = 'LightGray'
-                
-                # Show success dialog
-                $msgBoxType::Show(
-                    "LMDT has been successfully installed!`n`n• Start Menu shortcut created`n• Desktop shortcut created`n• CLI commands available in terminals`n• Restart your terminal for CLI access",
-                    "Installation Complete",
-                    'OK',
-                    'Information'
-                )
                 
             }
             catch {
                 $this.SetStatusMessage("Installation failed: $($_.Exception.Message)", 'Red')
                 $this.Controls.InstallBtn.Enabled = $true
                 $this.Controls.InstallBtn.Text = "Install on Computer"
-                
-                $msgBoxType::Show(
-                    "Installation failed: $($_.Exception.Message)",
-                    "Installation Error",
-                    'OK',
-                    'Error'
-                )
             }
+        }
+        else {
+            # First click - show confirmation in status bar and change button text
+            $this.Controls.InstallBtn.Text = "Confirm Install"
+            $this.SetStatusMessage("Installation will create shortcuts and enable CLI commands. Click 'Confirm Install' to proceed.", 'Blue')
         }
     }
 
@@ -887,14 +967,11 @@ class LMDTApp {
             Toolbar             = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
             StatusBar           = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
             Sidebar             = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
-            MainContent         = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = '0, 0, 0, 0' } }
-            SecondaryContent    = @{ Type = 'Panel'; Order = 30; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; BackColor = $this.Config.Colors.White; Width = $this.Config.Panels.SecondaryPanelWidth; Padding = $this.Config.Panels.SecondaryPadding; Visible = $false } }
-            ContentSplitter     = @{ Type = 'Splitter'; Order = 20; Layout = 'MainContent'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SplitterWidth; Visible = $true; BackColor = 'LightGray'; BorderStyle = 'FixedSingle' } }
-            PrimaryContent      = @{ Type = 'Panel'; Order = 10; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
+            MainContent         = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
             RefreshBtn          = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
             FilterText          = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
             SelectAllCheckBox   = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
-            MoreBtn             = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = '≡'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
+            MoreBtn             = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = 'More'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn          = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
             CancelBtn           = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
             ExecuteModeLabel    = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
@@ -912,13 +989,11 @@ class LMDTApp {
             SpacerPanelRun      = @{ Type = 'Panel'; Order = 13; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             CreateTemplateBtn   = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = 'Create Template'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelTemplate = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            InstallBtn          = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft'; BackColor = 'LightGreen' } }
+            InstallBtn          = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelInstall  = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
-            SecondaryLabel      = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter' } }
-            CloseSecondaryBtn   = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White' } }
+            ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
             StatusLabel         = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            StatusProgressBar   = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Width = 120; Visible = $false } }
+            StatusProgressBar   = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Width = 120; Height = 18; Visible = $false; Anchor = 'Top, Right' } }
         }
 
         # Create controls in order
@@ -926,14 +1001,13 @@ class LMDTApp {
             $name = $_.Key
             $config = $_.Value
             $ctrl = New-Object "System.Windows.Forms.$($config.Type)"
-            if ($config.Type -ne 'Splitter') { $ctrl.Dock = $this.Config.Controls.Dock }
+            $ctrl.Dock = $this.Config.Controls.Dock
             $ctrl.Width = $this.Config.Controls.Width
             $ctrl.Height = $this.Config.Controls.Height
             $ctrl.Padding = $this.Config.Controls.Padding
             $ctrl.BackColor = $this.Config.Controls.BackColor
             $ctrl.ForeColor = $this.Config.Controls.ForeColor
             if ($config.Type -eq 'ComboBox') { $ctrl.DropDownStyle = 'DropDownList' }
-            if ($config.Type -eq 'Splitter') { $ctrl.MinExtra = 100; $ctrl.MinSize = 100 }
             if ($config.Type -eq 'Panel' -or $config.Type -eq 'CheckBox') { $ctrl.BackColor = $this.MainForm.BackColor }
             foreach ($kv in $config.Properties.GetEnumerator()) {
                 # Skip PlaceholderText for FilterText, handle manually for broader support
@@ -960,6 +1034,30 @@ class LMDTApp {
 
         # Assign controls to class property
         $this.Controls = $createdControls
+
+        # Position progress bar vertically centered in status bar
+        $statusBar = $this.Controls.StatusBar
+        $progressBar = $this.Controls.StatusProgressBar
+        if ($statusBar -and $progressBar) {
+            $statusBarHeight = $statusBar.Height
+            $progressBarHeight = $progressBar.Height
+            $verticalOffset = ($statusBarHeight - $progressBarHeight) / 2
+            $rightMargin = 10
+            
+            # Position progress bar on the right side, vertically centered
+            $progressBar.Location = New-Object System.Drawing.Point(($statusBar.Width - $progressBar.Width - $rightMargin), $verticalOffset)
+            
+            # Add resize handler to keep progress bar positioned when window resizes
+            $statusBar.Add_Resize({
+                    $sb = $this
+                    $pb = $app.Controls.StatusProgressBar
+                    if ($pb) {
+                        $vOffset = ($sb.Height - $pb.Height) / 2
+                        $rMargin = 10
+                        $pb.Location = New-Object System.Drawing.Point(($sb.Width - $pb.Width - $rMargin), $vOffset)
+                    }
+                }.GetNewClosure())
+        }
 
         # Manual placeholder logic for FilterText (broader support, including iex)
         $filterTextBox = $this.Controls.FilterText
@@ -1175,7 +1273,6 @@ class LMDTApp {
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
         $this.Controls.CreateTemplateBtn.Add_Click({ $app.OnCreateTemplate() })
         $this.Controls.InstallBtn.Add_Click({ $app.OnInstall() })
-        $this.Controls.CloseSecondaryBtn.Add_Click({ $app.HideSecondaryPanel() })
         $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
         $this.Controls.RefreshBtn.Add_Click({ $app.OnRefresh() })
 
@@ -1549,18 +1646,21 @@ class LMDTApp {
     }
 
     [void]SetStatusMessage([string]$message, [string]$color = 'Black') {
-        Write-Host "[DEBUG] SetStatusMessage: $message" -ForegroundColor $color
+        Write-Host "[DEBUG] SetStatusMessage: $message"
         if ($this.Controls.StatusLabel) {
+            # First, clean up any existing template input controls to prevent overlapping
+            $this.CleanupStatusBar()
+            
+            # Now set the new message
             $this.Controls.StatusLabel.Text = $message
             
-            # Set color based on the parameter
-            switch ($color.ToLower()) {
-                'red' { $this.Controls.StatusLabel.ForeColor = 'Red' }
-                'green' { $this.Controls.StatusLabel.ForeColor = 'Green' }
-                'orange' { $this.Controls.StatusLabel.ForeColor = 'Orange' }
-                'blue' { $this.Controls.StatusLabel.ForeColor = 'Blue' }
-                'yellow' { $this.Controls.StatusLabel.ForeColor = 'Orange' } # Orange is closest to yellow in standard colors
-                default { $this.Controls.StatusLabel.ForeColor = 'Black' }
+            # Use the provided color parameter
+            try {
+                $this.Controls.StatusLabel.ForeColor = $color
+            }
+            catch {
+                # Fallback to black if color name is invalid
+                $this.Controls.StatusLabel.ForeColor = 'Black'
             }
             
             # Force UI update
@@ -1568,6 +1668,24 @@ class LMDTApp {
             if ($appType) {
                 $appType::DoEvents()
             }
+        }
+    }
+
+    [void]CleanupStatusBar() {
+        Write-Host "[DEBUG] CleanupStatusBar"
+        if ($this.State.TemplateInputControls -and $this.State.TemplateInputControls.Count -gt 0) {
+            $statusBar = $this.Controls.StatusBar
+            
+            # Remove all template input controls
+            foreach ($control in $this.State.TemplateInputControls) {
+                if ($statusBar.Controls.Contains($control)) {
+                    $statusBar.Controls.Remove($control)
+                }
+            }
+            
+            # Clear the state
+            $this.State.TemplateInputControls = @()
+            $this.State.TemplateItems = @()
         }
     }
 
@@ -1583,112 +1701,35 @@ class LMDTApp {
         }
     }
 
-    [void]ShowTemplatePanel($selectedItems) {
-        Write-Host "[DEBUG] ShowTemplatePanel"
-        $this.ShowSecondaryPanel("Create Template")
+    [void]CreateTemplateFromItems($templateName, $selectedItems) {
+        Write-Host "[DEBUG] CreateTemplateFromItems: $templateName"
         
-        $panel = $this.Controls.SecondaryContent
+        # Create template content with metadata and task descriptions only
+        $templateContent = @()
+        $templateContent += "# Template: $templateName"
+        $templateContent += "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+        $templateContent += "# Tasks: $($selectedItems.Count)"
+        $templateContent += ""
         
-        # Don't clear all controls - preserve the header and close button
-        # Remove only the dynamic content controls
-        $controlsToRemove = @()
-        foreach ($ctrl in $panel.Controls) {
-            if ($ctrl -ne $this.Controls.SecondaryLabel -and $ctrl -ne $this.Controls.CloseSecondaryBtn) {
-                $controlsToRemove += $ctrl
-            }
-        }
-        foreach ($ctrl in $controlsToRemove) {
-            $panel.Controls.Remove($ctrl)
-        }
-        
-        # Template name input
-        $lblName = New-Object System.Windows.Forms.Label
-        $lblName.Text = "Template Name:"
-        $lblName.Dock = 'Top'
-        $lblName.Height = 20
-        $panel.Controls.Add($lblName)
-        
-        $txtName = New-Object System.Windows.Forms.TextBox
-        $txtName.Dock = 'Top'
-        $panel.Controls.Add($txtName)
-        
-        # Spacer
-        $spacer1 = New-Object System.Windows.Forms.Panel
-        $spacer1.Height = 10
-        $spacer1.Dock = 'Top'
-        $spacer1.BackColor = 'Transparent'
-        $panel.Controls.Add($spacer1)
-        
-        # Selected tasks list
-        $lblTasks = New-Object System.Windows.Forms.Label
-        $lblTasks.Text = "Selected Tasks:"
-        $lblTasks.Dock = 'Top'
-        $lblTasks.Height = 20
-        $panel.Controls.Add($lblTasks)
-        
-        $lstTasks = New-Object System.Windows.Forms.ListBox
-        $lstTasks.Height = 120
-        $lstTasks.Dock = 'Top'
         foreach ($item in $selectedItems) {
             $tag = $item.Tag
-            $lstTasks.Items.Add($tag.Description) | Out-Null
+            # Only store the description (comment) - this will be matched against task cache
+            $templateContent += $tag.Description
         }
-        $panel.Controls.Add($lstTasks)
         
-        # Spacer
-        $spacer2 = New-Object System.Windows.Forms.Panel
-        $spacer2.Height = 10
-        $spacer2.Dock = 'Top'
-        $spacer2.BackColor = 'Transparent'
-        $panel.Controls.Add($spacer2)
+        # Ensure Templates directory exists
+        $templatesDir = Join-Path $this.Config.DataDir "Templates"
+        if (!(Test-Path $templatesDir)) {
+            New-Item -ItemType Directory -Path $templatesDir -Force | Out-Null
+        }
         
-        # Save button
-        $btnSave = New-Object System.Windows.Forms.Button
-        $btnSave.Text = "Create Template"
-        $btnSave.Dock = 'Top'
-        $btnSave.Add_Click({
-                $name = $txtName.Text.Trim()
-                if (!$name) { 
-                    $this.SetStatusMessage("Enter a name for the template.", 'Orange')
-                    return 
-                }
-            
-                # Create template content with metadata and task descriptions only
-                $templateContent = @()
-                $templateContent += "# Template: $name"
-                $templateContent += "# Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
-                $templateContent += "# Tasks: $($selectedItems.Count)"
-                $templateContent += ""
-            
-                foreach ($item in $selectedItems) {
-                    $tag = $item.Tag
-                    # Only store the description (comment) - this will be matched against task cache
-                    $templateContent += $tag.Description
-                }
-            
-                # Ensure Templates directory exists
-                $templatesDir = Join-Path $this.Config.DataDir "Templates"
-                if (!(Test-Path $templatesDir)) {
-                    New-Item -ItemType Directory -Path $templatesDir -Force | Out-Null
-                }
-            
-                $templatePath = Join-Path $templatesDir "$name.txt"
-                $templateContent | Set-Content $templatePath -Force
-            
-                # Reload sources to include new template
-                $this.LoadSources()
-                $this.LoadData()
-                $this.HideSecondaryPanel()
-                $this.SetStatusMessage("Template '$name' created successfully with $($selectedItems.Count) tasks.", 'Green')
-            }.GetNewClosure())
-        $panel.Controls.Add($btnSave)
+        $templatePath = Join-Path $templatesDir "$templateName.txt"
+        $templateContent | Set-Content $templatePath -Force
         
-        # Cancel button
-        $btnCancel = New-Object System.Windows.Forms.Button
-        $btnCancel.Text = "Cancel"
-        $btnCancel.Dock = 'Bottom'
-        $btnCancel.Add_Click({ $this.HideSecondaryPanel() }.GetNewClosure())
-        $panel.Controls.Add($btnCancel)
+        # Reload sources to include new template
+        $this.LoadSources()
+        $this.LoadData()
+        $this.SetStatusMessage("Template '$templateName' created successfully with $($selectedItems.Count) tasks.", 'Green')
     }
 
     [bool]IsRunningFromGitHub() {
@@ -1868,20 +1909,110 @@ class LMDTApp {
         return $null
     }
 
-    [void]ShowSecondaryPanel([string]$title) {
-        Write-Host "[DEBUG] ShowSecondaryPanel: $title"
-        $this.Controls.SecondaryLabel.Text = $title
-        $this.Controls.SecondaryContent.Visible = $true
+    # Missing methods for complete functionality
+    [void]OnColumnClick($listView, $e) {
+        Write-Host "[DEBUG] OnColumnClick - Column $($e.Column)"
+        # Simple ascending/descending sort implementation
+        $column = $e.Column
+        $sortOrder = if ($this.State.LastSortColumn -eq $column -and $this.State.SortDirection -eq 'Ascending') {
+            'Descending'
+        }
+        else {
+            'Ascending'
+        }
+        
+        # Store sort state
+        $this.State.LastSortColumn = $column
+        $this.State.SortDirection = $sortOrder
+        
+        # Get all items and sort them
+        $items = @()
+        for ($i = 0; $i -lt $listView.Items.Count; $i++) {
+            $items += $listView.Items[$i]
+        }
+        
+        # Sort based on column
+        if ($sortOrder -eq 'Ascending') {
+            $items = $items | Sort-Object { $_.SubItems[$column].Text }
+        }
+        else {
+            $items = $items | Sort-Object { $_.SubItems[$column].Text } -Descending
+        }
+        
+        # Clear and re-add items in sorted order
+        $listView.Items.Clear()
+        foreach ($item in $items) {
+            $listView.Items.Add($item) | Out-Null
+        }
     }
 
-    [void]HideSecondaryPanel() {
-        Write-Host "[DEBUG] HideSecondaryPanel"
-        $this.Controls.SecondaryContent.Visible = $false
+    [void]OnRefresh() {
+        Write-Host "[DEBUG] OnRefresh"
+        $this.LoadSources()
+        $this.BuildTaskCache()
+        $this.LoadData()
+        $this.OnSwitchSource()  # Reload current source
+        $this.SetStatusMessage("Sources refreshed.", 'Green')
     }
 
-    [void]OnCloseSecondary() {
-        Write-Host "[DEBUG] OnCloseSecondary"
-        $this.HideSecondaryPanel()
+    [void]OnCancelExecution() {
+        Write-Host "[DEBUG] OnCancelExecution"
+        $this.State.CancelRequested = $true
+        $this.Controls.CancelBtn.Enabled = $false
+        $this.SetStatusMessage("Cancellation requested...", 'Orange')
+    }
+
+    [void]RefreshUI() {
+        # Force UI to update during long operations
+        $appType = 'System.Windows.Forms.Application' -as [type]
+        if ($appType) {
+            $appType::DoEvents()
+        }
+    }
+
+    [void]MoveSelectedItemUp() {
+        Write-Host "[DEBUG] MoveSelectedItemUp"
+        $lv = $this.Controls.ScriptsListView
+        if ($lv.SelectedItems.Count -eq 1) {
+            $item = $lv.SelectedItems[0]
+            $index = $item.Index
+            if ($index -gt 0) {
+                $lv.Items.RemoveAt($index)
+                $lv.Items.Insert($index - 1, $item)
+                $item.Selected = $true
+            }
+        }
+    }
+
+    [void]MoveSelectedItemDown() {
+        Write-Host "[DEBUG] MoveSelectedItemDown"
+        $lv = $this.Controls.ScriptsListView
+        if ($lv.SelectedItems.Count -eq 1) {
+            $item = $lv.SelectedItems[0]
+            $index = $item.Index
+            if ($index -lt $lv.Items.Count - 1) {
+                $lv.Items.RemoveAt($index)
+                $lv.Items.Insert($index + 1, $item)
+                $item.Selected = $true
+            }
+        }
+    }
+
+    [void]MoveListViewItem($listView, $draggedItem, $targetIndex, $appearsAfter) {
+        Write-Host "[DEBUG] MoveListViewItem"
+        try {
+            $currentIndex = $draggedItem.Index
+            $newIndex = if ($appearsAfter) { $targetIndex } else { [Math]::Max(0, $targetIndex - 1) }
+            
+            if ($newIndex -ne $currentIndex) {
+                $listView.Items.RemoveAt($currentIndex)
+                $listView.Items.Insert($newIndex, $draggedItem)
+                $draggedItem.Selected = $true
+            }
+        }
+        catch {
+            Write-Warning "[DEBUG] MoveListViewItem failed: $_"
+        }
     }
 }
 
