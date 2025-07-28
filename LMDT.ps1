@@ -3,9 +3,9 @@ PowerShell GUI Application for Managing and Executing Scripts
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
 
 Data Directory Configuration:
-- Uses %Temp%\PSUtil by default (temporary storage, cleared on reboot)
-- Falls back to %LocalAppData%\PSUtil for persistent storage
-- Can be overridden with PSUTIL_DATA_DIR environment variable
+- Uses %Temp%\LMDT by default (temporary storage, cleared on reboot)
+- Falls back to %LocalAppData%\LMDT for persistent storage
+- Can be overridden with LMDT_DATA_DIR environment variable
 - Final fallback to script directory if all else fails
 
 Features:
@@ -15,7 +15,6 @@ Features:
 - FIXME Improve execution UI performance - stuttering
 - TODO Enable command scheduling
 - TODO Add native system notifications, add tooltips where possible elsewhere show in status panel
-- TODO Create Start Menu LMDT.desktop for easier access
 #>
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing
@@ -28,13 +27,13 @@ Add-Type -AssemblyName System.Windows.Forms
 # Function to determine the best data directory
 function Get-DataDirectory {
     # Allow environment variable override
-    if ($env:PSUTIL_DATA_DIR -and (Test-Path $env:PSUTIL_DATA_DIR -IsValid)) {
-        $customDir = $env:PSUTIL_DATA_DIR
+    if ($env:LMDT_DATA_DIR -and (Test-Path $env:LMDT_DATA_DIR -IsValid)) {
+        $customDir = $env:LMDT_DATA_DIR
         try {
             if (!(Test-Path $customDir)) {
                 New-Item -ItemType Directory -Path $customDir -Force | Out-Null
             }
-            Write-Host "[DEBUG] Using custom directory from PSUTIL_DATA_DIR: $customDir" -ForegroundColor Cyan
+            Write-Host "[DEBUG] Using custom directory from LMDT_DATA_DIR: $customDir" -ForegroundColor Cyan
             return $customDir
         }
         catch {
@@ -43,10 +42,10 @@ function Get-DataDirectory {
     }
     
     # Primary option: Use %Temp% directory
-    $tempDir = Join-Path $env:TEMP "PSUtil"
+    $tempDir = Join-Path $env:TEMP "LMDT"
     
     # Fallback option: Use %LocalAppData% 
-    $localAppDataDir = Join-Path $env:LOCALAPPDATA "PSUtil"
+    $localAppDataDir = Join-Path $env:LOCALAPPDATA "LMDT"
     
     # Try to create and use Temp directory first
     try {
@@ -80,7 +79,7 @@ function Get-DataDirectory {
 }
 
 # Installation functions for "Install on Computer" feature
-function Install-PSUtilToComputer {
+function Install-LMDTToComputer {
     param(
         [switch]$CreateShortcuts = $true,
         [switch]$AddToPath = $true,
@@ -89,12 +88,12 @@ function Install-PSUtilToComputer {
         [scriptblock]$ProgressCallback = $null
     )
     
-    Write-Host "[INSTALL] Starting PSUtil installation..." -ForegroundColor Green
+    Write-Host "[INSTALL] Starting LMDT installation..." -ForegroundColor Green
     
     try {
         # 1. Create installation directory in LocalAppData
-        $installDir = Join-Path $env:LOCALAPPDATA "PSUtil\App"
-        $dataDir = Join-Path $env:LOCALAPPDATA "PSUtil\Data"
+        $installDir = Join-Path $env:LOCALAPPDATA "LMDT\App"
+        $dataDir = Join-Path $env:LOCALAPPDATA "LMDT\Data"
         
         if ($ProgressCallback) { & $ProgressCallback "Creating installation directories..." }
         Write-Host "[INSTALL] Creating installation directories..." -ForegroundColor Yellow
@@ -261,16 +260,16 @@ Pause
         $uninstallScript | Set-Content $uninstallPath -Force
         
         # 7. Set environment variable for installed mode
-        [Environment]::SetEnvironmentVariable("PSUTIL_DATA_DIR", $dataDir, "User")
+        [Environment]::SetEnvironmentVariable("LMDT_DATA_DIR", $dataDir, "User")
         
         $result = @{
-            Success = $true
-            InstallDir = $installDir
-            DataDir = $dataDir
-            BatchFile = if ($AddToPath) { Join-Path $installDir "lmdt.bat" } else { $null }
+            Success           = $true
+            InstallDir        = $installDir
+            DataDir           = $dataDir
+            BatchFile         = if ($AddToPath) { Join-Path $installDir "lmdt.bat" } else { $null }
             StartMenuShortcut = if ($CreateStartMenu) { Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\LMDT.lnk" } else { $null }
-            DesktopShortcut = if ($CreateDesktop) { Join-Path ([Environment]::GetFolderPath("Desktop")) "LMDT.lnk" } else { $null }
-            UninstallScript = $uninstallPath
+            DesktopShortcut   = if ($CreateDesktop) { Join-Path ([Environment]::GetFolderPath("Desktop")) "LMDT.lnk" } else { $null }
+            UninstallScript   = $uninstallPath
         }
         
         Write-Host "[INSTALL] Installation completed successfully!" -ForegroundColor Green
@@ -288,35 +287,34 @@ Pause
     }
 }
 
-function Test-PSUtilInstallation {
-    $installDir = Join-Path $env:LOCALAPPDATA "PSUtil\App"
-    $dataDir = Join-Path $env:LOCALAPPDATA "PSUtil\Data"
+function Test-LMDTInstallation {
+    $installDir = Join-Path $env:LOCALAPPDATA "LMDT\App"
+    $dataDir = Join-Path $env:LOCALAPPDATA "LMDT\Data"
     $batchFile = Join-Path $installDir "lmdt.bat"
     
     return @{
-        IsInstalled = (Test-Path $installDir)
-        InstallDir = $installDir
-        DataDir = $dataDir
-        HasCLI = (Test-Path $batchFile)
+        IsInstalled  = (Test-Path $installDir)
+        InstallDir   = $installDir
+        DataDir      = $dataDir
+        HasCLI       = (Test-Path $batchFile)
         HasStartMenu = (Test-Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\LMDT.lnk"))
-        HasDesktop = (Test-Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "LMDT.lnk"))
+        HasDesktop   = (Test-Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "LMDT.lnk"))
     }
 }
 
-# Minimal configuration for PSUtilApp
+# Minimal configuration for LMDTApp
 # Data Directory Priority:
-# 1. Environment variable: PSUTIL_DATA_DIR (if set and accessible)
-# 2. Default: %Temp%\PSUtil (preferred for temporary data)
-# 3. Fallback: %LocalAppData%\PSUtil (persistent local data)
+# 1. Environment variable: LMDT_DATA_DIR (if set and accessible)
+# 2. Default: %Temp%\LMDT (preferred for temporary data)
+# 3. Fallback: %LocalAppData%\LMDT (persistent local data)
 # 4. Final fallback: Script directory (when other options fail)
 $Global:Config = @{
-    ScriptFilesBlacklist        = @('gui.ps1', 'psutil.ps1', 'taaest.ps1')
+    ScriptFilesBlacklist        = @('gui.ps1', 'lmdt.ps1', 'taaest.ps1')
     DataDir                     = (Get-DataDirectory)  # Use %Temp% by default, fallback to %LocalAppData%
-    SubDirs                     = @('Favourites', 'Logs', 'Scripts', 'Templates')
+    SubDirs                     = @('Logs', 'Scripts', 'Templates')
     SSHConfigPath               = "$env:USERPROFILE\.ssh\config"
     SourceComboAllActionsPrefix = 'All Tasks'
     SourceComboFilePrefix       = '📃 '
-    SourceComboFavouritePrefix  = '✨ '
     SourceComboTemplatePrefix   = '📋 '
     ScriptExtensions            = @{
         Local  = @('*.ps1')
@@ -357,7 +355,7 @@ $Global:Config = @{
         Filtered  = 'Gray'
     }
     Window                      = @{
-        Title           = 'Run -'
+        Title           = 'LMDT -'
         Width           = 700
         Height          = 700
         Padding         = '10,10,10,10'
@@ -391,7 +389,6 @@ $Global:Config = @{
         CancelText         = 'Cancel'
         CopyCommandText    = 'Copy To Clipboard'
         RunLaterText       = 'Schedule for Later'
-        AddCommandText     = 'Save to a List'
         ExecuteBtnTemplate = '▶ Run ({0})'
     }
     ListView                    = @{
@@ -429,10 +426,10 @@ $Global:Config = @{
     Branch                      = 'main'
 }
 
-class PSUtilTaskSource {
+class LMDTTaskSource {
     [string]$Name
     [string]$Type
-    PSUtilTaskSource([string]$name, [string]$type) {
+    LMDTTaskSource([string]$name, [string]$type) {
         $this.Name = $name
         $this.Type = $type
     }
@@ -442,15 +439,15 @@ class PSUtilTaskSource {
 }
 
 # AllTasksSource: aggregates all ScriptFile tasks
-class AllTasksSource : PSUtilTaskSource {
-    [PSUtilApp]$App
-    AllTasksSource([PSUtilApp]$app) : base($app.Config.SourceComboAllActionsPrefix, "AllTasks") {
+class AllTasksSource : LMDTTaskSource {
+    [LMDTApp]$App
+    AllTasksSource([LMDTApp]$app) : base($app.Config.SourceComboAllActionsPrefix, "AllTasks") {
         $this.App = $app
     }
     [array]GetTasks() {
         $allTasks = @()
         foreach ($src in $this.App.Sources | Where-Object { $_.Type -eq "ScriptFile" }) {
-            if ($src -is [PSUtilTaskSource]) {
+            if ($src -is [LMDTTaskSource]) {
                 $allTasks += $src.GetTasks()
             }
         }
@@ -459,10 +456,10 @@ class AllTasksSource : PSUtilTaskSource {
 }
 
 # TemplateSource: represents a template file
-class TemplateSource : PSUtilTaskSource {
-    [PSUtilApp]$App
+class TemplateSource : LMDTTaskSource {
+    [LMDTApp]$App
     [string]$TemplateName
-    TemplateSource([PSUtilApp]$app, [string]$templateName) : base($templateName, "Template") {
+    TemplateSource([LMDTApp]$app, [string]$templateName) : base($templateName, "Template") {
         $this.App = $app
         $this.TemplateName = $templateName
     }
@@ -480,34 +477,12 @@ class TemplateSource : PSUtilTaskSource {
     }
 }
 
-# FavouriteSource: represents a favourite file
-class FavouriteSource : PSUtilTaskSource {
-    [PSUtilApp]$App
-    [string]$FavouriteName
-    FavouriteSource([PSUtilApp]$app, [string]$favName) : base($favName, "Favourite") {
-        $this.App = $app
-        $this.FavouriteName = $favName
-    }
-    [array]GetTasks() {
-        $favPath = Join-Path (Join-Path $this.App.Config.DataDir "Favourites") ("$($this.FavouriteName).txt")
-        if (Test-Path $favPath) {
-            $grouped = $this.App.ReadGroupedProfile($favPath)
-            $tasks = @()
-            foreach ($group in $grouped.Keys) {
-                $tasks += $grouped[$group]
-            }
-            return $tasks
-        }
-        return @()
-    }
-}
-
-class PSUtilTask {
+class LMDTTask {
     [string]$Description
     [string]$Command
     [string]$File
     [int]$LineNumber
-    PSUtilTask([string]$desc, [string]$cmd, [string]$file, [int]$line) {
+    LMDTTask([string]$desc, [string]$cmd, [string]$file, [int]$line) {
         $this.Description = $desc
         $this.Command = $cmd
         $this.File = $file
@@ -517,11 +492,11 @@ class PSUtilTask {
 
 
 # LocalScriptFileSource: represents a single script file as a source
-class LocalScriptFileSource : PSUtilTaskSource {
-    [PSUtilApp]$App
+class LocalScriptFileSource : LMDTTaskSource {
+    [LMDTApp]$App
     [string]$FilePath
     [string]$RelativePath
-    LocalScriptFileSource([PSUtilApp]$app, [string]$filePath, [string]$relativePath) : base($relativePath, "ScriptFile") {
+    LocalScriptFileSource([LMDTApp]$app, [string]$filePath, [string]$relativePath) : base($relativePath, "ScriptFile") {
         $this.App = $app
         $this.FilePath = $filePath
         $this.RelativePath = $relativePath
@@ -549,13 +524,13 @@ class LocalScriptFileSource : PSUtilTaskSource {
         
         if ($scriptContent) {
             return $this.App.ParseScriptFile($scriptContent, $this.RelativePath) |
-            ForEach-Object { [PSUtilTask]::new($_.Description, $_.Command, $_.File, $_.LineNumber) }
+            ForEach-Object { [LMDTTask]::new($_.Description, $_.Command, $_.File, $_.LineNumber) }
         }
         return @()
     }
 }
 
-class PSUtilApp {
+class LMDTApp {
 
     [void]LoadGroupedTasksToListView([hashtable]$groupedTasks) {
         Write-Host "[DEBUG] LoadGroupedTasksToListView $($groupedTasks.Count) groups"
@@ -579,7 +554,7 @@ class PSUtilApp {
     [hashtable]$Config
     [hashtable]$Controls = @{}
     [array]$Machines = @()
-    [array]$Sources = @() # List of PSUtilTaskSource
+    [array]$Sources = @() # List of LMDTTaskSource
     [array]$Users = @()
     [bool]$IsExecuting
     [string]$ExecutionMode = "CurrentUser"
@@ -594,7 +569,7 @@ class PSUtilApp {
     static [hashtable]$SourceRegistry = @{}
 
     static [void]RegisterSourceType([string]$type, [scriptblock]$factory) {
-        [PSUtilApp]::SourceRegistry[$type] = $factory
+        [LMDTApp]::SourceRegistry[$type] = $factory
     }
 
     [void]LoadSources() {
@@ -613,21 +588,9 @@ class PSUtilApp {
                 $this.Sources += $templateSource
             }
         }
-        
-        # Add FavouriteSource for each favourite file (keep for backward compatibility)
-        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
-        if (Test-Path $favouritesDir) {
-            $favFiles = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" }
-            foreach ($favFile in $favFiles) {
-                $displayName = "$($this.Config.SourceComboFavouritePrefix)$($favFile.BaseName)"
-                $favouriteSource = [FavouriteSource]::new($this, $favFile.BaseName)
-                $favouriteSource.Name = $displayName
-                $this.Sources += $favouriteSource
-            }
-        }
         # Add ScriptFile sources from registry
-        foreach ($type in [PSUtilApp]::SourceRegistry.Keys) {
-            $factory = [PSUtilApp]::SourceRegistry[$type]
+        foreach ($type in [LMDTApp]::SourceRegistry.Keys) {
+            $factory = [LMDTApp]::SourceRegistry[$type]
             $result = & $factory $this
             if ($result) {
                 foreach ($src in $result) {
@@ -644,8 +607,8 @@ class PSUtilApp {
         }
     }
 
-    PSUtilApp() {
-        Write-Host "[DEBUG] PSUtilApp Constructor"
+    LMDTApp() {
+        Write-Host "[DEBUG] LMDTApp Constructor"
         $this.Config = $Global:Config
         $this.Initialize()
         $this.InitControls()
@@ -772,7 +735,7 @@ class PSUtilApp {
         foreach ($item in $selectedItems) {
             $tag = $item.Tag
             if ($tag -and $tag.Command) {
-                $taskName = "PSUtil_" + ($tag.Description -replace '[^a-zA-Z0-9]', '_')
+                $taskName = "LMDT_" + ($tag.Description -replace '[^a-zA-Z0-9]', '_')
                 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command \"$($tag.Command)\""
                 $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1))
                 try {
@@ -784,21 +747,6 @@ class PSUtilApp {
                 }
             }
         }
-    }
-
-    [void]OnAddCommand() {
-        Write-Host "[DEBUG] OnAddCommand (robust selection)"
-        $lv = $this.Controls.ScriptsListView
-        $selectedItems = @()
-        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
-            if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
-        }
-        if ($selectedItems.Count -eq 0) {
-            $this.SetStatusMessage("Please select a task to add/update in Favourites.", 'Orange')
-            return
-        }
-        # Use the secondary panel for input instead of VisualBasic InputBox
-        $this.ShowFavouritePanel($selectedItems)
     }
 
     [void]OnCreateTemplate() {
@@ -823,15 +771,15 @@ class PSUtilApp {
         # Show confirmation dialog using dynamic type resolution
         $msgBoxType = 'System.Windows.Forms.MessageBox' -as [type]
         $result = $msgBoxType::Show(
-            "This will install PSUtil to your system with Start Menu and Desktop shortcuts, and enable CLI commands in all terminals.`n`nProceed with installation?",
-            "Install PSUtil",
+            "This will install LMDT to your system with Start Menu and Desktop shortcuts, and enable CLI commands in all terminals.`n`nProceed with installation?",
+            "Install LMDT",
             'YesNo',
             'Question'
         )
         
         if ($result -eq 'Yes') {
             try {
-                $this.SetStatusMessage("Installing PSUtil to system...", 'Green')
+                $this.SetStatusMessage("Installing LMDT to system...", 'Green')
                 $this.Controls.InstallBtn.Enabled = $false
                 $this.Controls.InstallBtn.Text = "Installing..."
                 
@@ -844,7 +792,7 @@ class PSUtilApp {
                 }
                 
                 # Run the installation
-                Install-PSUtilToComputer -ProgressCallback $progressCallback
+                Install-LMDTToComputer -ProgressCallback $progressCallback
                 
                 $this.SetStatusMessage("Installation completed successfully! Restart your terminal to use CLI commands.", 'Green')
                 $this.Controls.InstallBtn.Text = "Installed"
@@ -852,13 +800,14 @@ class PSUtilApp {
                 
                 # Show success dialog
                 $msgBoxType::Show(
-                    "PSUtil has been successfully installed!`n`n• Start Menu shortcut created`n• Desktop shortcut created`n• CLI commands available in terminals`n• Restart your terminal for CLI access",
+                    "LMDT has been successfully installed!`n`n• Start Menu shortcut created`n• Desktop shortcut created`n• CLI commands available in terminals`n• Restart your terminal for CLI access",
                     "Installation Complete",
                     'OK',
                     'Information'
                 )
                 
-            } catch {
+            }
+            catch {
                 $this.SetStatusMessage("Installation failed: $($_.Exception.Message)", 'Red')
                 $this.Controls.InstallBtn.Enabled = $true
                 $this.Controls.InstallBtn.Text = "Install on Computer"
@@ -961,12 +910,10 @@ class PSUtilApp {
             SpacerPanelCopy     = @{ Type = 'Panel'; Order = 11; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             RunLaterBtn         = @{ Type = 'Button'; Order = 12; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.RunLaterText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelRun      = @{ Type = 'Panel'; Order = 13; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            AddCommandBtn       = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = $this.Config.Controls.AddCommandText; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelAdd      = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            CreateTemplateBtn   = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Create Template'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelTemplate = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            InstallBtn          = @{ Type = 'Button'; Order = 18; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft'; BackColor = 'LightGreen' } }
-            SpacerPanelInstall  = @{ Type = 'Panel'; Order = 19; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            CreateTemplateBtn   = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = 'Create Template'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelTemplate = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            InstallBtn          = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft'; BackColor = 'LightGreen' } }
+            SpacerPanelInstall  = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
             SecondaryLabel      = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter' } }
             CloseSecondaryBtn   = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White' } }
@@ -1226,7 +1173,6 @@ class PSUtilApp {
         $this.Controls.MoreBtn.Add_Click({ $app.OnMore() })
         $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
-        $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
         $this.Controls.CreateTemplateBtn.Add_Click({ $app.OnCreateTemplate() })
         $this.Controls.InstallBtn.Add_Click({ $app.OnInstall() })
         $this.Controls.CloseSecondaryBtn.Add_Click({ $app.HideSecondaryPanel() })
@@ -1249,10 +1195,6 @@ class PSUtilApp {
             # No additional users found or error
         }
 
-        # Add "Add to Favourite..." to ListView context menu
-        $addFavMenu = $contextMenu.Items.Add("Add to Favourite...")
-        $addFavMenu.Add_Click({ $app.OnAddToFavourite() })
-        
         # Add "Create Template..." to ListView context menu
         $addTemplateMenu = $contextMenu.Items.Add("Create Template...")
         $addTemplateMenu.Add_Click({ $app.OnCreateTemplate() })
@@ -1322,26 +1264,6 @@ class PSUtilApp {
             }
             else {
                 $this.SetStatusMessage("Template file not found.", 'Orange')
-                $this.Controls.ScriptsListView.Items.Clear()
-                $this.UpdateExecuteButtonText()
-            }
-        }
-        elseif ($selectedSource -is [FavouriteSource]) {
-            $favName = $selectedSource.FavouriteName
-            $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$favName.txt"
-            if (Test-Path $favPath) {
-                $grouped = $this.ReadGroupedProfile($favPath)
-                if ($grouped.Count -gt 0) {
-                    $this.LoadGroupedTasksToListView($grouped)
-                }
-                else {
-                    $this.SetStatusMessage("No matching tasks found in scripts for this favourite file.", 'Orange')
-                    $this.Controls.ScriptsListView.Items.Clear()
-                    $this.UpdateExecuteButtonText()
-                }
-            }
-            else {
-                $this.SetStatusMessage("No matching tasks found for this favourite.", 'Orange')
                 $this.Controls.ScriptsListView.Items.Clear()
                 $this.UpdateExecuteButtonText()
             }
@@ -1661,83 +1583,6 @@ class PSUtilApp {
         }
     }
 
-    [void]OnAddToFavourite() {
-        Write-Host "[DEBUG] OnAddToFavourite"
-        $selectedItems = $this.Controls.ScriptsListView.Items | Where-Object { $_.Selected }
-        if (!$selectedItems) {
-            $this.SetStatusMessage("Please select a task to add to Favourites.", 'Orange')
-            return
-        }
-        $this.ShowFavouritePanel($selectedItems)
-    }
-
-    [void]ShowFavouritePanel($selectedItems) {
-        Write-Host "[DEBUG] ShowFavouritePanel"
-        $this.ShowSecondaryPanel("⭐ Add to Favourite")
-        # Simple UI: TextBox for name, ListBox for existing favourites, Save/Cancel buttons
-        $panel = $this.Controls.SecondaryContent
-        
-        # Don't clear all controls - preserve the header and close button
-        # Remove only the dynamic content controls
-        $controlsToRemove = @()
-        foreach ($ctrl in $panel.Controls) {
-            if ($ctrl -ne $this.Controls.SecondaryLabel -and $ctrl -ne $this.Controls.CloseSecondaryBtn) {
-                $controlsToRemove += $ctrl
-            }
-        }
-        foreach ($ctrl in $controlsToRemove) {
-            $panel.Controls.Remove($ctrl)
-        }
-        
-        $lbl = New-Object System.Windows.Forms.Label
-        $lbl.Text = "Favourite Name:"
-        $lbl.Dock = 'Top'
-        $panel.Controls.Add($lbl)
-        $txt = New-Object System.Windows.Forms.TextBox
-        $txt.Dock = 'Top'
-        $panel.Controls.Add($txt)
-        $lst = New-Object System.Windows.Forms.ListBox
-        $lst.Dock = 'Top'
-        $lst.Height = 80
-        # List existing .txt favourites
-        $favouritesDir = Join-Path $this.Config.DataDir "Favourites"
-        $existingFavs = @()
-        if (Test-Path $favouritesDir) {
-            $existingFavs = Get-ChildItem -Path $favouritesDir -File | Where-Object { $_.Extension -eq ".txt" } | Select-Object -ExpandProperty BaseName
-        }
-        $lst.Items.AddRange($existingFavs)
-        $panel.Controls.Add($lst)
-        $btnSave = New-Object System.Windows.Forms.Button
-        $btnSave.Text = "Save"
-        $btnSave.Dock = 'Top'
-        $btnSave.Add_Click({
-                $name = $txt.Text.Trim()
-                if (!$name) { 
-                    $this.SetStatusMessage("Enter a name for the favourite.", 'Orange')
-                    return 
-                }
-                $refs = @()
-                foreach ($item in $selectedItems) {
-                    $tag = $item.Tag
-                    $refs += "$($tag.Description)"
-                }
-                $favPath = Join-Path (Join-Path $this.Config.DataDir "Favourites") "$name.txt"
-                $refs | Set-Content $favPath -Force
-                $this.LoadSources()  # Reload sources to include new favourite
-                $this.LoadData()     # Reload combo box data
-                $this.HideSecondaryPanel()
-            }.GetNewClosure())
-        $panel.Controls.Add($btnSave)
-        $btnCancel = New-Object System.Windows.Forms.Button
-        $btnCancel.Text = "Cancel"
-        $btnCancel.Dock = 'Bottom'
-        $btnCancel.Add_Click({ $this.HideSecondaryPanel() }.GetNewClosure())
-        $panel.Controls.Add($btnCancel)
-        $lst.Add_SelectedIndexChanged({
-                if ($lst.SelectedItem) { $txt.Text = $lst.SelectedItem }
-            }.GetNewClosure())
-    }
-
     [void]ShowTemplatePanel($selectedItems) {
         Write-Host "[DEBUG] ShowTemplatePanel"
         $this.ShowSecondaryPanel("Create Template")
@@ -2041,7 +1886,7 @@ class PSUtilApp {
 }
 
 # Register built-in sources before app creation
-[PSUtilApp]::RegisterSourceType("ScriptFile", {
+[LMDTApp]::RegisterSourceType("ScriptFile", {
         param($app)
         $config = $app.Config
         $currentScript = $MyInvocation.ScriptName; if (!$currentScript) { $currentScript = $PSCommandPath }
@@ -2083,7 +1928,7 @@ class PSUtilApp {
 # Main execution block
 try {
     # Create the application and show it
-    $app = [PSUtilApp]::new()
+    $app = [LMDTApp]::new()
     [void]$app.MainForm.ShowDialog()
 }
 catch {
@@ -2098,7 +1943,7 @@ catch {
         # Try to use Windows Toast notification if BurntToast module is available
         if (Get-Module -ListAvailable -Name BurntToast) {
             Import-Module BurntToast -ErrorAction SilentlyContinue
-            New-BurntToastNotification -Text "PSUtil Error", $errorMessage -AppLogo $null -Silent
+            New-BurntToastNotification -Text "LMDT Error", $errorMessage -AppLogo $null -Silent
         }
         else {
             throw "BurntToast not available"
