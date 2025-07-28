@@ -1,12 +1,21 @@
 <#
+PowerShell GUI Application for Managing and Executing Scripts
 This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
+
+Data Directory Configuration:
+- Uses %Temp%\PSUtil by default (temporary storage, cleared on reboot)
+- Falls back to %LocalAppData%\PSUtil for persistent storage
+- Can be overridden with PSUTIL_DATA_DIR environment variable
+- Final fallback to script directory if all else fails
+
 Features:
-- TODO Submit new templates
+- ✅ Uses %Temp% directory by default with %LocalAppData% fallback option
+- TODO Submit new templates  
 - FIXME Write commands to PowerShell history
 - FIXME Improve execution UI performance - stuttering
 - TODO Enable command scheduling
 - TODO Add native system notifications, add tooltips where possible elsewhere show in status panel
-- TODO Use %Temp% dir by default, provide option to install locally which means Persist Data in %LocalAppData%, Create Start Menu LMDT.desktop
+- TODO Create Start Menu LMDT.desktop for easier access
 #>
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing
@@ -16,10 +25,293 @@ Add-Type -AssemblyName System.Windows.Forms
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# Function to determine the best data directory
+function Get-DataDirectory {
+    # Allow environment variable override
+    if ($env:PSUTIL_DATA_DIR -and (Test-Path $env:PSUTIL_DATA_DIR -IsValid)) {
+        $customDir = $env:PSUTIL_DATA_DIR
+        try {
+            if (!(Test-Path $customDir)) {
+                New-Item -ItemType Directory -Path $customDir -Force | Out-Null
+            }
+            Write-Host "[DEBUG] Using custom directory from PSUTIL_DATA_DIR: $customDir" -ForegroundColor Cyan
+            return $customDir
+        }
+        catch {
+            Write-Warning "[DEBUG] Cannot use custom directory, falling back to defaults: $_"
+        }
+    }
+    
+    # Primary option: Use %Temp% directory
+    $tempDir = Join-Path $env:TEMP "PSUtil"
+    
+    # Fallback option: Use %LocalAppData% 
+    $localAppDataDir = Join-Path $env:LOCALAPPDATA "PSUtil"
+    
+    # Try to create and use Temp directory first
+    try {
+        if (!(Test-Path $tempDir)) {
+            New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        }
+        # Test write access
+        $testFile = Join-Path $tempDir "test.tmp"
+        "test" | Out-File $testFile -Force
+        Remove-Item $testFile -Force
+        Write-Host "[DEBUG] Using Temp directory: $tempDir" -ForegroundColor Green
+        return $tempDir
+    }
+    catch {
+        Write-Warning "[DEBUG] Cannot use Temp directory, falling back to LocalAppData: $_"
+    }
+    
+    # Fallback to LocalAppData
+    try {
+        if (!(Test-Path $localAppDataDir)) {
+            New-Item -ItemType Directory -Path $localAppDataDir -Force | Out-Null
+        }
+        Write-Host "[DEBUG] Using LocalAppData directory: $localAppDataDir" -ForegroundColor Yellow
+        return $localAppDataDir
+    }
+    catch {
+        Write-Warning "[DEBUG] Cannot use LocalAppData directory, falling back to script directory: $_"
+        # Final fallback to script directory
+        return (Split-Path $PSCommandPath -Parent)
+    }
+}
+
+# Installation functions for "Install on Computer" feature
+function Install-PSUtilToComputer {
+    param(
+        [switch]$CreateShortcuts = $true,
+        [switch]$AddToPath = $true,
+        [switch]$CreateStartMenu = $true,
+        [switch]$CreateDesktop = $true,
+        [scriptblock]$ProgressCallback = $null
+    )
+    
+    Write-Host "[INSTALL] Starting PSUtil installation..." -ForegroundColor Green
+    
+    try {
+        # 1. Create installation directory in LocalAppData
+        $installDir = Join-Path $env:LOCALAPPDATA "PSUtil\App"
+        $dataDir = Join-Path $env:LOCALAPPDATA "PSUtil\Data"
+        
+        if ($ProgressCallback) { & $ProgressCallback "Creating installation directories..." }
+        Write-Host "[INSTALL] Creating installation directories..." -ForegroundColor Yellow
+        if (!(Test-Path $installDir)) {
+            New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+        }
+        if (!(Test-Path $dataDir)) {
+            New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+        }
+        
+        # 2. Copy script files to installation directory
+        if ($ProgressCallback) { & $ProgressCallback "Copying application files..." }
+        Write-Host "[INSTALL] Copying application files..." -ForegroundColor Yellow
+        $currentScript = $PSCommandPath
+        $scriptName = Split-Path $currentScript -Leaf
+        $installedScript = Join-Path $installDir $scriptName
+        
+        Copy-Item $currentScript $installedScript -Force
+        
+        # Copy any additional files in the same directory
+        $sourceDir = Split-Path $currentScript -Parent
+        $additionalFiles = @("gui.ps1", "README.md") # Add other files as needed
+        foreach ($file in $additionalFiles) {
+            $sourcePath = Join-Path $sourceDir $file
+            if (Test-Path $sourcePath) {
+                $destPath = Join-Path $installDir $file
+                Copy-Item $sourcePath $destPath -Force
+                Write-Host "[INSTALL] Copied: $file" -ForegroundColor Gray
+            }
+        }
+        
+        # 3. Create batch file for CLI access
+        if ($AddToPath) {
+            if ($ProgressCallback) { & $ProgressCallback "Creating CLI wrapper..." }
+            Write-Host "[INSTALL] Creating CLI wrapper..." -ForegroundColor Yellow
+            $batchContent = @"
+@echo off
+REM LMDT Command Line Interface
+REM Installed: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+
+if "%1"=="--gui" (
+    powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "$installedScript"
+) else if "%1"=="--help" (
+    echo LMDT - PowerShell Script Management Tool
+    echo.
+    echo Usage:
+    echo   lmdt --gui          Launch GUI interface
+    echo   lmdt --help         Show this help
+    echo   lmdt --version      Show version info
+    echo   lmdt --uninstall    Remove installation
+    echo.
+) else if "%1"=="--version" (
+    echo LMDT Version 1.0
+    echo Installed in: $installDir
+) else if "%1"=="--uninstall" (
+    powershell.exe -ExecutionPolicy Bypass -Command "& { Remove-Item '$installDir' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item '$dataDir' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host 'LMDT uninstalled successfully.' -ForegroundColor Green }"
+) else (
+    powershell.exe -ExecutionPolicy Bypass -File "$installedScript"
+)
+"@
+            
+            $batchFile = Join-Path $installDir "lmdt.bat"
+            $batchContent | Set-Content $batchFile -Force
+            
+            # Add to user PATH if not already there
+            $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+            if ($userPath -notlike "*$installDir*") {
+                $newPath = $userPath + ";" + $installDir
+                [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+                Write-Host "[INSTALL] Added to PATH: $installDir" -ForegroundColor Green
+            }
+        }
+        
+        # 4. Create Start Menu shortcut
+        if ($CreateStartMenu) {
+            if ($ProgressCallback) { & $ProgressCallback "Creating Start Menu shortcut..." }
+            Write-Host "[INSTALL] Creating Start Menu shortcut..." -ForegroundColor Yellow
+            $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+            $shortcutPath = Join-Path $startMenuDir "LMDT.lnk"
+            
+            $WshShell = New-Object -ComObject WScript.Shell
+            $Shortcut = $WshShell.CreateShortcut($shortcutPath)
+            $Shortcut.TargetPath = "powershell.exe"
+            $Shortcut.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$installedScript`""
+            $Shortcut.WorkingDirectory = $installDir
+            $Shortcut.IconLocation = "powershell.exe,0"
+            $Shortcut.Description = "LMDT - PowerShell Script Management Tool"
+            $Shortcut.Save()
+            
+            Write-Host "[INSTALL] Start Menu shortcut created" -ForegroundColor Green
+        }
+        
+        # 5. Create Desktop shortcut
+        if ($CreateDesktop) {
+            if ($ProgressCallback) { & $ProgressCallback "Creating Desktop shortcut..." }
+            Write-Host "[INSTALL] Creating Desktop shortcut..." -ForegroundColor Yellow
+            $desktopPath = [Environment]::GetFolderPath("Desktop")
+            $shortcutPath = Join-Path $desktopPath "LMDT.lnk"
+            
+            $WshShell = New-Object -ComObject WScript.Shell
+            $Shortcut = $WshShell.CreateShortcut($shortcutPath)
+            $Shortcut.TargetPath = "powershell.exe"
+            $Shortcut.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$installedScript`""
+            $Shortcut.WorkingDirectory = $installDir
+            $Shortcut.IconLocation = "powershell.exe,0"
+            $Shortcut.Description = "LMDT - PowerShell Script Management Tool"
+            $Shortcut.Save()
+            
+            Write-Host "[INSTALL] Desktop shortcut created" -ForegroundColor Green
+        }
+        
+        # 6. Create uninstaller
+        if ($ProgressCallback) { & $ProgressCallback "Creating uninstaller..." }
+        Write-Host "[INSTALL] Creating uninstaller..." -ForegroundColor Yellow
+        $uninstallScript = @"
+# LMDT Uninstaller
+# Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+
+Write-Host "Uninstalling LMDT..." -ForegroundColor Yellow
+
+# Remove installation directory
+if (Test-Path '$installDir') {
+    Remove-Item '$installDir' -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Removed application files" -ForegroundColor Green
+}
+
+# Remove data directory (ask user)
+if (Test-Path '$dataDir') {
+    `$response = Read-Host "Remove user data directory '$dataDir'? (y/N)"
+    if (`$response -eq 'y' -or `$response -eq 'Y') {
+        Remove-Item '$dataDir' -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed user data" -ForegroundColor Green
+    } else {
+        Write-Host "Kept user data directory" -ForegroundColor Yellow
+    }
+}
+
+# Remove from PATH
+`$userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+if (`$userPath -like "*$installDir*") {
+    `$newPath = `$userPath -replace [regex]::Escape("$installDir"), "" -replace ";;", ";"
+    [Environment]::SetEnvironmentVariable("PATH", `$newPath.Trim(';'), "User")
+    Write-Host "Removed from PATH" -ForegroundColor Green
+}
+
+# Remove shortcuts
+`$shortcuts = @(
+    "$([Environment]::GetFolderPath("Desktop"))\LMDT.lnk",
+    "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\LMDT.lnk"
+)
+foreach (`$shortcut in `$shortcuts) {
+    if (Test-Path `$shortcut) {
+        Remove-Item `$shortcut -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed shortcut: `$(Split-Path `$shortcut -Leaf)" -ForegroundColor Green
+    }
+}
+
+Write-Host "LMDT uninstalled successfully!" -ForegroundColor Green
+Write-Host "Note: You may need to restart your terminal for PATH changes to take effect." -ForegroundColor Yellow
+Pause
+"@
+        
+        $uninstallPath = Join-Path $installDir "Uninstall-LMDT.ps1"
+        $uninstallScript | Set-Content $uninstallPath -Force
+        
+        # 7. Set environment variable for installed mode
+        [Environment]::SetEnvironmentVariable("PSUTIL_DATA_DIR", $dataDir, "User")
+        
+        $result = @{
+            Success = $true
+            InstallDir = $installDir
+            DataDir = $dataDir
+            BatchFile = if ($AddToPath) { Join-Path $installDir "lmdt.bat" } else { $null }
+            StartMenuShortcut = if ($CreateStartMenu) { Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\LMDT.lnk" } else { $null }
+            DesktopShortcut = if ($CreateDesktop) { Join-Path ([Environment]::GetFolderPath("Desktop")) "LMDT.lnk" } else { $null }
+            UninstallScript = $uninstallPath
+        }
+        
+        Write-Host "[INSTALL] Installation completed successfully!" -ForegroundColor Green
+        Write-Host "[INSTALL] Installation directory: $installDir" -ForegroundColor Gray
+        Write-Host "[INSTALL] Data directory: $dataDir" -ForegroundColor Gray
+        if ($AddToPath) {
+            Write-Host "[INSTALL] CLI command: lmdt (restart terminal to use)" -ForegroundColor Gray
+        }
+        
+        return $result
+    }
+    catch {
+        Write-Error "[INSTALL] Installation failed: $_"
+        return @{ Success = $false; Error = $_.Exception.Message }
+    }
+}
+
+function Test-PSUtilInstallation {
+    $installDir = Join-Path $env:LOCALAPPDATA "PSUtil\App"
+    $dataDir = Join-Path $env:LOCALAPPDATA "PSUtil\Data"
+    $batchFile = Join-Path $installDir "lmdt.bat"
+    
+    return @{
+        IsInstalled = (Test-Path $installDir)
+        InstallDir = $installDir
+        DataDir = $dataDir
+        HasCLI = (Test-Path $batchFile)
+        HasStartMenu = (Test-Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\LMDT.lnk"))
+        HasDesktop = (Test-Path (Join-Path ([Environment]::GetFolderPath("Desktop")) "LMDT.lnk"))
+    }
+}
+
 # Minimal configuration for PSUtilApp
+# Data Directory Priority:
+# 1. Environment variable: PSUTIL_DATA_DIR (if set and accessible)
+# 2. Default: %Temp%\PSUtil (preferred for temporary data)
+# 3. Fallback: %LocalAppData%\PSUtil (persistent local data)
+# 4. Final fallback: Script directory (when other options fail)
 $Global:Config = @{
     ScriptFilesBlacklist        = @('gui.ps1', 'psutil.ps1', 'taaest.ps1')
-    DataDir                     = (Split-Path $PSCommandPath -Parent)  # Use script directory instead of Documents
+    DataDir                     = (Get-DataDirectory)  # Use %Temp% by default, fallback to %LocalAppData%
     SubDirs                     = @('Favourites', 'Logs', 'Scripts', 'Templates')
     SSHConfigPath               = "$env:USERPROFILE\.ssh\config"
     SourceComboAllActionsPrefix = 'All Tasks'
@@ -525,6 +817,62 @@ class PSUtilApp {
         $this.ShowTemplatePanel($selectedItems)
     }
 
+    [void]OnInstall() {
+        Write-Host "[DEBUG] OnInstall - Starting installation process"
+        
+        # Show confirmation dialog using dynamic type resolution
+        $msgBoxType = 'System.Windows.Forms.MessageBox' -as [type]
+        $result = $msgBoxType::Show(
+            "This will install PSUtil to your system with Start Menu and Desktop shortcuts, and enable CLI commands in all terminals.`n`nProceed with installation?",
+            "Install PSUtil",
+            'YesNo',
+            'Question'
+        )
+        
+        if ($result -eq 'Yes') {
+            try {
+                $this.SetStatusMessage("Installing PSUtil to system...", 'Green')
+                $this.Controls.InstallBtn.Enabled = $false
+                $this.Controls.InstallBtn.Text = "Installing..."
+                
+                # Progress callback for user feedback
+                $progressCallback = {
+                    param($message)
+                    $this.SetStatusMessage($message, 'Green')
+                    $appType = 'System.Windows.Forms.Application' -as [type]
+                    $appType::DoEvents()
+                }
+                
+                # Run the installation
+                Install-PSUtilToComputer -ProgressCallback $progressCallback
+                
+                $this.SetStatusMessage("Installation completed successfully! Restart your terminal to use CLI commands.", 'Green')
+                $this.Controls.InstallBtn.Text = "Installed"
+                $this.Controls.InstallBtn.BackColor = 'LightGray'
+                
+                # Show success dialog
+                $msgBoxType::Show(
+                    "PSUtil has been successfully installed!`n`n• Start Menu shortcut created`n• Desktop shortcut created`n• CLI commands available in terminals`n• Restart your terminal for CLI access",
+                    "Installation Complete",
+                    'OK',
+                    'Information'
+                )
+                
+            } catch {
+                $this.SetStatusMessage("Installation failed: $($_.Exception.Message)", 'Red')
+                $this.Controls.InstallBtn.Enabled = $true
+                $this.Controls.InstallBtn.Text = "Install on Computer"
+                
+                $msgBoxType::Show(
+                    "Installation failed: $($_.Exception.Message)",
+                    "Installation Error",
+                    'OK',
+                    'Error'
+                )
+            }
+        }
+    }
+
     [void]InitUsers() {
         # Minimal user setup
         $this.Users = @(
@@ -617,6 +965,8 @@ class PSUtilApp {
             SpacerPanelAdd      = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             CreateTemplateBtn   = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Create Template'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelTemplate = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            InstallBtn          = @{ Type = 'Button'; Order = 18; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft'; BackColor = 'LightGreen' } }
+            SpacerPanelInstall  = @{ Type = 'Panel'; Order = 19; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'PrimaryContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
             SecondaryLabel      = @{ Type = 'Label'; Order = 1; Layout = 'SecondaryContent'; Properties = @{ Text = 'Secondary Panel'; Dock = 'Top'; Height = 30; TextAlign = 'MiddleCenter' } }
             CloseSecondaryBtn   = @{ Type = 'Button'; Order = 2; Layout = 'SecondaryContent'; Properties = @{ Text = '✕'; Dock = 'Top'; Height = 25; FlatStyle = 'Flat'; TextAlign = 'MiddleCenter'; BackColor = 'LightCoral'; ForeColor = 'White' } }
@@ -878,6 +1228,7 @@ class PSUtilApp {
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
         $this.Controls.AddCommandBtn.Add_Click({ $app.OnAddCommand() })
         $this.Controls.CreateTemplateBtn.Add_Click({ $app.OnCreateTemplate() })
+        $this.Controls.InstallBtn.Add_Click({ $app.OnInstall() })
         $this.Controls.CloseSecondaryBtn.Add_Click({ $app.HideSecondaryPanel() })
         $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
         $this.Controls.RefreshBtn.Add_Click({ $app.OnRefresh() })
@@ -1275,6 +1626,29 @@ class PSUtilApp {
         $this.Controls.ExecuteBtn.Text = $this.Config.Controls.ExecuteBtnTemplate -f $checkedCount
     }
 
+    [void]SetStatusMessage([string]$message, [string]$color = 'Black') {
+        Write-Host "[DEBUG] SetStatusMessage: $message" -ForegroundColor $color
+        if ($this.Controls.StatusLabel) {
+            $this.Controls.StatusLabel.Text = $message
+            
+            # Set color based on the parameter
+            switch ($color.ToLower()) {
+                'red' { $this.Controls.StatusLabel.ForeColor = 'Red' }
+                'green' { $this.Controls.StatusLabel.ForeColor = 'Green' }
+                'orange' { $this.Controls.StatusLabel.ForeColor = 'Orange' }
+                'blue' { $this.Controls.StatusLabel.ForeColor = 'Blue' }
+                'yellow' { $this.Controls.StatusLabel.ForeColor = 'Orange' } # Orange is closest to yellow in standard colors
+                default { $this.Controls.StatusLabel.ForeColor = 'Black' }
+            }
+            
+            # Force UI update
+            $appType = 'System.Windows.Forms.Application' -as [type]
+            if ($appType) {
+                $appType::DoEvents()
+            }
+        }
+    }
+
     [void]OnFilter() {
         Write-Host "[DEBUG] OnFilter"
         $filter = $this.Controls.FilterText.Text
@@ -1649,63 +2023,6 @@ class PSUtilApp {
         return $null
     }
 
-    [void]OnRefresh() {
-        Write-Host "[DEBUG] Refresh requested"
-        $lv = $this.Controls.ScriptsListView
-        foreach ($item in $lv.Items) {
-            $item.SubItems[3].Text = $this.Config.Messages.Ready
-            $item.BackColor = $this.Config.Colors.White
-        }
-        $this.Controls.StatusLabel.Text = $this.Config.Messages.Ready
-        $this.Controls.StatusProgressBar.Visible = $false
-        if ($this.Controls.ContainsKey("RefreshBtn")) {
-            $this.Controls["RefreshBtn"].Enabled = $false
-        }
-        # Optionally, notify other parts of the app
-        if ($this.OnRefreshed -is [scriptblock]) {
-            & $this.OnRefreshed
-        }
-    }
-
-    [void]OnCancelExecution() {
-        Write-Host "[DEBUG] OnCancelExecution"
-        $this.State.CancelRequested = $true
-        if ($this.Controls.ContainsKey("CancelBtn")) {
-            $this.Controls["CancelBtn"].Enabled = $false
-            $this.Controls["CancelBtn"].Visible = $false
-        }
-        $this.Controls.StatusLabel.Text = $this.Config.Messages.CancelledByUser
-        $this.Controls.StatusProgressBar.Visible = $false
-        if ($this.Controls.ContainsKey("RefreshBtn")) {
-            $this.Controls["RefreshBtn"].Enabled = $true
-            $this.Controls["RefreshBtn"].Visible = $true
-        }
-        # Optionally, notify other parts of the app
-        if ($this.OnExecutionCancelled -is [scriptblock]) {
-            & $this.OnExecutionCancelled
-        }
-    }
-
-    # Status management methods
-    [void]SetStatusMessage([string]$message, [string]$color = 'Black') {
-        Write-Host "[DEBUG] SetStatusMessage: $message"
-        $this.Controls.StatusLabel.Text = $message
-        $this.Controls.StatusLabel.ForeColor = $color
-    }
-
-    [void]ResetStatus() {
-        Write-Host "[DEBUG] ResetStatus"
-        $this.Controls.StatusLabel.Text = $this.Config.Messages.Ready
-        $this.Controls.StatusLabel.ForeColor = 'Black'
-    }
-
-    # UI Helper methods
-    [void]RefreshUI() {
-        # Allow brief pause for UI to update naturally
-        # This is more PowerShell-native than DoEvents()
-        Start-Sleep -Milliseconds 1
-    }
-
     [void]ShowSecondaryPanel([string]$title) {
         Write-Host "[DEBUG] ShowSecondaryPanel: $title"
         $this.Controls.SecondaryLabel.Text = $title
@@ -1720,239 +2037,6 @@ class PSUtilApp {
     [void]OnCloseSecondary() {
         Write-Host "[DEBUG] OnCloseSecondary"
         $this.HideSecondaryPanel()
-    }
-
-    [void]MoveListViewItem($ListView, $Item, [int]$TargetIndex, [bool]$AppearsAfter = $false) {
-        Write-Host "[DEBUG] MoveListViewItem: Moving '$($Item.Text)' from index $($Item.Index) to target index $TargetIndex (AppearsAfter: $AppearsAfter)"
-        
-        $currentIndex = $Item.Index
-        $insertIndex = if ($AppearsAfter) { $TargetIndex + 1 } else { $TargetIndex }
-
-        Write-Host "[DEBUG] Current Index: $currentIndex, Calculated Insert Index: $insertIndex"
-
-        # Don't move if it's the same position
-        if ($currentIndex -eq $insertIndex) {
-            Write-Host "[DEBUG] Move cancelled - same position"
-            return
-        }
-
-        # Store item data
-        $itemData = @{
-            Text        = $Item.Text
-            SubItems    = @($Item.SubItems | ForEach-Object { $_.Text })
-            Checked     = $Item.Checked
-            BackColor   = $Item.BackColor
-            ForeColor   = $Item.ForeColor
-            Font        = $Item.Font
-            Group       = $Item.Group
-            Tag         = $Item.Tag
-            ToolTipText = $Item.ToolTipText
-        }
-
-        $ListView.BeginUpdate()
-        try {
-            # Remove the item first
-            $ListView.Items.RemoveAt($currentIndex)
-            Write-Host "[DEBUG] Item removed from index: $currentIndex"
-            
-            # Adjust insert index if the removed item was before the target
-            if ($insertIndex -gt $currentIndex) {
-                $insertIndex--
-                Write-Host "[DEBUG] Insert index adjusted to: $insertIndex (removed item was before target)"
-            }
-            
-            # Clamp to valid range
-            if ($insertIndex -gt $ListView.Items.Count) {
-                $insertIndex = $ListView.Items.Count
-                Write-Host "[DEBUG] Insert index clamped to list end: $insertIndex"
-            }
-
-            Write-Host "[DEBUG] Final insert index: $insertIndex"
-
-            # Create new item
-            $newItem = New-Object System.Windows.Forms.ListViewItem($itemData.Text)
-            for ($i = 1; $i -lt $itemData.SubItems.Count; $i++) {
-                $newItem.SubItems.Add($itemData.SubItems[$i]) | Out-Null
-            }
-            $newItem.Checked = $itemData.Checked
-            $newItem.BackColor = $itemData.BackColor
-            $newItem.ForeColor = $itemData.ForeColor
-            $newItem.Font = $itemData.Font
-            $newItem.Tag = $itemData.Tag
-            $newItem.ToolTipText = $itemData.ToolTipText
-
-            # Handle group assignment
-            if ($ListView.Groups.Count -gt 0) {
-                if ($insertIndex -lt $ListView.Items.Count) {
-                    $targetItem = $ListView.Items[$insertIndex]
-                    $newItem.Group = $targetItem.Group
-                }
-                elseif ($ListView.Items.Count -gt 0) {
-                    $lastItem = $ListView.Items[$ListView.Items.Count - 1]
-                    $newItem.Group = $lastItem.Group
-                }
-                else {
-                    $newItem.Group = $itemData.Group
-                }
-            }
-
-            # Insert the item
-            if ($insertIndex -ge $ListView.Items.Count) {
-                $ListView.Items.Add($newItem) | Out-Null
-                Write-Host "[DEBUG] Item added at end of list"
-            }
-            else {
-                $ListView.Items.Insert($insertIndex, $newItem) | Out-Null
-                Write-Host "[DEBUG] Item inserted at index: $insertIndex"
-            }
-
-            # Select the moved item
-            $ListView.SelectedItems.Clear()
-            $newItem.Selected = $true
-            $newItem.EnsureVisible()
-            
-            Write-Host "[DEBUG] Move completed - Item moved to index $($newItem.Index)"
-        }
-        finally {
-            $ListView.EndUpdate()
-            $this.UpdateExecuteButtonText()
-        }
-    }
-
-    [void]MoveSelectedItemUp() {
-        Write-Host "[DEBUG] MoveSelectedItemUp"
-        $lv = $this.Controls.ScriptsListView
-        if ($lv.SelectedItems.Count -eq 0) { 
-            $this.SetStatusMessage("Please select an item to move up.", 'Orange')
-            return 
-        }
-
-        $selectedItem = $lv.SelectedItems[0]
-        $currentIndex = $selectedItem.Index
-
-        if ($currentIndex -gt 0) {
-            $this.MoveListViewItem($lv, $selectedItem, $currentIndex - 1, $false)
-        }
-    }
-
-    [void]MoveSelectedItemDown() {
-        Write-Host "[DEBUG] MoveSelectedItemDown"
-        $lv = $this.Controls.ScriptsListView
-        if ($lv.SelectedItems.Count -eq 0) { 
-            $this.SetStatusMessage("Please select an item to move down.", 'Orange')
-            return 
-        }
-
-        $selectedItem = $lv.SelectedItems[0]
-        $currentIndex = $selectedItem.Index
-
-        if ($currentIndex -lt $lv.Items.Count - 1) {
-            $this.MoveListViewItem($lv, $selectedItem, $currentIndex + 1, $true)
-        }
-    }
-
-    [void]OnColumnClick($listView, $e) {
-        Write-Host "[DEBUG] OnColumnClick: Column $($e.Column)"
-        
-        # Initialize sorting state if not exists
-        if (-not $this.State.ContainsKey('SortColumn')) {
-            $this.State.SortColumn = -1
-            $this.State.SortOrder = 'Ascending'
-        }
-        
-        $columnIndex = $e.Column
-        $column = $listView.Columns[$columnIndex]
-        
-        # Determine sort order
-        if ($this.State.SortColumn -eq $columnIndex) {
-            # Same column clicked, toggle sort order
-            $this.State.SortOrder = if ($this.State.SortOrder -eq 'Ascending') { 'Descending' } else { 'Ascending' }
-        }
-        else {
-            # Different column clicked, default to ascending
-            $this.State.SortColumn = $columnIndex
-            $this.State.SortOrder = 'Ascending'
-        }
-        
-        # Update column headers with sort indicators
-        foreach ($col in $listView.Columns) {
-            $originalText = $col.Text -replace ' [\^v]', ''
-            $col.Text = $originalText
-        }
-        
-        # Add sort indicator to current column
-        $sortIndicator = if ($this.State.SortOrder -eq 'Ascending') { ' ^' } else { ' v' }
-        $column.Text = $column.Text + $sortIndicator
-        
-        # Perform the sort
-        $this.SortListView($listView, $columnIndex, $this.State.SortOrder)
-    }
-
-    [void]SortListView($listView, [int]$columnIndex, [string]$sortOrder) {
-        Write-Host "[DEBUG] SortListView: Column $columnIndex, Order $sortOrder"
-        
-        $listView.BeginUpdate()
-        try {
-            # Get all items with their data
-            $items = @()
-            foreach ($item in $listView.Items) {
-                $sortValue = if ($columnIndex -lt $item.SubItems.Count) { 
-                    $item.SubItems[$columnIndex].Text 
-                }
-                else { 
-                    $item.Text 
-                }
-                
-                $items += @{
-                    Item         = $item
-                    SortValue    = $sortValue
-                    OriginalData = @{
-                        Text        = $item.Text
-                        SubItems    = @($item.SubItems | ForEach-Object { $_.Text })
-                        Checked     = $item.Checked
-                        BackColor   = $item.BackColor
-                        ForeColor   = $item.ForeColor
-                        Font        = $item.Font
-                        Group       = $item.Group
-                        Tag         = $item.Tag
-                        ToolTipText = $item.ToolTipText
-                    }
-                }
-            }
-            
-            # Sort the items
-            if ($sortOrder -eq 'Ascending') {
-                $items = $items | Sort-Object { $_.SortValue }
-            }
-            else {
-                $items = $items | Sort-Object { $_.SortValue } -Descending
-            }
-            
-            # Clear and rebuild the ListView
-            $listView.Items.Clear()
-            
-            foreach ($itemData in $items) {
-                $newItem = New-Object System.Windows.Forms.ListViewItem($itemData.OriginalData.Text)
-                for ($i = 1; $i -lt $itemData.OriginalData.SubItems.Count; $i++) {
-                    $newItem.SubItems.Add($itemData.OriginalData.SubItems[$i]) | Out-Null
-                }
-                $newItem.Checked = $itemData.OriginalData.Checked
-                $newItem.BackColor = $itemData.OriginalData.BackColor
-                $newItem.ForeColor = $itemData.OriginalData.ForeColor
-                $newItem.Font = $itemData.OriginalData.Font
-                $newItem.Group = $itemData.OriginalData.Group
-                $newItem.Tag = $itemData.OriginalData.Tag
-                $newItem.ToolTipText = $itemData.OriginalData.ToolTipText
-                
-                $listView.Items.Add($newItem) | Out-Null
-            }
-            
-            Write-Host "[DEBUG] Sort completed - $($items.Count) items sorted"
-        }
-        finally {
-            $listView.EndUpdate()
-            $this.UpdateExecuteButtonText()
-        }
     }
 }
 
