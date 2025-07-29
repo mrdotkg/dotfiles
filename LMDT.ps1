@@ -343,7 +343,7 @@ $Global:Config = @{
         ToolbarHeight   = 40
         ToolbarPadding  = '10,5,10,7'
         StatusBarHeight = 30
-        StatusPadding   = '10,0,2,10'
+        StatusPadding   = '0,2,0,2'
         SidebarWidth    = 160
         SidebarPadding  = '5,5,5,5'
         ContentPadding  = '10,5,10,5'
@@ -975,8 +975,21 @@ class LMDTApp {
             InstallBtn          = @{ Type = 'Button'; Order = 18; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelInstall  = @{ Type = 'Panel'; Order = 19; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
+            
+            # Enhanced Status Bar with Execution Controls - Always visible, content changes based on state
             StatusLabel         = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
-            StatusProgressBar   = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Width = 120; Height = 18; Visible = $false; Anchor = 'Top, Right' } }
+            
+            # After Execution Buttons (Results) - dock right, reverse order for proper layout
+            StatusClearBtn      = @{ Type = 'Button'; Order = 2; Layout = 'StatusBar'; Properties = @{ Text = 'Clear'; Dock = 'Right'; BackColor = 'LightGray'; Visible = $false } }
+            StatusRetryBtn      = @{ Type = 'Button'; Order = 3; Layout = 'StatusBar'; Properties = @{ Text = 'Retry'; Dock = 'Right'; BackColor = 'LightBlue'; Visible = $false } }
+            StatusViewLogsBtn   = @{ Type = 'Button'; Order = 4; Layout = 'StatusBar'; Properties = @{ Text = 'Logs'; Dock = 'Right'; BackColor = 'LightGreen'; Visible = $false } }
+            
+            # During Execution Buttons - dock right, reverse order for proper layout
+            StatusStopBtn       = @{ Type = 'Button'; Order = 8; Layout = 'StatusBar'; Properties = @{ Text = 'Stop'; Dock = 'Right'; Width = 50; BackColor = 'IndianRed'; ForeColor = 'White'; Visible = $false } }
+            StatusTaskCounter   = @{ Type = 'Label'; Order = 6; Layout = 'StatusBar'; Properties = @{ Text = '0/0'; Dock = 'Right'; TextAlign = 'MiddleCenter'; BackColor = 'Transparent'; BorderStyle = 'FixedSingle'; Visible = $false } }
+            
+            # Progress bar fills remaining space
+            StatusProgressBar   = @{ Type = 'ProgressBar'; Order = 7; Layout = 'StatusBar'; Properties = @{ Dock = 'Right'; Visible = $false; } }
         }
 
         # Create controls in order
@@ -1017,30 +1030,6 @@ class LMDTApp {
 
         # Assign controls to class property
         $this.Controls = $createdControls
-
-        # Position progress bar vertically centered in status bar
-        $statusBar = $this.Controls.StatusBar
-        $progressBar = $this.Controls.StatusProgressBar
-        if ($statusBar -and $progressBar) {
-            $statusBarHeight = $statusBar.Height
-            $progressBarHeight = $progressBar.Height
-            $verticalOffset = ($statusBarHeight - $progressBarHeight) / 2
-            $rightMargin = 10
-            
-            # Position progress bar on the right side, vertically centered
-            $progressBar.Location = New-Object System.Drawing.Point(($statusBar.Width - $progressBar.Width - $rightMargin), $verticalOffset)
-            
-            # Add resize handler to keep progress bar positioned when window resizes
-            $statusBar.Add_Resize({
-                    $sb = $this
-                    $pb = $app.Controls.StatusProgressBar
-                    if ($pb) {
-                        $vOffset = ($sb.Height - $pb.Height) / 2
-                        $rMargin = 10
-                        $pb.Location = New-Object System.Drawing.Point(($sb.Width - $pb.Width - $rMargin), $vOffset)
-                    }
-                }.GetNewClosure())
-        }
 
         # Manual placeholder logic for FilterText (broader support, including iex)
         $filterTextBox = $this.Controls.FilterText
@@ -1278,6 +1267,12 @@ class LMDTApp {
         $this.Controls.InstallBtn.Add_Click({ $app.OnInstall() })
         $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
 
+        # Execution Control Panel Events
+        $this.Controls.StatusStopBtn.Add_Click({ $app.OnStopExecution() })
+        $this.Controls.StatusViewLogsBtn.Add_Click({ $app.OnViewLogs() })
+        $this.Controls.StatusRetryBtn.Add_Click({ $app.OnRetryFailed() })
+        $this.Controls.StatusClearBtn.Add_Click({ $app.OnClearResults() })
+
         # Setup execution mode options using $this.Users and all other enabled local users
         $this.Controls.ExecuteModeCombo.Items.Clear()
         foreach ($user in $this.Users) {
@@ -1511,65 +1506,223 @@ class LMDTApp {
         $this.IsExecuting = $true
         $this.Controls.ExecuteBtn.Enabled = $false
         
-        # Show and enable cancel button
+        # Show and enable old cancel button (keep for compatibility)
         if ($this.Controls.ContainsKey("CancelBtn")) {
             $this.Controls["CancelBtn"].Enabled = $true
             $this.Controls["CancelBtn"].Visible = $true
         }
         
-        # Show progress bar AFTER setting initial status message
-        $this.SetStatusMessage("Preparing to execute $($checkedItems.Count) tasks...", 'Blue')
-        $progressBar = $this.Controls.StatusProgressBar
-        $progressBar.Visible = $true
-        $progressBar.Value = 0
-        $progressBar.Maximum = $checkedItems.Count
+        # Show execution controls in status bar instead of separate panel
+        $this.ShowStatusBarExecutionControls($checkedItems.Count)
         
         $this.State.CancelRequested = $false
-        $completed = 0
-        $failed = 0
         
-        foreach ($item in $checkedItems) {
-            if ($this.State.CancelRequested) {
-                $item.SubItems[3].Text = $this.Config.Messages.CancelledByUser
-                $item.BackColor = $this.Config.Colors.Filtered
-                continue
-            }
-            $item.SubItems[3].Text = $this.Config.Messages.Running
-            $item.BackColor = $this.Config.Colors.Running
+        # Start execution on background thread to prevent UI blocking
+        $this.StartBackgroundExecution($checkedItems)
+    }
+    
+    [void]StartBackgroundExecution($checkedItems) {
+        Write-Host "[DEBUG] StartBackgroundExecution - Starting background thread for $($checkedItems.Count) tasks"
+        
+        # Create a runspace for background execution
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        
+        # Share required variables with the runspace
+        $runspace.SessionStateProxy.SetVariable("checkedItems", $checkedItems)
+        $runspace.SessionStateProxy.SetVariable("app", $this)
+        
+        # Create PowerShell instance for background execution
+        $powershell = [powershell]::Create()
+        $powershell.Runspace = $runspace
+        
+        # Background execution script
+        $scriptBlock = {
+            param($checkedItems, $app)
             
-            # Set status message WITHOUT hiding progress bar (use special method)
-            $this.SetStatusMessageWithProgress("Executing: $($item.Text) ($($completed+1)/$($checkedItems.Count))", 'Blue')
-            $this.RefreshUI()
-            try {
-                $script = $item.Tag
-                $result = $this.ExecuteScript($script)
-                $item.SubItems[3].Text = if ($result.Success) { $this.Config.Messages.Completed } else { $this.Config.Messages.Failed }
-                $item.BackColor = if ($result.Success) { $this.Config.Colors.Completed } else { $this.Config.Colors.Failed }
-                $item.Checked = !$result.Success
-                if (!$result.Success) { $failed++ }
+            Write-Host "[BACKGROUND] Starting execution of $($checkedItems.Count) tasks"
+            $completed = 0
+            $failed = 0
+            
+            foreach ($item in $checkedItems) {
+                # Check for cancellation (thread-safe)
+                if ($app.State.CancelRequested) {
+                    Write-Host "[BACKGROUND] Cancellation requested, stopping execution"
+                    # Update UI thread-safely for cancelled items
+                    $app.UpdateTaskStatusThreadSafe($item, $app.Config.Messages.CancelledByUser, $app.Config.Colors.Filtered)
+                    continue
+                }
+                
+                # Update UI thread-safely for running status
+                $app.UpdateTaskStatusThreadSafe($item, $app.Config.Messages.Running, $app.Config.Colors.Running)
+                
+                # Update progress thread-safely
+                $app.UpdateExecutionProgressThreadSafe($completed + 1, $checkedItems.Count, $item.Text)
+                
+                try {
+                    $script = $item.Tag
+                    $result = $app.ExecuteScript($script)
+                    
+                    # Update UI thread-safely based on result
+                    $status = if ($result.Success) { $app.Config.Messages.Completed } else { $app.Config.Messages.Failed }
+                    $color = if ($result.Success) { $app.Config.Colors.Completed } else { $app.Config.Colors.Failed }
+                    $app.UpdateTaskStatusThreadSafe($item, $status, $color)
+                    
+                    # Update checked state thread-safely
+                    $app.UpdateTaskCheckedStateThreadSafe($item, !$result.Success)
+                    
+                    if (!$result.Success) { $failed++ }
+                }
+                catch {
+                    Write-Host "[BACKGROUND] Task execution failed: $_" -ForegroundColor Red
+                    $app.UpdateTaskStatusThreadSafe($item, $app.Config.Messages.Failed, $app.Config.Colors.Failed)
+                    $app.UpdateTaskCheckedStateThreadSafe($item, $true)
+                    $failed++
+                }
+                
+                $completed++
+                
+                # Add 5-second delay between executions for UI inspection
+                if ($completed -lt $checkedItems.Count -and !$app.State.CancelRequested) {
+                    Start-Sleep -Seconds 5
+                }
             }
-            catch {
-                $item.SubItems[3].Text = $this.Config.Messages.Failed
-                $item.BackColor = $this.Config.Colors.Failed
-                $item.Checked = $true
-                $failed++
-                Write-host "$($this.Config.Messages.ExecutionError)$_" -ForegroundColor Red
-            }
-            $completed++
-            $progressBar.Value = $completed
-            $this.RefreshUI()
+            
+            # Complete execution thread-safely
+            $successCount = $completed - $failed
+            $app.CompleteExecutionThreadSafe($successCount, $failed, $checkedItems.Count, $app.State.CancelRequested)
+            
+            Write-Host "[BACKGROUND] Execution completed: $successCount successful, $failed failed"
         }
         
-        # Final status message with summary
-        $successCount = $completed - $failed
-        $summary = "Execution completed: $successCount successful"
-        if ($failed -gt 0) { $summary += ", $failed failed" }
-        if ($this.State.CancelRequested) { $summary += " (cancelled)" }
-        $summary += " out of $($checkedItems.Count) tasks."
+        # Add script and parameters
+        $powershell.AddScript($scriptBlock).AddParameter("checkedItems", $checkedItems).AddParameter("app", $this) | Out-Null
         
-        $statusColor = if ($failed -eq 0) { 'Green' } else { 'Orange' }
-        $this.SetStatusMessage($summary, $statusColor)
-        $this.IsExecuting = $false
+        # Start async execution
+        $asyncResult = $powershell.BeginInvoke()
+        
+        # Store references for cleanup
+        $this.State.BackgroundPowerShell = $powershell
+        $this.State.BackgroundRunspace = $runspace
+        $this.State.BackgroundAsyncResult = $asyncResult
+    }
+    
+    # Thread-safe UI update methods using Invoke
+    [void]UpdateTaskStatusThreadSafe($item, $status, $color) {
+        if ($this.MainForm.InvokeRequired) {
+            $this.MainForm.Invoke([Action[object, string, object]] {
+                    param($taskItem, $statusText, $backColor)
+                    $taskItem.SubItems[3].Text = $statusText
+                    $taskItem.BackColor = $backColor
+                }, $item, $status, $color)
+        }
+        else {
+            $item.SubItems[3].Text = $status
+            $item.BackColor = $color
+        }
+    }
+    
+    [void]UpdateTaskCheckedStateThreadSafe($item, $checked) {
+        if ($this.MainForm.InvokeRequired) {
+            $this.MainForm.Invoke([Action[object, bool]] {
+                    param($taskItem, $checkedState)
+                    $taskItem.Checked = $checkedState
+                }, $item, $checked)
+        }
+        else {
+            $item.Checked = $checked
+        }
+    }
+    
+    [void]UpdateExecutionProgressThreadSafe($completed, $total, $currentTask) {
+        if ($this.MainForm.InvokeRequired) {
+            $this.MainForm.Invoke([Action[int, int, string]] {
+                    param($completedCount, $totalCount, $taskName)
+                    $this.UpdateStatusBarExecutionProgress($completedCount, $totalCount, $taskName)
+                }, $completed, $total, $currentTask)
+        }
+        else {
+            $this.UpdateStatusBarExecutionProgress($completed, $total, $currentTask)
+        }
+    }
+    
+    [void]CompleteExecutionThreadSafe($successful, $failed, $total, $cancelled) {
+        if ($this.MainForm.InvokeRequired) {
+            $this.MainForm.Invoke([Action[int, int, int, bool]] {
+                    param($successCount, $failedCount, $totalCount, $wasCancelled)
+                
+                    # Show results in status bar
+                    $this.ShowStatusBarResultsControls($successCount, $failedCount, $totalCount, $wasCancelled)
+                
+                    # Set final status message
+                    $summary = "Execution completed: $successCount successful"
+                    if ($failedCount -gt 0) { $summary += ", $failedCount failed" }
+                    if ($wasCancelled) { $summary += " (cancelled)" }
+                    $summary += " out of $totalCount tasks."
+                
+                    $statusColor = if ($failedCount -eq 0) { 'Green' } else { 'Orange' }
+                    $this.SetStatusMessage($summary, $statusColor)
+                
+                    # Reset execution state
+                    $this.IsExecuting = $false
+                    $this.Controls.ExecuteBtn.Enabled = $true
+                
+                    # Cleanup background thread resources
+                    $this.CleanupBackgroundExecution()
+                
+                }, $successful, $failed, $total, $cancelled)
+        }
+        else {
+            # Show results in status bar
+            $this.ShowStatusBarResultsControls($successful, $failed, $total, $cancelled)
+            
+            # Set final status message
+            $summary = "Execution completed: $successful successful"
+            if ($failed -gt 0) { $summary += ", $failed failed" }
+            if ($cancelled) { $summary += " (cancelled)" }
+            $summary += " out of $total tasks."
+            
+            $statusColor = if ($failed -eq 0) { 'Green' } else { 'Orange' }
+            $this.SetStatusMessage($summary, $statusColor)
+            
+            # Reset execution state
+            $this.IsExecuting = $false
+            $this.Controls.ExecuteBtn.Enabled = $true
+            
+            # Cleanup background thread resources
+            $this.CleanupBackgroundExecution()
+        }
+    }
+    
+    [void]CleanupBackgroundExecution() {
+        Write-Host "[DEBUG] CleanupBackgroundExecution"
+        
+        if ($this.State.BackgroundPowerShell) {
+            try {
+                if (!$this.State.BackgroundAsyncResult.IsCompleted) {
+                    $this.State.BackgroundPowerShell.Stop()
+                }
+                $this.State.BackgroundPowerShell.EndInvoke($this.State.BackgroundAsyncResult)
+                $this.State.BackgroundPowerShell.Dispose()
+            }
+            catch {
+                Write-Host "[DEBUG] Error cleaning up PowerShell: $_" -ForegroundColor Yellow
+            }
+            $this.State.BackgroundPowerShell = $null
+        }
+        
+        if ($this.State.BackgroundRunspace) {
+            try {
+                $this.State.BackgroundRunspace.Close()
+                $this.State.BackgroundRunspace.Dispose()
+            }
+            catch {
+                Write-Host "[DEBUG] Error cleaning up Runspace: $_" -ForegroundColor Yellow
+            }
+            $this.State.BackgroundRunspace = $null
+        }
+        
+        $this.State.BackgroundAsyncResult = $null
     }
 
     [hashtable]ExecuteScript($script) {
@@ -1674,6 +1827,242 @@ class LMDTApp {
         }
     }
 
+    # ===== ENHANCED STATUS BAR EXECUTION CONTROLS =====
+    
+    [void]ShowStatusBarExecutionControls([int]$totalTasks) {
+        Write-Host "[DEBUG] ShowStatusBarExecutionControls - Total: $totalTasks"
+        
+        # Show execution progress bar
+        $this.Controls.StatusProgressBar.Visible = $true
+        
+        # Configure progress bar
+        $this.Controls.StatusProgressBar.Minimum = 0
+        $this.Controls.StatusProgressBar.Maximum = $totalTasks
+        $this.Controls.StatusProgressBar.Value = 0
+        
+        # Show during-execution buttons
+        $this.Controls.StatusStopBtn.Visible = $true
+        $this.Controls.StatusStopBtn.Enabled = $true
+        $this.Controls.StatusStopBtn.Text = "Stop"
+        $this.Controls.StatusTaskCounter.Visible = $true
+        $this.Controls.StatusTaskCounter.Text = "0/$totalTasks"
+        
+        # Hide after-execution buttons
+        $this.HideStatusBarResultsControls()
+        
+        # Update main status message with execution info
+        $this.Controls.StatusLabel.Text = "Preparing to execute $totalTasks tasks..."
+        
+        $this.RefreshUI()
+    }
+    
+    [void]UpdateStatusBarExecutionProgress([int]$completed, [int]$total, [string]$currentTask) {
+        Write-Host "[DEBUG] UpdateStatusBarExecutionProgress - $completed/$total - $currentTask"
+        
+        # Update progress bar
+        if ($this.Controls.StatusProgressBar.Visible) {
+            $this.Controls.StatusProgressBar.Value = $completed
+        }
+        
+        # Update main status label with execution info
+        $taskName = if ($currentTask.Length -gt 50) { $currentTask.Substring(0, 47) + "..." } else { $currentTask }
+        $this.Controls.StatusLabel.Text = "Executing: $taskName ($completed/$total)"
+        
+        # Update task counter
+        if ($this.Controls.StatusTaskCounter.Visible) {
+            $this.Controls.StatusTaskCounter.Text = "$completed/$total"
+        }
+        
+        $this.RefreshUI()
+    }
+    
+    [void]ShowStatusBarResultsControls([int]$successful, [int]$failed, [int]$total, [bool]$cancelled) {
+        Write-Host "[DEBUG] ShowStatusBarResultsControls - Success: $successful, Failed: $failed, Total: $total, Cancelled: $cancelled"
+        
+        # Hide during-execution controls
+        $this.Controls.StatusProgressBar.Visible = $false
+        $this.Controls.StatusStopBtn.Visible = $false
+        $this.Controls.StatusTaskCounter.Visible = $false
+        
+        # Show after-execution buttons
+        $this.Controls.StatusViewLogsBtn.Visible = $true
+        $this.Controls.StatusRetryBtn.Visible = ($failed -gt 0)
+        $this.Controls.StatusClearBtn.Visible = $true
+        
+        # Update main status message with results
+        $summaryText = "Completed: $successful/$total"
+        if ($failed -gt 0) { $summaryText += " ($failed failed)" }
+        if ($cancelled) { $summaryText += " (cancelled)" }
+        
+        $this.Controls.StatusLabel.Text = $summaryText
+        
+        # Store execution results for later use
+        if (-not $this.State.ContainsKey('LastExecutionResults')) {
+            $this.State.LastExecutionResults = @{}
+        }
+        $this.State.LastExecutionResults = @{
+            Successful    = $successful
+            Failed        = $failed
+            Total         = $total
+            Cancelled     = $cancelled
+            CompletedTime = Get-Date
+        }
+        
+        $this.RefreshUI()
+    }
+    
+    [void]HideStatusBarExecutionControls() {
+        Write-Host "[DEBUG] HideStatusBarExecutionControls"
+        
+        # Hide execution progress bar
+        $this.Controls.StatusProgressBar.Visible = $false
+        
+        # Hide all execution-related buttons
+        $this.Controls.StatusStopBtn.Visible = $false
+        $this.Controls.StatusTaskCounter.Visible = $false
+        
+        $this.HideStatusBarResultsControls()
+        
+        # Reset main status message
+        $this.Controls.StatusLabel.Text = "Ready"
+        
+        $this.RefreshUI()
+    }
+    
+    [void]HideStatusBarResultsControls() {
+        Write-Host "[DEBUG] HideStatusBarResultsControls"
+        
+        $this.Controls.StatusViewLogsBtn.Visible = $false
+        $this.Controls.StatusRetryBtn.Visible = $false
+        $this.Controls.StatusClearBtn.Visible = $false
+    }
+    
+    # ===== EXECUTION CONTROL EVENT HANDLERS (Updated for Status Bar) =====
+    
+    [void]OnStopExecution() {
+        Write-Host "[DEBUG] OnStopExecution"
+        if ($this.IsExecuting) {
+            $this.State.CancelRequested = $true
+            $this.Controls.StatusStopBtn.Enabled = $false
+            $this.Controls.StatusStopBtn.Text = "Stopping..."
+            $this.Controls.StatusLabel.Text = "Cancellation requested - stopping after current task..."
+            
+            # If we have a background thread, attempt to stop it gracefully
+            if ($this.State.BackgroundPowerShell -and !$this.State.BackgroundAsyncResult.IsCompleted) {
+                Write-Host "[DEBUG] OnStopExecution - Stopping background thread"
+                try {
+                    $this.State.BackgroundPowerShell.Stop()
+                }
+                catch {
+                    Write-Host "[DEBUG] Error stopping background PowerShell: $_" -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+    
+    [void]OnViewLogs() {
+        Write-Host "[DEBUG] OnViewLogs"
+        
+        # Create a simple log viewer window
+        $logForm = New-Object System.Windows.Forms.Form
+        $logForm.Text = "Execution Logs"
+        $logForm.Width = 600
+        $logForm.Height = 400
+        $logForm.StartPosition = 'CenterParent'
+        
+        $logTextBox = New-Object System.Windows.Forms.TextBox
+        $logTextBox.Multiline = $true
+        $logTextBox.ScrollBars = 'Vertical'
+        $logTextBox.Dock = 'Fill'
+        $logTextBox.ReadOnly = $true
+        $logTextBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+        
+        # Get log content from ListView items
+        $logContent = @()
+        $logContent += "=== LMDT Execution Log ==="
+        $logContent += "Generated: $(Get-Date)"
+        if ($this.State.LastExecutionResults) {
+            $results = $this.State.LastExecutionResults
+            $logContent += "Execution Summary: $($results.Successful)/$($results.Total) successful, $($results.Failed) failed"
+            $logContent += "Completed: $($results.CompletedTime)"
+        }
+        $logContent += ""
+        $logContent += "=== Task Results ==="
+        
+        foreach ($item in $this.Controls.ScriptsListView.Items) {
+            $status = $item.SubItems[3].Text
+            $logContent += "[$status] $($item.Text)"
+            if ($status -eq $this.Config.Messages.Failed) {
+                $logContent += "   Command: $($item.SubItems[1].Text)"
+                $logContent += "   File: $($item.SubItems[2].Text)"
+                $logContent += ""
+            }
+        }
+        
+        $logTextBox.Text = $logContent -join "`r`n"
+        $logForm.Controls.Add($logTextBox)
+        $logForm.ShowDialog()
+    }
+    
+    [void]OnRetryFailed() {
+        Write-Host "[DEBUG] OnRetryFailed"
+        
+        if ($this.IsExecuting) {
+            $this.SetStatusMessage("Cannot retry while execution is in progress.", 'Orange')
+            return
+        }
+        
+        # Select only failed tasks
+        $failedItems = $this.Controls.ScriptsListView.Items | Where-Object { 
+            $_.SubItems[3].Text -eq $this.Config.Messages.Failed 
+        }
+        
+        if ($failedItems.Count -eq 0) {
+            $this.SetStatusMessage("No failed tasks to retry.", 'Green')
+            return
+        }
+        
+        # Clear all selections first
+        $this.Controls.ScriptsListView.Items | ForEach-Object { $_.Checked = $false }
+        
+        # Select only failed items
+        $failedItems | ForEach-Object { $_.Checked = $true }
+        
+        # Reset their status
+        $failedItems | ForEach-Object { 
+            $_.SubItems[3].Text = $this.Config.Messages.Ready
+            $_.BackColor = $this.Config.Colors.Text
+        }
+        
+        # Hide results controls since we're preparing for new execution
+        $this.HideStatusBarResultsControls()
+        
+        $this.SetStatusMessage("Selected $($failedItems.Count) failed tasks for retry. Click Execute to retry.", 'Blue')
+        $this.UpdateExecuteButtonText()
+    }
+    
+    [void]OnClearResults() {
+        Write-Host "[DEBUG] OnClearResults"
+        
+        # Reset all task statuses
+        foreach ($item in $this.Controls.ScriptsListView.Items) {
+            $item.SubItems[3].Text = $this.Config.Messages.Ready
+            $item.BackColor = $this.Config.Colors.Text
+            $item.Checked = $false
+        }
+        
+        # Hide all execution controls in status bar
+        $this.HideStatusBarExecutionControls()
+        
+        # Clear execution results
+        if ($this.State.ContainsKey('LastExecutionResults')) {
+            $this.State.Remove('LastExecutionResults')
+        }
+        
+        $this.SetStatusMessage("Results cleared. Ready for new execution.", 'Green')
+        $this.UpdateExecuteButtonText()
+    }
+
     [void]OnSwitchUser() {
         Write-Host "[DEBUG] OnSwitchUser"
         $selectedText = $this.Controls.ExecuteModeCombo.SelectedItem
@@ -1732,25 +2121,35 @@ class LMDTApp {
     [void]SetStatusMessage([string]$message, [string]$color = 'Black') {
         Write-Host "[DEBUG] SetStatusMessage: $message"
         if ($this.Controls.StatusLabel) {
-            # First, completely clean up the status bar including progress bar and template controls
-            $this.CompleteStatusBarCleanup()
-            
-            # Now set the new message
-            $this.Controls.StatusLabel.Text = $message
-            
-            # Use the provided color parameter
-            try {
-                $this.Controls.StatusLabel.ForeColor = $color
+            $updateAction = {
+                # First, completely clean up the status bar including progress bar and template controls
+                $this.CompleteStatusBarCleanup()
+                
+                # Now set the new message
+                $this.Controls.StatusLabel.Text = $message
+                
+                # Use the provided color parameter
+                try {
+                    $this.Controls.StatusLabel.ForeColor = $color
+                }
+                catch {
+                    # Fallback to black if color name is invalid
+                    $this.Controls.StatusLabel.ForeColor = 'Black'
+                }
+                
+                # Force UI update
+                $appType = 'System.Windows.Forms.Application' -as [type]
+                if ($appType) {
+                    $appType::DoEvents()
+                }
             }
-            catch {
-                # Fallback to black if color name is invalid
-                $this.Controls.StatusLabel.ForeColor = 'Black'
-            }
             
-            # Force UI update
-            $appType = 'System.Windows.Forms.Application' -as [type]
-            if ($appType) {
-                $appType::DoEvents()
+            # Execute on main thread if needed
+            if ($this.MainForm.InvokeRequired) {
+                $this.MainForm.Invoke($updateAction)
+            }
+            else {
+                & $updateAction
             }
         }
     }
@@ -1758,36 +2157,46 @@ class LMDTApp {
     [void]SetStatusMessageWithProgress([string]$message, [string]$color = 'Blue') {
         Write-Host "[DEBUG] SetStatusMessageWithProgress: $message"
         if ($this.Controls.StatusLabel) {
-            # Clean up template input controls but keep progress bar visible
-            if ($this.State.TemplateInputControls -and $this.State.TemplateInputControls.Count -gt 0) {
-                $statusBar = $this.Controls.StatusBar
-                
-                # Remove all template input controls
-                foreach ($control in $this.State.TemplateInputControls) {
-                    if ($statusBar.Controls.Contains($control)) {
-                        $statusBar.Controls.Remove($control)
+            $updateAction = {
+                # Clean up template input controls but keep progress bar visible
+                if ($this.State.TemplateInputControls -and $this.State.TemplateInputControls.Count -gt 0) {
+                    $statusBar = $this.Controls.StatusBar
+                    
+                    # Remove all template input controls
+                    foreach ($control in $this.State.TemplateInputControls) {
+                        if ($statusBar.Controls.Contains($control)) {
+                            $statusBar.Controls.Remove($control)
+                        }
                     }
+                    
+                    # Clear the state
+                    $this.State.TemplateInputControls = @()
+                    $this.State.TemplateItems = @()
                 }
                 
-                # Clear the state
-                $this.State.TemplateInputControls = @()
-                $this.State.TemplateItems = @()
+                # Set the message and color
+                $this.Controls.StatusLabel.Text = $message
+                
+                try {
+                    $this.Controls.StatusLabel.ForeColor = $color
+                }
+                catch {
+                    $this.Controls.StatusLabel.ForeColor = 'Blue'
+                }
+                
+                # Force UI update
+                $appType = 'System.Windows.Forms.Application' -as [type]
+                if ($appType) {
+                    $appType::DoEvents()
+                }
             }
             
-            # Set the message and color
-            $this.Controls.StatusLabel.Text = $message
-            
-            try {
-                $this.Controls.StatusLabel.ForeColor = $color
+            # Execute on main thread if needed
+            if ($this.MainForm.InvokeRequired) {
+                $this.MainForm.Invoke($updateAction)
             }
-            catch {
-                $this.Controls.StatusLabel.ForeColor = 'Blue'
-            }
-            
-            # Force UI update
-            $appType = 'System.Windows.Forms.Application' -as [type]
-            if ($appType) {
-                $appType::DoEvents()
+            else {
+                & $updateAction
             }
         }
     }
@@ -1798,10 +2207,19 @@ class LMDTApp {
         # Clean up template input controls
         $this.CleanupStatusBar()
         
-        # Hide and reset progress bar
-        if ($this.Controls.StatusProgressBar) {
+        # Hide and reset old progress bar (if still being used)
+        if ($this.Controls.ContainsKey("StatusProgressBar") -and $this.Controls.StatusProgressBar.Parent -eq $this.Controls.StatusBar) {
             $this.Controls.StatusProgressBar.Visible = $false
             $this.Controls.StatusProgressBar.Value = 0
+        }
+        
+        # Hide status bar execution controls if showing during-execution controls
+        if ($this.Controls.StatusExecPanel.Visible -and $this.Controls.StatusProgressBar.Visible) {
+            # Don't hide completely if showing results, just hide during-execution controls
+            $this.Controls.StatusProgressBar.Visible = $false
+            $this.Controls.StatusStopBtn.Visible = $false
+            $this.Controls.StatusTaskCounter.Visible = $false
+            $this.Controls.StatusExecPanel.Visible = $false
         }
         
         # Hide cancel button if it's visible and reset to default state
@@ -2211,6 +2629,9 @@ class LMDTApp {
     [void]ResetFormControls() {
         Write-Host "[DEBUG] ResetFormControls"
         
+        # Hide status bar execution controls
+        $this.HideStatusBarExecutionControls()
+        
         # Reset source to first item (All Tasks)
         if ($this.Controls.SourceCombo.Items.Count -gt 0) {
             $this.Controls.SourceCombo.SelectedIndex = 0
@@ -2246,14 +2667,52 @@ class LMDTApp {
         Write-Host "[DEBUG] OnCancelExecution"
         if ($this.IsExecuting) {
             $this.State.CancelRequested = $true
-            $this.Controls.CancelBtn.Enabled = $false
-            $this.Controls.CancelBtn.Text = "Cancelling..."
-            $this.SetStatusMessageWithProgress("Cancellation requested - stopping after current task...", 'Orange')
+            
+            # Thread-safe UI updates
+            $updateAction = {
+                # Update both old and new cancel buttons
+                $this.Controls.CancelBtn.Enabled = $false
+                $this.Controls.CancelBtn.Text = "Cancelling..."
+                
+                # Update status bar stop button
+                if ($this.Controls.StatusStopBtn.Visible) {
+                    $this.Controls.StatusStopBtn.Enabled = $false
+                    $this.Controls.StatusStopBtn.Text = "Stopping..."
+                }
+                
+                # Update both status displays
+                $this.SetStatusMessageWithProgress("Cancellation requested - stopping after current task...", 'Orange')
+                # Use main status label for cancellation message
+                $this.Controls.StatusLabel.Text = "Cancellation requested - stopping after current task..."
+            }
+            
+            # Execute UI updates on main thread if needed
+            if ($this.MainForm.InvokeRequired) {
+                $this.MainForm.Invoke($updateAction)
+            }
+            else {
+                & $updateAction
+            }
         }
         else {
-            # If not executing, just hide the cancel button
-            $this.Controls.CancelBtn.Visible = $false
-            $this.Controls.CancelBtn.Text = $this.Config.Controls.CancelText
+            # Thread-safe reset for non-executing state
+            $resetAction = {
+                # If not executing, just hide the cancel button and reset states
+                $this.Controls.CancelBtn.Visible = $false
+                $this.Controls.CancelBtn.Text = $this.Config.Controls.CancelText
+                
+                # Reset status bar stop button
+                $this.Controls.StatusStopBtn.Text = "Stop"
+                $this.Controls.StatusStopBtn.Enabled = $true
+            }
+            
+            # Execute reset on main thread if needed
+            if ($this.MainForm.InvokeRequired) {
+                $this.MainForm.Invoke($resetAction)
+            }
+            else {
+                & $resetAction
+            }
         }
     }
 
