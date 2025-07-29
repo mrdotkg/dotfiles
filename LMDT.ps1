@@ -363,6 +363,7 @@ $Global:Config = @{
         CancelText         = 'Cancel'
         CopyCommandText    = 'Copy To Clipboard'
         RunLaterText       = 'Schedule for Later'
+        ExecuteBtnText     = 'Run'
         ExecuteBtnTemplate = 'Run ({0})'
     }
     ListView                    = @{
@@ -589,6 +590,8 @@ class LMDTApp {
         $this.State.CancelRequested = $false
         $this.State.LastSortColumn = -1
         $this.State.SortDirection = 'Ascending'
+        $this.State.UpdatingFromSelectAll = $false
+        $this.State.UpdatingSelectAllProgrammatically = $false
         $this.Initialize()
         $this.InitControls()
     }
@@ -946,9 +949,9 @@ class LMDTApp {
             StatusBar           = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
             Sidebar             = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent         = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
-            RefreshBtn          = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.RefreshText; Dock = 'Left'; Enabled = $false; Visible = $true } }
             FilterText          = @{ Type = 'TextBox'; Order = 1; Layout = 'Toolbar'; Properties = @{ Dock = 'Left'; } }
-            SelectAllCheckBox   = @{ Type = 'CheckBox'; Order = 2; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
+            FilterClearBtn      = @{ Type = 'Button'; Order = 0; Layout = 'Toolbar'; Properties = @{ Text = '×'; Width = 25; Dock = 'Left'; Visible = $false; ForeColor = 'Gray' } }
+            SelectAllCheckBox   = @{ Type = 'CheckBox'; Order = 3; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
             MoreBtn             = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = 'More'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn          = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
             CancelBtn           = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
@@ -967,8 +970,10 @@ class LMDTApp {
             SpacerPanelRun      = @{ Type = 'Panel'; Order = 13; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             CreateTemplateBtn   = @{ Type = 'Button'; Order = 14; Layout = 'Sidebar'; Properties = @{ Text = 'Create Template'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelTemplate = @{ Type = 'Panel'; Order = 15; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
-            InstallBtn          = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
-            SpacerPanelInstall  = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            ResetFormBtn        = @{ Type = 'Button'; Order = 16; Layout = 'Sidebar'; Properties = @{ Text = 'Reset Form'; Dock = 'Bottom'; TextAlign = 'MiddleLeft'; ForeColor = 'DarkRed' } }
+            SpacerPanelReset    = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            InstallBtn          = @{ Type = 'Button'; Order = 18; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
+            SpacerPanelInstall  = @{ Type = 'Panel'; Order = 19; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
             StatusLabel         = @{ Type = 'Label'; Order = 1; Layout = 'StatusBar'; Properties = @{ Text = "Ready"; Dock = 'Left'; AutoSize = $true; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
             StatusProgressBar   = @{ Type = 'ProgressBar'; Order = 2; Layout = 'StatusBar'; Properties = @{ Width = 120; Height = 18; Visible = $false; Anchor = 'Top, Right' } }
@@ -1039,21 +1044,28 @@ class LMDTApp {
 
         # Manual placeholder logic for FilterText (broader support, including iex)
         $filterTextBox = $this.Controls.FilterText
+        $filterClearBtn = $this.Controls.FilterClearBtn
         if ($filterTextBox) {
             $placeholder = $this.Config.Controls.FilterPlaceholder
             $filterTextBox.Text = $placeholder
             $filterTextBox.ForeColor = 'Gray'
+            
+            # Show/hide clear button based on filter content
+            $app.UpdateFilterClearButton()
+            
             $filterTextBox.Add_Enter({
                     if ($this.Text -eq $placeholder) {
                         $this.Text = ""
                         $this.ForeColor = 'Black'
                     }
+                    $app.UpdateFilterClearButton()
                 }.GetNewClosure())
             $filterTextBox.Add_Leave({
                     if (-not $this.Text -or $this.Text.Trim() -eq '') {
                         $this.Text = $placeholder
                         $this.ForeColor = 'Gray'
                     }
+                    $app.UpdateFilterClearButton()
                 }.GetNewClosure())
         }
 
@@ -1070,6 +1082,17 @@ class LMDTApp {
         $this.Controls.ScriptsListView.Add_ColumnClick({
                 param($listView, $e)
                 $app.OnColumnClick($listView, $e)
+            }.GetNewClosure())
+        
+        # Add item check handlers to update Select All checkbox and Execute button
+        $this.Controls.ScriptsListView.Add_ItemCheck({
+                param($listView, $e)
+                $app.OnItemCheck($listView, $e)
+            }.GetNewClosure())
+            
+        $this.Controls.ScriptsListView.Add_ItemChecked({
+                param($listView, $e)
+                $app.OnItemChecked($listView, $e)
             }.GetNewClosure())
         
         # Hide extra columns initially (show only Script)
@@ -1245,14 +1268,15 @@ class LMDTApp {
         $this.Controls.ExecuteModeCombo.Add_SelectedIndexChanged({ $app.OnSwitchUser() })
         $this.Controls.SourceCombo.Add_SelectedIndexChanged({ $app.OnSwitchSource() })
         $this.Controls.FilterText.Add_TextChanged({ $app.OnFilter() })
+        $this.Controls.FilterClearBtn.Add_Click({ $app.OnClearFilter() })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
         $this.Controls.MoreBtn.Add_Click({ $app.OnMore() })
         $this.Controls.CopyCommandBtn.Add_Click({ $app.OnCopyCommand() })
         $this.Controls.RunLaterBtn.Add_Click({ $app.OnRunLater() })
         $this.Controls.CreateTemplateBtn.Add_Click({ $app.OnCreateTemplate() })
+        $this.Controls.ResetFormBtn.Add_Click({ $app.OnResetForm() })
         $this.Controls.InstallBtn.Add_Click({ $app.OnInstall() })
         $this.Controls.CancelBtn.Add_Click({ $app.OnCancelExecution() })
-        $this.Controls.RefreshBtn.Add_Click({ $app.OnRefresh() })
 
         # Setup execution mode options using $this.Users and all other enabled local users
         $this.Controls.ExecuteModeCombo.Items.Clear()
@@ -1277,6 +1301,13 @@ class LMDTApp {
         # Add separator
         $contextMenu.Items.Add("-") | Out-Null
         
+        # Add reload current view option
+        $reloadViewMenu = $contextMenu.Items.Add("🔄 Reload Current View")
+        $reloadViewMenu.Add_Click({ $app.OnReloadCurrentView() })
+        
+        # Add separator  
+        $contextMenu.Items.Add("-") | Out-Null
+        
         # Add move up/down options
         $moveUpMenu = $contextMenu.Items.Add("Move Up")
         $moveUpMenu.Add_Click({ $app.MoveSelectedItemUp() })
@@ -1292,16 +1323,29 @@ class LMDTApp {
     
     [void]OnSelectAll() {
         Write-host "[DEBUG] OnSelectAll"
+        
+        # If we're updating the checkbox programmatically, don't process this event
+        if ($this.State.UpdatingSelectAllProgrammatically) {
+            Write-Host "[DEBUG] OnSelectAll - Skipping programmatic update"
+            return
+        }
+        
         $lv = $this.Controls.ScriptsListView
         $doubleBufferProp = $lv.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags] "Instance, NonPublic")
         if ($doubleBufferProp) { $doubleBufferProp.SetValue($lv, $true, $null) }
         $checked = $this.Controls.SelectAllCheckBox.Checked
+        
+        # Set flag to prevent OnItemChecked from updating Select All checkbox during bulk operation
+        $this.State.UpdatingFromSelectAll = $true
+        
         $lv.BeginUpdate()
         try {
             $lv.Items | ForEach-Object { $_.Checked = $checked }
         }
         finally {
             $lv.EndUpdate()
+            # Clear flag after bulk operation is complete
+            $this.State.UpdatingFromSelectAll = $false
         }
         $this.UpdateExecuteButtonText()
     }
@@ -1466,12 +1510,11 @@ class LMDTApp {
 
         $this.IsExecuting = $true
         $this.Controls.ExecuteBtn.Enabled = $false
+        
+        # Show and enable cancel button
         if ($this.Controls.ContainsKey("CancelBtn")) {
             $this.Controls["CancelBtn"].Enabled = $true
             $this.Controls["CancelBtn"].Visible = $true
-        }
-        if ($this.Controls.ContainsKey("RefreshBtn")) {
-            $this.Controls["RefreshBtn"].Enabled = $false
         }
         
         # Show progress bar AFTER setting initial status message
@@ -1483,6 +1526,8 @@ class LMDTApp {
         
         $this.State.CancelRequested = $false
         $completed = 0
+        $failed = 0
+        
         foreach ($item in $checkedItems) {
             if ($this.State.CancelRequested) {
                 $item.SubItems[3].Text = $this.Config.Messages.CancelledByUser
@@ -1501,10 +1546,13 @@ class LMDTApp {
                 $item.SubItems[3].Text = if ($result.Success) { $this.Config.Messages.Completed } else { $this.Config.Messages.Failed }
                 $item.BackColor = if ($result.Success) { $this.Config.Colors.Completed } else { $this.Config.Colors.Failed }
                 $item.Checked = !$result.Success
+                if (!$result.Success) { $failed++ }
             }
             catch {
                 $item.SubItems[3].Text = $this.Config.Messages.Failed
                 $item.BackColor = $this.Config.Colors.Failed
+                $item.Checked = $true
+                $failed++
                 Write-host "$($this.Config.Messages.ExecutionError)$_" -ForegroundColor Red
             }
             $completed++
@@ -1512,8 +1560,15 @@ class LMDTApp {
             $this.RefreshUI()
         }
         
-        # Final status message will clean up everything including progress bar
-        $this.SetStatusMessage("Execution completed: $completed/$($checkedItems.Count) tasks processed.", 'Green')
+        # Final status message with summary
+        $successCount = $completed - $failed
+        $summary = "Execution completed: $successCount successful"
+        if ($failed -gt 0) { $summary += ", $failed failed" }
+        if ($this.State.CancelRequested) { $summary += " (cancelled)" }
+        $summary += " out of $($checkedItems.Count) tasks."
+        
+        $statusColor = if ($failed -eq 0) { 'Green' } else { 'Orange' }
+        $this.SetStatusMessage($summary, $statusColor)
         $this.IsExecuting = $false
     }
 
@@ -1753,17 +1808,17 @@ class LMDTApp {
         if ($this.Controls.ContainsKey("CancelBtn")) {
             $this.Controls["CancelBtn"].Enabled = $false
             $this.Controls["CancelBtn"].Visible = $false
-        }
-        
-        # Re-enable refresh button if it was disabled during execution
-        if ($this.Controls.ContainsKey("RefreshBtn")) {
-            $this.Controls["RefreshBtn"].Enabled = $true
+            $this.Controls["CancelBtn"].Text = $this.Config.Controls.CancelText
         }
         
         # Re-enable execute button in case it was disabled
         if ($this.Controls.ExecuteBtn) {
             $this.Controls.ExecuteBtn.Enabled = $true
         }
+        
+        # Reset execution state
+        $this.IsExecuting = $false
+        $this.State.CancelRequested = $false
     }
 
     [void]CleanupStatusBar() {
@@ -1790,9 +1845,24 @@ class LMDTApp {
         $placeholder = $this.Config.Controls.FilterPlaceholder
         if ($filter -eq $placeholder) { $filter = "" }
         $filter = $filter.ToLower()
+        
+        # Update filter clear button visibility
+        $this.UpdateFilterClearButton()
+        
+        # Apply filter to ListView items
+        $hiddenCount = 0
         $this.Controls.ScriptsListView.Items | ForEach-Object {
             $visible = !$filter -or $_.Text.ToLower().Contains($filter) -or $_.SubItems[1].Text.ToLower().Contains($filter)
             $_.ForeColor = if ($visible) { $this.Config.Colors.Text } else { $this.Config.Colors.Filtered }
+            if (!$visible) { $hiddenCount++ }
+        }
+        
+        # Update status message with filter info
+        if ($filter -and $hiddenCount -gt 0) {
+            $this.SetStatusMessage("Filter active: $hiddenCount items hidden", 'Blue')
+        }
+        elseif (!$filter) {
+            $this.SetStatusMessage("Ready", 'Black')
         }
     }
 
@@ -2041,6 +2111,51 @@ class LMDTApp {
         }
     }
 
+    [void]OnItemCheck($listView, $e) {
+        Write-Host "[DEBUG] OnItemCheck - Item: $($e.Index), CurrentValue: $($e.CurrentValue), NewValue: $($e.NewValue)"
+    }
+
+    [void]OnItemChecked($listView, $e) {
+        Write-Host "[DEBUG] OnItemChecked - Item: $($e.Item.Index), Checked: $($e.Item.Checked)"
+        
+        # Update the Execute button text with current checked count
+        $this.UpdateExecuteButtonText()
+        
+        # Only update Select All checkbox if we're not in the middle of a Select All operation
+        if (-not $this.State.UpdatingFromSelectAll) {
+            # Update Select All checkbox state based on ListView items
+            $totalItems = $this.Controls.ScriptsListView.Items.Count
+            $checkedItems = ($this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }).Count
+            
+            Write-Host "[DEBUG] OnItemChecked - Total: $totalItems, Checked: $checkedItems"
+            
+            # Set flag to prevent OnSelectAll from processing during programmatic update
+            $this.State.UpdatingSelectAllProgrammatically = $true
+            
+            if ($checkedItems -eq 0) {
+                # No items checked - uncheck Select All
+                $this.Controls.SelectAllCheckBox.Checked = $false
+                Write-Host "[DEBUG] OnItemChecked - Set Select All to FALSE (no items checked)"
+            }
+            elseif ($checkedItems -eq $totalItems) {
+                # All items checked - check Select All
+                $this.Controls.SelectAllCheckBox.Checked = $true
+                Write-Host "[DEBUG] OnItemChecked - Set Select All to TRUE (all items checked)"
+            }
+            else {
+                # Some but not all items checked - uncheck Select All to indicate partial selection
+                $this.Controls.SelectAllCheckBox.Checked = $false
+                Write-Host "[DEBUG] OnItemChecked - Set Select All to FALSE (partial selection: $checkedItems/$totalItems)"
+            }
+            
+            # Clear the flag
+            $this.State.UpdatingSelectAllProgrammatically = $false
+        }
+        else {
+            Write-Host "[DEBUG] OnItemChecked - Skipping Select All update (bulk operation in progress)"
+        }
+    }
+
     [void]OnRefresh() {
         Write-Host "[DEBUG] OnRefresh"
         $this.LoadSources()
@@ -2050,11 +2165,96 @@ class LMDTApp {
         $this.SetStatusMessage("Sources refreshed.", 'Green')
     }
 
+    [void]OnClearFilter() {
+        Write-Host "[DEBUG] OnClearFilter"
+        $placeholder = $this.Config.Controls.FilterPlaceholder
+        $this.Controls.FilterText.Text = $placeholder
+        $this.Controls.FilterText.ForeColor = 'Gray'
+        $this.UpdateFilterClearButton()
+        $this.OnFilter()  # Apply the cleared filter
+        $this.SetStatusMessage("Filter cleared.", 'Green')
+    }
+
+    [void]UpdateFilterClearButton() {
+        $filter = $this.Controls.FilterText.Text
+        $placeholder = $this.Config.Controls.FilterPlaceholder
+        $hasFilter = $filter -and $filter -ne $placeholder -and $filter.Trim() -ne ''
+        $this.Controls.FilterClearBtn.Visible = $hasFilter
+    }
+
+    [void]OnReloadCurrentView() {
+        Write-Host "[DEBUG] OnReloadCurrentView"
+        # Preserve current selection and filter state
+        $currentFilter = $this.Controls.FilterText.Text
+        $placeholder = $this.Config.Controls.FilterPlaceholder
+        $hasActiveFilter = $currentFilter -and $currentFilter -ne $placeholder
+        
+        # Just reload the current source without affecting form settings
+        $this.OnSwitchSource()
+        
+        # Reapply filter if there was one
+        if ($hasActiveFilter) {
+            $this.OnFilter()
+        }
+        
+        $this.SetStatusMessage("Current view reloaded.", 'Green')
+    }
+
+    [void]OnResetForm() {
+        Write-Host "[DEBUG] OnResetForm"
+        
+        # Reset form controls to defaults without affecting ListView
+        $this.ResetFormControls()
+        $this.SetStatusMessage("Form settings reset to defaults.", 'Green')
+    }
+
+    [void]ResetFormControls() {
+        Write-Host "[DEBUG] ResetFormControls"
+        
+        # Reset source to first item (All Tasks)
+        if ($this.Controls.SourceCombo.Items.Count -gt 0) {
+            $this.Controls.SourceCombo.SelectedIndex = 0
+        }
+        
+        # Reset execution mode to first item (current user)
+        if ($this.Controls.ExecuteModeCombo.Items.Count -gt 0) {
+            $this.Controls.ExecuteModeCombo.SelectedIndex = 0
+        }
+        
+        # Reset machine to first item (local)
+        if ($this.Controls.MachineCombo.Items.Count -gt 0) {
+            $this.Controls.MachineCombo.SelectedIndex = 0
+        }
+        
+        # Clear filter
+        $placeholder = $this.Config.Controls.FilterPlaceholder
+        $this.Controls.FilterText.Text = $placeholder
+        $this.Controls.FilterText.ForeColor = 'Gray'
+        $this.UpdateFilterClearButton()
+        
+        # Uncheck Select All checkbox
+        if ($this.Controls.SelectAllCheckBox) {
+            $this.Controls.SelectAllCheckBox.Checked = $false
+        }
+        
+        # Apply the reset settings
+        $this.OnSwitchSource()
+        $this.OnFilter()
+    }
+
     [void]OnCancelExecution() {
         Write-Host "[DEBUG] OnCancelExecution"
-        $this.State.CancelRequested = $true
-        $this.Controls.CancelBtn.Enabled = $false
-        $this.SetStatusMessage("Cancellation requested...", 'Orange')
+        if ($this.IsExecuting) {
+            $this.State.CancelRequested = $true
+            $this.Controls.CancelBtn.Enabled = $false
+            $this.Controls.CancelBtn.Text = "Cancelling..."
+            $this.SetStatusMessageWithProgress("Cancellation requested - stopping after current task...", 'Orange')
+        }
+        else {
+            # If not executing, just hide the cancel button
+            $this.Controls.CancelBtn.Visible = $false
+            $this.Controls.CancelBtn.Text = $this.Config.Controls.CancelText
+        }
     }
 
     [void]RefreshUI() {
