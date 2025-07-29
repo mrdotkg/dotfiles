@@ -1,20 +1,3 @@
-<#
-PowerShell GUI Application for Managing and Executing Scripts
-This script is a PowerShell GUI application for managing and executing scripts from a GitHub repository.
-
-Data Directory Configuration:
-- Uses %Temp%\LMDT by default (temporary storage, cleared on reboot)
-- Falls back to %LocalAppData%\LMDT for persistent storage
-- Can be overridden with LMDT_DATA_DIR environment variable
-- Final fallback to script directory if all else fails
-
-Features:
-- ✅ Uses %Temp% directory by default with %LocalAppData% fallback option
-- FIXME Write commands to PowerShell history
-- FIXME Improve execution UI performance - stuttering
-- TODO Enable command scheduling
-- TODO Add native system notifications, add tooltips where possible elsewhere show in status panel
-#>
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
@@ -301,12 +284,7 @@ function Test-LMDTInstallation {
     }
 }
 
-# Minimal configuration for LMDTApp
-# Data Directory Priority:
-# 1. Environment variable: LMDT_DATA_DIR (if set and accessible)
-# 2. Default: %Temp%\LMDT (preferred for temporary data)
-# 3. Fallback: %LocalAppData%\LMDT (persistent local data)
-# 4. Final fallback: Script directory (when other options fail)
+
 $Global:Config = @{
     ScriptFilesBlacklist        = @('gui.ps1', 'lmdt.ps1', 'taaest.ps1')
     DataDir                     = (Get-DataDirectory)  # Use %Temp% by default, fallback to %LocalAppData%
