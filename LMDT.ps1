@@ -941,6 +941,10 @@ class LMDTApp {
         $this.MainForm.Padding = $this.Config.Window.Padding
         $this.MainForm.StartPosition = $this.Config.Window.Position
         $this.MainForm.BackColor = $this.Config.Window.BackgroundColor
+        
+        # Enable keyboard shortcuts
+        $this.MainForm.KeyPreview = $true
+        $this.MainForm.Add_KeyDown({ $app.OnKeyDown($_) })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
 
         # Define controls with order for proper placement and future drag-drop (restored classic WinForms order, labels above combos)
@@ -1335,7 +1339,10 @@ class LMDTApp {
         
         $lv.BeginUpdate()
         try {
-            $lv.Items | ForEach-Object { $_.Checked = $checked }
+            # Use faster for loop instead of ForEach-Object for better performance
+            for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+                $lv.Items[$i].Checked = $checked
+            }
         }
         finally {
             $lv.EndUpdate()
@@ -2012,9 +2019,15 @@ class LMDTApp {
             return
         }
         
-        # Select only failed tasks
-        $failedItems = $this.Controls.ScriptsListView.Items | Where-Object { 
-            $_.SubItems[3].Text -eq $this.Config.Messages.Failed 
+        $lv = $this.Controls.ScriptsListView
+        $failedItems = @()
+        
+        # Use faster for loop to find failed tasks
+        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+            $item = $lv.Items[$i]
+            if ($item.SubItems[3].Text -eq $this.Config.Messages.Failed) {
+                $failedItems += $item
+            }
         }
         
         if ($failedItems.Count -eq 0) {
@@ -2022,16 +2035,23 @@ class LMDTApp {
             return
         }
         
-        # Clear all selections first
-        $this.Controls.ScriptsListView.Items | ForEach-Object { $_.Checked = $false }
-        
-        # Select only failed items
-        $failedItems | ForEach-Object { $_.Checked = $true }
-        
-        # Reset their status
-        $failedItems | ForEach-Object { 
-            $_.SubItems[3].Text = $this.Config.Messages.Ready
-            $_.BackColor = $this.Config.Colors.Text
+        # Batch update with BeginUpdate/EndUpdate for performance
+        $lv.BeginUpdate()
+        try {
+            # Clear all selections first using fast for loop
+            for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+                $lv.Items[$i].Checked = $false
+            }
+            
+            # Select and reset failed items
+            foreach ($item in $failedItems) {
+                $item.Checked = $true
+                $item.SubItems[3].Text = $this.Config.Messages.Ready
+                $item.BackColor = $this.Config.Colors.Text
+            }
+        }
+        finally {
+            $lv.EndUpdate()
         }
         
         # Hide results controls since we're preparing for new execution
@@ -2044,11 +2064,20 @@ class LMDTApp {
     [void]OnClearResults() {
         Write-Host "[DEBUG] OnClearResults"
         
-        # Reset all task statuses
-        foreach ($item in $this.Controls.ScriptsListView.Items) {
-            $item.SubItems[3].Text = $this.Config.Messages.Ready
-            $item.BackColor = $this.Config.Colors.Text
-            $item.Checked = $false
+        $lv = $this.Controls.ScriptsListView
+        
+        # Batch reset all task statuses with BeginUpdate/EndUpdate
+        $lv.BeginUpdate()
+        try {
+            for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+                $item = $lv.Items[$i]
+                $item.SubItems[3].Text = $this.Config.Messages.Ready
+                $item.BackColor = $this.Config.Colors.Text
+                $item.Checked = $false
+            }
+        }
+        finally {
+            $lv.EndUpdate()
         }
         
         # Hide all execution controls in status bar
@@ -2099,22 +2128,62 @@ class LMDTApp {
 
     [void]LoadTasksToListView([array]$tasks) {
         Write-Host "[DEBUG] LoadTasksToListView $($tasks.Count)"
-        $this.Controls.ScriptsListView.Items.Clear()
-        $this.Controls.ScriptsListView.Groups.Clear()
-        foreach ($task in $tasks) {
-            $item = New-Object System.Windows.Forms.ListViewItem($task.Description)
-            $item.SubItems.Add($task.Command) | Out-Null
-            $item.SubItems.Add($task.File) | Out-Null
-            $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
-            $item.Tag = $task
-            $this.Controls.ScriptsListView.Items.Add($item) | Out-Null
+        
+        $lv = $this.Controls.ScriptsListView
+        
+        # Enable double buffering for smooth rendering
+        $doubleBufferProp = $lv.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags] "Instance, NonPublic")
+        if ($doubleBufferProp) { $doubleBufferProp.SetValue($lv, $true, $null) }
+        
+        # Suspend layout and drawing for batch operations
+        $lv.SuspendLayout()
+        $lv.BeginUpdate()
+        
+        try {
+            # Clear existing items
+            $lv.Items.Clear()
+            $lv.Groups.Clear()
+            
+            # Pre-allocate array for better performance with large datasets
+            if ($tasks.Count -gt 0) {
+                $items = New-Object System.Windows.Forms.ListViewItem[] $tasks.Count
+                
+                # Batch create items (faster than adding one by one)
+                for ($i = 0; $i -lt $tasks.Count; $i++) {
+                    $task = $tasks[$i]
+                    $item = New-Object System.Windows.Forms.ListViewItem($task.Description)
+                    $item.SubItems.Add($task.Command) | Out-Null
+                    $item.SubItems.Add($task.File) | Out-Null
+                    $item.SubItems.Add($this.Config.Messages.Ready) | Out-Null
+                    $item.Tag = $task
+                    $items[$i] = $item
+                }
+                
+                # Add all items at once (much faster than individual Add() calls)
+                $lv.Items.AddRange($items)
+            }
         }
+        finally {
+            # Always restore layout and drawing
+            $lv.EndUpdate()
+            $lv.ResumeLayout($true)
+        }
+        
         $this.UpdateExecuteButtonText()
     }
 
     [void]UpdateExecuteButtonText() {
         Write-Host "[DEBUG] UpdateExecuteButtonText"
-        $checkedCount = ($this.Controls.ScriptsListView.Items | Where-Object { $_.Checked }).Count
+        
+        # Use faster for loop instead of Where-Object for performance
+        $checkedCount = 0
+        $lv = $this.Controls.ScriptsListView
+        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+            if ($lv.Items[$i].Checked) {
+                $checkedCount++
+            }
+        }
+        
         $this.Controls.ExecuteBtn.Text = $this.Config.Controls.ExecuteBtnTemplate -f $checkedCount
     }
 
@@ -2267,12 +2336,22 @@ class LMDTApp {
         # Update filter clear button visibility
         $this.UpdateFilterClearButton()
         
-        # Apply filter to ListView items
+        # Apply filter to ListView items with optimized iteration
+        $lv = $this.Controls.ScriptsListView
         $hiddenCount = 0
-        $this.Controls.ScriptsListView.Items | ForEach-Object {
-            $visible = !$filter -or $_.Text.ToLower().Contains($filter) -or $_.SubItems[1].Text.ToLower().Contains($filter)
-            $_.ForeColor = if ($visible) { $this.Config.Colors.Text } else { $this.Config.Colors.Filtered }
-            if (!$visible) { $hiddenCount++ }
+        
+        # Use faster for loop instead of ForEach-Object for large datasets
+        $lv.BeginUpdate()
+        try {
+            for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+                $item = $lv.Items[$i]
+                $visible = !$filter -or $item.Text.ToLower().Contains($filter) -or $item.SubItems[1].Text.ToLower().Contains($filter)
+                $item.ForeColor = if ($visible) { $this.Config.Colors.Text } else { $this.Config.Colors.Filtered }
+                if (!$visible) { $hiddenCount++ }
+            }
+        }
+        finally {
+            $lv.EndUpdate()
         }
         
         # Update status message with filter info
@@ -2748,6 +2827,143 @@ class LMDTApp {
                 $lv.Items.RemoveAt($index)
                 $lv.Items.Insert($index + 1, $item)
                 $item.Selected = $true
+            }
+        }
+    }
+
+    [void]OnKeyDown($e) {
+        Write-Host "[DEBUG] OnKeyDown - Key: $($e.KeyCode), Modifiers: $($e.Modifiers)"
+        
+        # Handle keyboard shortcuts
+        switch ($e.KeyCode) {
+            # Ctrl+A - Select All
+            'A' {
+                if ($e.Control) {
+                    $this.Controls.SelectAllCheckBox.Checked = $true
+                    $e.Handled = $true
+                }
+            }
+            
+            # F5 - Refresh current view
+            'F5' {
+                $this.OnReloadCurrentView()
+                $e.Handled = $true
+            }
+            
+            # Ctrl+E or F9 - Execute selected tasks
+            { $_ -eq 'E' -or $_ -eq 'F9' } {
+                if ($_ -eq 'F9' -or ($_ -eq 'E' -and $e.Control)) {
+                    if (!$this.IsExecuting) {
+                        $this.OnExecute()
+                    }
+                    $e.Handled = $true
+                }
+            }
+            
+            # Escape - Cancel/Clear
+            'Escape' {
+                if ($this.IsExecuting) {
+                    $this.OnCancelExecution()
+                }
+                else {
+                    # Clear filter if active
+                    $filter = $this.Controls.FilterText.Text
+                    $placeholder = $this.Config.Controls.FilterPlaceholder
+                    if ($filter -and $filter -ne $placeholder) {
+                        $this.OnClearFilter()
+                    }
+                    else {
+                        # Clear selections
+                        $this.Controls.SelectAllCheckBox.Checked = $false
+                    }
+                }
+                $e.Handled = $true
+            }
+            
+            # Ctrl+F - Focus filter
+            'F' {
+                if ($e.Control) {
+                    $this.Controls.FilterText.Focus()
+                    $e.Handled = $true
+                }
+            }
+            
+            # Ctrl+R - Retry failed tasks
+            'R' {
+                if ($e.Control) {
+                    $this.OnRetryFailed()
+                    $e.Handled = $true
+                }
+            }
+            
+            # Ctrl+D - Clear results
+            'D' {
+                if ($e.Control) {
+                    $this.OnClearResults()
+                    $e.Handled = $true
+                }
+            }
+            
+            # Ctrl+T - Create template
+            'T' {
+                if ($e.Control) {
+                    $this.OnCreateTemplate()
+                    $e.Handled = $true
+                }
+            }
+            
+            # F1 - Toggle sidebar
+            'F1' {
+                $this.OnMore()
+                $e.Handled = $true
+            }
+            
+            # Ctrl+C - Copy command (when ListView has focus)
+            'C' {
+                if ($e.Control -and $this.Controls.ScriptsListView.Focused) {
+                    $this.OnCopyCommand()
+                    $e.Handled = $true
+                }
+            }
+            
+            # Delete - Clear selected items
+            'Delete' {
+                if ($this.Controls.ScriptsListView.Focused) {
+                    $lv = $this.Controls.ScriptsListView
+                    $lv.BeginUpdate()
+                    try {
+                        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+                            if ($lv.Items[$i].Selected) {
+                                $lv.Items[$i].Checked = $false
+                            }
+                        }
+                    }
+                    finally {
+                        $lv.EndUpdate()
+                    }
+                    $this.UpdateExecuteButtonText()
+                    $e.Handled = $true
+                }
+            }
+            
+            # Space - Toggle selected items
+            'Space' {
+                if ($this.Controls.ScriptsListView.Focused) {
+                    $lv = $this.Controls.ScriptsListView
+                    $lv.BeginUpdate()
+                    try {
+                        for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+                            if ($lv.Items[$i].Selected) {
+                                $lv.Items[$i].Checked = !$lv.Items[$i].Checked
+                            }
+                        }
+                    }
+                    finally {
+                        $lv.EndUpdate()
+                    }
+                    $this.UpdateExecuteButtonText()
+                    $e.Handled = $true
+                }
             }
         }
     }
