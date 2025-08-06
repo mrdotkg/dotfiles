@@ -3417,7 +3417,10 @@ class LMDTApp {
         $config = $app.Config
         $currentScript = $MyInvocation.ScriptName; if (!$currentScript) { $currentScript = $PSCommandPath }
         
-        if ($currentScript -match $config.Patterns.HTTPUrl) {
+        # Determine if running remotely: either URL in script path OR no script path at all (iex scenario)
+        $isRemoteExecution = ($currentScript -and ($currentScript -match $config.Patterns.HTTPUrl)) -or (!$currentScript)
+        
+        if ($isRemoteExecution) {
             # Running from GitHub - scan remote repository
             Write-Host "[DEBUG] Running from GitHub, scanning remote repository" -ForegroundColor Green
             try {
