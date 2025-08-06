@@ -332,7 +332,7 @@ $Global:Config = @{
         Filtered  = [System.Drawing.Color]::Gray
     }
     Window                      = @{
-        Title           = 'LMDT -'
+        Title           = 'LET ME DO THIS'
         Width           = 700
         Height          = 700
         Padding         = '10,10,10,10'
@@ -589,6 +589,11 @@ class LMDTApp {
         $this.Config = $Global:Config
         $this.State.TemplateItems = @()
         $this.State.TemplateInputControls = @()
+        $this.State.SchedulingItems = $null
+        $this.State.SchedulingInputControls = @()
+        $this.State.SchedulingResultsControls = @()
+        $this.State.SchedulingDatePicker = $null
+        $this.State.SchedulingRepeatCombo = $null
         $this.State.CancelRequested = $false
         $this.State.LastSortColumn = -1
         $this.State.SortDirection = 'Ascending'
@@ -688,7 +693,9 @@ class LMDTApp {
         # Try to get selected items robustly (works for all View modes)
         $selectedItems = @()
         for ($i = 0; $i -lt $lv.Items.Count; $i++) {
-            if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
+            if ($lv.Items[$i].Selected -or $lv.Items[$i].Checked) { 
+                $selectedItems += $lv.Items[$i] 
+            }
         }
         if ($selectedItems.Count -eq 0) {
             $this.SetStatusMessage("Please select a task to copy the command.", 'Orange')
@@ -706,33 +713,429 @@ class LMDTApp {
     }
 
     [void]OnRunLater() {
-        Write-Host "[DEBUG] OnRunLater (robust selection)"
+        Write-Host "[DEBUG] OnRunLater - Simple scheduling"
         $lv = $this.Controls.ScriptsListView
         $selectedItems = @()
         for ($i = 0; $i -lt $lv.Items.Count; $i++) {
-            if ($lv.Items[$i].Selected) { $selectedItems += $lv.Items[$i] }
+            if ($lv.Items[$i].Selected -or $lv.Items[$i].Checked) { 
+                $selectedItems += $lv.Items[$i] 
+            }
         }
         if ($selectedItems.Count -eq 0) {
             $this.SetStatusMessage("Please select a task to schedule.", 'Orange')
             return
         }
+        
+        # Show simple scheduling controls in status bar
+        $this.ShowSchedulingControls($selectedItems)
+    }
+    
+    [void]ShowSchedulingControls($selectedItems) {
+        Write-Host "[DEBUG] ShowSchedulingControls - Tasks: $($selectedItems.Count)"
+        
+        # Store selected items for later use
+        $this.State.SchedulingItems = $selectedItems
+        
+        # Create dynamic input controls in the status bar (similar to template pattern)
+        $statusBar = $this.Controls.StatusBar
+        $app = $this  # Capture app instance for closures
+        
+        # Clear existing controls except StatusLabel and StatusProgressBar (same as template)
+        $controlsToRemove = @()
+        foreach ($control in $statusBar.Controls) {
+            if ($control -ne $this.Controls.StatusLabel -and $control -ne $this.Controls.StatusProgressBar) {
+                $controlsToRemove += $control
+            }
+        }
+        foreach ($control in $controlsToRemove) {
+            $statusBar.Controls.Remove($control)
+        }
+        
+        # Create scheduling controls with consistent styling
+        $controlHeight = 22
+        $verticalOffset = ($statusBar.Height - $controlHeight) / 2
+        
+        # Labels on the left side (consistent with template pattern)
+        $dateLabel = New-Object System.Windows.Forms.Label
+        $dateLabel.Text = "Schedule Date/Time:"
+        $dateLabel.Size = New-Object System.Drawing.Size(110, $controlHeight)
+        $dateLabel.Location = New-Object System.Drawing.Point(10, $verticalOffset)
+        $dateLabel.TextAlign = 'MiddleLeft'
+        $statusBar.Controls.Add($dateLabel)
+        
+        $repeatLabel = New-Object System.Windows.Forms.Label
+        $repeatLabel.Text = "Repeat:"
+        $repeatLabel.Size = New-Object System.Drawing.Size(50, $controlHeight)
+        $repeatLabel.Location = New-Object System.Drawing.Point(130, $verticalOffset)
+        $repeatLabel.TextAlign = 'MiddleLeft'
+        $statusBar.Controls.Add($repeatLabel)
+        
+        # Calculate right-aligned positions (working backwards from right edge)
+        $rightMargin = 10
+        $buttonWidth = 70
+        $comboWidth = 80
+        $dateTimeWidth = 140
+        $spacing = 3
+        
+        # Cancel button (rightmost)
+        $cancelBtn = New-Object System.Windows.Forms.Button
+        $cancelBtn.Text = "Cancel"
+        $cancelBtn.Width = $buttonWidth
+        $cancelBtn.Height = $controlHeight
+        $cancelBtn.Location = New-Object System.Drawing.Point(($statusBar.Width - $rightMargin - $buttonWidth), $verticalOffset)
+        $cancelBtn.Anchor = 'Top, Right'
+        $cancelBtn.Add_Click({
+                $app.OnCancelSchedule()
+            }.GetNewClosure())
+        $statusBar.Controls.Add($cancelBtn)
+        
+        # Schedule button (to the left of cancel)
+        $scheduleBtn = New-Object System.Windows.Forms.Button
+        $scheduleBtn.Text = "Schedule"
+        $scheduleBtn.Width = $buttonWidth
+        $scheduleBtn.Height = $controlHeight
+        $scheduleBtn.Location = New-Object System.Drawing.Point(($cancelBtn.Location.X - $spacing - $buttonWidth), $verticalOffset)
+        $scheduleBtn.Anchor = 'Top, Right'
+        $scheduleBtn.Add_Click({
+                $app.OnScheduleTask()
+            }.GetNewClosure())
+        $statusBar.Controls.Add($scheduleBtn)
+        
+        # Repeat combo (to the left of schedule button)
+        $repeatCombo = New-Object System.Windows.Forms.ComboBox
+        $repeatCombo.DropDownStyle = 'DropDownList'
+        $repeatCombo.Width = $comboWidth
+        $repeatCombo.Height = $controlHeight
+        $repeatCombo.Location = New-Object System.Drawing.Point(($scheduleBtn.Location.X - $spacing - $comboWidth), $verticalOffset)
+        $repeatCombo.Anchor = 'Top, Right'
+        $repeatCombo.Items.AddRange(@('None', 'Daily', 'Weekly', 'Monthly', 'Yearly'))
+        $repeatCombo.SelectedIndex = 0
+        $statusBar.Controls.Add($repeatCombo)
+        
+        # DateTime picker (to the left of repeat combo)
+        $datePicker = New-Object System.Windows.Forms.DateTimePicker
+        $datePicker.Format = 'Custom'
+        $datePicker.CustomFormat = 'MM/dd/yyyy hh:mm tt'
+        $datePicker.Width = $dateTimeWidth
+        $datePicker.Height = $controlHeight
+        $datePicker.Location = New-Object System.Drawing.Point(($repeatCombo.Location.X - $spacing - $dateTimeWidth), $verticalOffset)
+        $datePicker.Anchor = 'Top, Right'
+        $datePicker.Value = (Get-Date).AddMinutes(5)  # Default to 5 minutes from now
+        $statusBar.Controls.Add($datePicker)
+        
+        # Set focus and message
+        $datePicker.Focus()
+        $this.Controls.StatusLabel.Text = "Set schedule for $($selectedItems.Count) task(s) and click Schedule:"
+        
+        # Store reference for cleanup (same pattern as template)
+        $this.State.SchedulingInputControls = @($dateLabel, $repeatLabel, $datePicker, $repeatCombo, $scheduleBtn, $cancelBtn)
+        $this.State.SchedulingItems = $selectedItems
+        $this.State.SchedulingDatePicker = $datePicker
+        $this.State.SchedulingRepeatCombo = $repeatCombo
+    }
+    
+    [void]HideSchedulingControls() {
+        Write-Host "[DEBUG] HideSchedulingControls"
+        
+        # Use the centralized cleanup method (same as template pattern)
+        $this.CleanupSchedulingControls()
+        $this.SetStatusMessage("Ready", 'Black')
+    }
+    
+    [void]CleanupSchedulingControls() {
+        Write-Host "[DEBUG] CleanupSchedulingControls"
+        if ($this.State.SchedulingInputControls -and $this.State.SchedulingInputControls.Count -gt 0) {
+            $statusBar = $this.Controls.StatusBar
+            
+            # Remove all scheduling input controls
+            foreach ($control in $this.State.SchedulingInputControls) {
+                if ($statusBar.Controls.Contains($control)) {
+                    $statusBar.Controls.Remove($control)
+                    $control.Dispose()
+                }
+            }
+            
+            # Clear the state
+            $this.State.SchedulingInputControls = @()
+            $this.State.SchedulingItems = $null
+            $this.State.SchedulingDatePicker = $null
+            $this.State.SchedulingRepeatCombo = $null
+        }
+    }
+    
+    [void]CreateSimpleScheduledTask($selectedItems, $scheduleDateTime, $repeatType) {
+        Write-Host "[DEBUG] CreateSimpleScheduledTask - Items: $($selectedItems.Count), DateTime: $scheduleDateTime, Repeat: $repeatType"
+        
         foreach ($item in $selectedItems) {
             $tag = $item.Tag
             if ($tag -and $tag.Command) {
-                $taskName = "LMDT_" + ($tag.Description -replace '[^a-zA-Z0-9]', '_')
-                $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command \"$($tag.Command)\""
-                $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1))
+                $taskBaseName = "LMDT_" + ($tag.Description -replace '[^a-zA-Z0-9]', '_')
+                
+                # Create task action
+                $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command `"$($tag.Command)`""
+                
+                # Create trigger based on repeat type
+                $trigger = $null
+                $taskName = $taskBaseName
+                
                 try {
-                    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Force | Out-Null
-                    $this.SetStatusMessage("Task scheduled: $taskName", 'Green')
+                    switch ($repeatType) {
+                        'None' {
+                            $trigger = New-ScheduledTaskTrigger -Once -At $scheduleDateTime
+                            $taskName += "_OneTime_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
+                        }
+                        'Daily' {
+                            $trigger = New-ScheduledTaskTrigger -Daily -At $scheduleDateTime
+                            $taskName += "_Daily_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
+                        }
+                        'Weekly' {
+                            $trigger = New-ScheduledTaskTrigger -Weekly -At $scheduleDateTime -DaysOfWeek $scheduleDateTime.DayOfWeek
+                            $taskName += "_Weekly_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
+                        }
+                        'Monthly' {
+                            # For monthly, use once trigger and let user reschedule if needed
+                            # Note: True monthly recurrence requires more complex setup
+                            $trigger = New-ScheduledTaskTrigger -Once -At $scheduleDateTime
+                            $taskName += "_Monthly_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
+                            Write-Host "[DEBUG] Monthly task created as one-time (complex monthly recurrence not fully supported)" -ForegroundColor Yellow
+                        }
+                        'Yearly' {
+                            # For yearly, use once trigger and let user reschedule if needed  
+                            # Note: True yearly recurrence requires more complex setup
+                            $trigger = New-ScheduledTaskTrigger -Once -At $scheduleDateTime
+                            $taskName += "_Yearly_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
+                            Write-Host "[DEBUG] Yearly task created as one-time (complex yearly recurrence not fully supported)" -ForegroundColor Yellow
+                        }
+                    }
+                    
+                    # Create task settings
+                    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+                    
+                    # Register the scheduled task
+                    $registeredTask = Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Force
+                    
+                    Write-Host "[DEBUG] CreateSimpleScheduledTask - Created: $taskName" -ForegroundColor Green
+                    
                 }
                 catch {
-                    $this.SetStatusMessage("Failed to schedule task: $taskName - $_", 'Red')
+                    Write-Warning "[DEBUG] CreateSimpleScheduledTask - Failed to create $taskName : $_"
+                    $this.SetStatusMessage("Failed to schedule task: $($tag.Description) - $_", 'Red')
+                    return
                 }
             }
         }
+        
+        # Show success message and scheduling results controls
+        $repeatText = if ($repeatType -eq 'None') { 'once' } else { $repeatType.ToLower() }
+        $this.ShowSchedulingResults($selectedItems.Count, $scheduleDateTime, $repeatText)
     }
-
+    
+    [void]OnScheduleTask() {
+        Write-Host "[DEBUG] OnScheduleTask"
+        
+        if (-not $this.State.SchedulingItems) {
+            $this.SetStatusMessage("No tasks selected for scheduling.", 'Orange')
+            return
+        }
+        
+        # Get values from dynamic controls (not predefined controls)
+        if (-not $this.State.SchedulingDatePicker -or -not $this.State.SchedulingRepeatCombo) {
+            $this.SetStatusMessage("Scheduling controls not available.", 'Orange')
+            return
+        }
+        
+        $scheduleDateTime = $this.State.SchedulingDatePicker.Value
+        $repeatType = $this.State.SchedulingRepeatCombo.SelectedItem
+        
+        if (-not $repeatType) {
+            $this.SetStatusMessage("Please select a repeat option.", 'Orange')
+            return
+        }
+        
+        # Create the scheduled task (this will call ShowSchedulingResults internally)
+        $this.CreateSimpleScheduledTask($this.State.SchedulingItems, $scheduleDateTime, $repeatType)
+        
+        # Note: Don't hide scheduling controls here - ShowSchedulingResults will display the results
+        # The results will be cleared when user clicks "Clear" button
+    }
+    
+    [void]ShowSchedulingResults([int]$taskCount, [datetime]$scheduleDateTime, [string]$repeatText) {
+        Write-Host "[DEBUG] ShowSchedulingResults - Tasks: $taskCount, DateTime: $scheduleDateTime, Repeat: $repeatText"
+        
+        # Hide scheduling controls first
+        $this.CleanupSchedulingControls()
+        
+        # Create scheduling results controls in status bar (similar to execution results)
+        $statusBar = $this.Controls.StatusBar
+        $app = $this
+        
+        # Calculate right-aligned positions
+        $rightMargin = 10
+        $buttonWidth = 80
+        $spacing = 3
+        $controlHeight = 22
+        $verticalOffset = ($statusBar.Height - $controlHeight) / 2
+        
+        # Clear Scheduling button (rightmost)
+        $clearBtn = New-Object System.Windows.Forms.Button
+        $clearBtn.Text = "Clear"
+        $clearBtn.Width = $buttonWidth
+        $clearBtn.Height = $controlHeight
+        $clearBtn.Location = New-Object System.Drawing.Point(($statusBar.Width - $rightMargin - $buttonWidth), $verticalOffset)
+        $clearBtn.Anchor = 'Top, Right'
+        $clearBtn.BackColor = 'LightGray'
+        $clearBtn.Add_Click({
+                $app.OnClearSchedulingResults()
+            }.GetNewClosure())
+        $statusBar.Controls.Add($clearBtn)
+        
+        # View Tasks button (to the left of clear)
+        $viewTasksBtn = New-Object System.Windows.Forms.Button
+        $viewTasksBtn.Text = "View Tasks"
+        $viewTasksBtn.Width = $buttonWidth
+        $viewTasksBtn.Height = $controlHeight
+        $viewTasksBtn.Location = New-Object System.Drawing.Point(($clearBtn.Location.X - $spacing - $buttonWidth), $verticalOffset)
+        $viewTasksBtn.Anchor = 'Top, Right'
+        $viewTasksBtn.BackColor = 'LightBlue'
+        $viewTasksBtn.Add_Click({
+                $app.OnViewScheduledTasks()
+            }.GetNewClosure())
+        $statusBar.Controls.Add($viewTasksBtn)
+        
+        # Set success message
+        $this.Controls.StatusLabel.Text = "✓ Scheduled $taskCount task(s) to run $repeatText at $($scheduleDateTime.ToString('MM/dd/yyyy hh:mm tt'))"
+        $this.Controls.StatusLabel.ForeColor = 'Green'
+        
+        # Store scheduling results controls for cleanup
+        $this.State.SchedulingResultsControls = @($viewTasksBtn, $clearBtn)
+        
+        # Store scheduling results for later use
+        if (-not $this.State.ContainsKey('LastSchedulingResults')) {
+            $this.State.LastSchedulingResults = @{}
+        }
+        $this.State.LastSchedulingResults = @{
+            TaskCount        = $taskCount
+            ScheduleDateTime = $scheduleDateTime
+            RepeatText       = $repeatText
+            CompletedTime    = Get-Date
+        }
+    }
+    
+    [void]OnViewScheduledTasks() {
+        Write-Host "[DEBUG] OnViewScheduledTasks"
+        
+        try {
+            # Try to open Task Scheduler with focus on scheduled tasks
+            try {
+                # Method 1: Try to open Task Scheduler and expand to show tasks
+                Start-Process "mmc.exe" -ArgumentList "$env:SystemRoot\system32\taskschd.msc"
+            }
+            catch {
+                # Method 2: Fallback to simple taskschd.msc
+                Start-Process "taskschd.msc"
+            }
+            
+            # Also show a simple dialog with scheduled tasks info
+            $taskList = Get-ScheduledTask -TaskName "LMDT_*" -ErrorAction SilentlyContinue
+            
+            if ($taskList) {
+                $taskInfoLines = @()
+                $taskInfoLines += "=== LMDT Scheduled Tasks ==="
+                $taskInfoLines += "Generated: $(Get-Date)"
+                $taskInfoLines += ""
+                $taskInfoLines += "Found $($taskList.Count) LMDT task(s):"
+                $taskInfoLines += ""
+                
+                foreach ($task in $taskList) {
+                    $nextRun = try { 
+                        $taskDetailInfo = Get-ScheduledTaskInfo $task.TaskName -ErrorAction SilentlyContinue
+                        if ($taskDetailInfo.NextRunTime) { $taskDetailInfo.NextRunTime.ToString() } else { "Not scheduled" }
+                    }
+                    catch { "Unknown" }
+                    
+                    $taskInfoLines += "Task: $($task.TaskName)"
+                    $taskInfoLines += "  State: $($task.State)"
+                    $taskInfoLines += "  Next Run: $nextRun"
+                    $taskInfoLines += "  Path: $($task.TaskPath)"
+                    $taskInfoLines += ""
+                }
+                
+                # Add instructions at the end
+                $taskInfoLines += ""
+                $taskInfoLines += "=== Instructions ==="
+                $taskInfoLines += "• Task Scheduler opened in a separate window"
+                $taskInfoLines += "• Look for tasks starting with 'LMDT_' in the task list"
+                $taskInfoLines += "• You can run, disable, or delete tasks from Task Scheduler"
+                $taskInfoLines += "• Tasks are stored in the root folder of Task Scheduler Library"
+                
+                # Create a simple info window
+                $infoForm = New-Object System.Windows.Forms.Form
+                $infoForm.Text = "LMDT Scheduled Tasks"
+                $infoForm.Width = 600
+                $infoForm.Height = 500
+                $infoForm.StartPosition = 'CenterParent'
+                
+                $infoTextBox = New-Object System.Windows.Forms.TextBox
+                $infoTextBox.Multiline = $true
+                $infoTextBox.ScrollBars = 'Vertical'
+                $infoTextBox.Dock = 'Fill'
+                $infoTextBox.ReadOnly = $true
+                $infoTextBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+                $infoTextBox.Text = $taskInfoLines -join "`r`n"
+                
+                $infoForm.Controls.Add($infoTextBox)
+                $infoForm.ShowDialog()
+            }
+            else {
+                $this.SetStatusMessage("No LMDT scheduled tasks found.", 'Orange')
+            }
+        }
+        catch {
+            $this.SetStatusMessage("Could not open Task Scheduler: $($_.Exception.Message)", 'Red')
+        }
+    }
+    
+    [void]OnClearSchedulingResults() {
+        Write-Host "[DEBUG] OnClearSchedulingResults"
+        
+        # Hide scheduling results controls
+        $this.HideSchedulingResultsControls()
+        
+        # Clear scheduling results
+        if ($this.State.ContainsKey('LastSchedulingResults')) {
+            $this.State.Remove('LastSchedulingResults')
+        }
+        
+        $this.SetStatusMessage("Ready", 'Black')
+    }
+    
+    [void]HideSchedulingResultsControls() {
+        Write-Host "[DEBUG] HideSchedulingResultsControls"
+        
+        if ($this.State.SchedulingResultsControls -and $this.State.SchedulingResultsControls.Count -gt 0) {
+            $statusBar = $this.Controls.StatusBar
+            
+            # Remove all scheduling results controls
+            foreach ($control in $this.State.SchedulingResultsControls) {
+                if ($statusBar.Controls.Contains($control)) {
+                    $statusBar.Controls.Remove($control)
+                    $control.Dispose()
+                }
+            }
+            
+            # Clear the state
+            $this.State.SchedulingResultsControls = @()
+        }
+    }
+    
+    [void]OnCancelSchedule() {
+        Write-Host "[DEBUG] OnCancelSchedule"
+        
+        # Hide scheduling controls and clear state
+        $this.HideSchedulingControls()
+        $this.SetStatusMessage("Scheduling cancelled.", 'Gray')
+    }
+    
     [void]OnCreateTemplate() {
         Write-Host "[DEBUG] OnCreateTemplate"
         $lv = $this.Controls.ScriptsListView
@@ -937,7 +1340,18 @@ class LMDTApp {
 
         # Main Form
         $this.MainForm = New-Object System.Windows.Forms.Form
-        $this.MainForm.Text = "$($this.Config.Window.Title) $((Split-Path $sourceInfo -Leaf).Substring(0,1).ToUpper() + (Split-Path $sourceInfo -Leaf).Substring(1))"
+        # Create custom title bar format: "LMDT - Let me do this! | [Source] (Local/Remote)"
+        if ($sourceInfo.Contains("(Remote)")) {
+            # Remote execution - sourceInfo is in format "OWNER/REPO (Remote)"
+            $repoName = $sourceInfo -replace " \(Remote\)$", ""
+            $sourceName = ($repoName -split "/")[-1]  # Get repo name from "owner/repo"
+            $this.MainForm.Text = "$($this.Config.Window.Title) | $($sourceName.Substring(0,1).ToUpper() + $sourceName.Substring(1)) (Remote)"
+        }
+        else {
+            # Local execution - sourceInfo is directory path
+            $sourceName = Split-Path $sourceInfo -Leaf
+            $this.MainForm.Text = "$($this.Config.Window.Title) | $($sourceName.Substring(0,1).ToUpper() + $sourceName.Substring(1)) (Local)"
+        }
         $this.MainForm.Width = $this.Config.Window.Width
         $this.MainForm.Height = $this.Config.Window.Height
         $this.MainForm.Padding = $this.Config.Window.Padding
@@ -961,7 +1375,7 @@ class LMDTApp {
             SelectAllCheckBox   = @{ Type = 'CheckBox'; Order = 3; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.SelectAllText; Width = 25; Dock = 'Left'; Padding = '5,0,0,0'; BackColor = 'Transparent' } }
             MoreBtn             = @{ Type = 'Button'; Order = 101; Layout = 'Toolbar'; Properties = @{ Text = 'More'; Width = $this.Config.Controls.Height; Dock = 'Right' } }
             ExecuteBtn          = @{ Type = 'Button'; Order = 100; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.ExecuteBtnText; Dock = 'Right' } }
-            CancelBtn           = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Enabled = $false } }
+            CancelBtn           = @{ Type = 'Button'; Order = 99; Layout = 'Toolbar'; Properties = @{ Text = $this.Config.Controls.CancelText; Dock = 'Right'; Visible = $false } }
             ExecuteModeLabel    = @{ Type = 'Label'; Order = 2; Layout = 'Sidebar'; Properties = @{ Text = "Run As"; Dock = 'Top'; Height = 18; TextAlign = 'MiddleLeft'; BackColor = 'Transparent' } }
             ExecuteModeCombo    = @{ Type = 'ComboBox'; Order = 1; Layout = 'Sidebar'; Properties = @{ Dock = 'Top' } }
             SpacerPanelExec     = @{ Type = 'Panel'; Order = 3; Layout = 'Sidebar'; Properties = @{ Height = 8; Dock = 'Top'; BackColor = 'Transparent' } }
@@ -981,6 +1395,7 @@ class LMDTApp {
             SpacerPanelReset    = @{ Type = 'Panel'; Order = 17; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
             InstallBtn          = @{ Type = 'Button'; Order = 18; Layout = 'Sidebar'; Properties = @{ Text = 'Install on Computer'; Dock = 'Bottom'; TextAlign = 'MiddleLeft' } }
             SpacerPanelInstall  = @{ Type = 'Panel'; Order = 19; Layout = 'Sidebar'; Properties = @{ Height = 5; Dock = 'Bottom'; BackColor = 'Transparent' } }
+            
             ScriptsListView     = @{ Type = 'ListView'; Order = 1; Layout = 'MainContent'; Properties = @{ Dock = 'Fill'; View = 'Details'; GridLines = $true; BorderStyle = 'None'; CheckBoxes = $true; FullRowSelect = $true; AllowDrop = $true } }
             
             # Enhanced Status Bar with Execution Controls - Always visible, content changes based on state
@@ -1299,6 +1714,10 @@ class LMDTApp {
         # Add "Create Template..." to ListView context menu
         $addTemplateMenu = $contextMenu.Items.Add("Create Template...")
         $addTemplateMenu.Add_Click({ $app.OnCreateTemplate() })
+        
+        # Add "Schedule Selected Tasks..." to ListView context menu
+        $scheduleMenu = $contextMenu.Items.Add("Schedule Selected Tasks...")
+        $scheduleMenu.Add_Click({ $app.OnRunLater() })
         
         # Add separator
         $contextMenu.Items.Add("-") | Out-Null
@@ -2295,6 +2714,8 @@ class LMDTApp {
 
     [void]CleanupStatusBar() {
         Write-Host "[DEBUG] CleanupStatusBar"
+        
+        # Clean up template input controls
         if ($this.State.TemplateInputControls -and $this.State.TemplateInputControls.Count -gt 0) {
             $statusBar = $this.Controls.StatusBar
             
@@ -2309,6 +2730,12 @@ class LMDTApp {
             $this.State.TemplateInputControls = @()
             $this.State.TemplateItems = @()
         }
+        
+        # NOTE: Do NOT clean up scheduling controls here to avoid conflicts
+        # Scheduling controls have their own dedicated cleanup methods
+        
+        # Also clean up scheduling results controls
+        $this.HideSchedulingResultsControls()
     }
 
     [void]OnFilter() {
