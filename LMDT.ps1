@@ -526,6 +526,8 @@ class LMDTApp {
         }
         $this.UpdateExecuteButtonText()
     }
+
+    # Class properties
     [hashtable]$Config
     [hashtable]$Controls = @{}
     [array]$Machines = @()
@@ -946,10 +948,11 @@ class LMDTApp {
         $this.MainForm.KeyPreview = $true
         $this.MainForm.Add_KeyDown({ $app.OnKeyDown($_) })
         $this.MainForm.Add_Shown({ $app.OnFormShown() })
+        $this.MainForm.Add_FormClosed({ $app.OnFormClosed() })
 
         # Define controls with order for proper placement and future drag-drop (restored classic WinForms order, labels above combos)
         $controlDefs = @{
-            Toolbar             = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
+            Toolbar             = @{ Type = 'Panel'; Order = 30; Layout = 'Form'; Properties = @{ Dock = 'Top'; BorderStyle = 'FixedSingle'; Height = $this.Config.Panels.ToolbarHeight; Padding = $this.Config.Panels.ToolbarPadding } }
             StatusBar           = @{ Type = 'Panel'; Order = 21; Layout = 'Form'; Properties = @{ BorderStyle = 'FixedSingle'; Dock = 'Bottom'; Height = $this.Config.Panels.StatusBarHeight; Padding = $this.Config.Panels.StatusPadding } }
             Sidebar             = @{ Type = 'Panel'; Order = 20; Layout = 'Form'; Properties = @{ Dock = 'Right'; Width = $this.Config.Panels.SidebarWidth; Padding = $this.Config.Panels.SidebarPadding; Visible = $false } }
             MainContent         = @{ Type = 'Panel'; Order = 10; Layout = 'Form'; Properties = @{ Dock = 'Fill'; Padding = $this.Config.Panels.ContentPadding } }
@@ -1529,187 +1532,174 @@ class LMDTApp {
     }
     
     [void]StartBackgroundExecution($checkedItems) {
-        Write-Host "[DEBUG] StartBackgroundExecution - Starting background thread for $($checkedItems.Count) tasks"
+        Write-Host "[DEBUG] StartBackgroundExecution - Starting execution for $($checkedItems.Count) tasks"
         
-        # Create a runspace for background execution
-        $runspace = [runspacefactory]::CreateRunspace()
-        $runspace.Open()
+        # Use a timer-based approach instead of background thread to avoid UI deadlocks
+        $this.State.ExecutionItems = $checkedItems
+        $this.State.ExecutionIndex = 0
+        $this.State.ExecutionCompleted = 0
+        $this.State.ExecutionFailed = 0
         
-        # Share required variables with the runspace
-        $runspace.SessionStateProxy.SetVariable("checkedItems", $checkedItems)
-        $runspace.SessionStateProxy.SetVariable("app", $this)
+        # Create a timer for sequential execution
+        $this.State.ExecutionTimer = New-Object System.Windows.Forms.Timer
+        $this.State.ExecutionTimer.Interval = 100  # Check every 100ms
         
-        # Create PowerShell instance for background execution
-        $powershell = [powershell]::Create()
-        $powershell.Runspace = $runspace
+        $app = $this
+        $this.State.ExecutionTimer.Add_Tick({
+                $app.ProcessNextExecutionItem()
+            }.GetNewClosure())
         
-        # Background execution script
-        $scriptBlock = {
-            param($checkedItems, $app)
-            
-            Write-Host "[BACKGROUND] Starting execution of $($checkedItems.Count) tasks"
-            $completed = 0
-            $failed = 0
-            
-            foreach ($item in $checkedItems) {
-                # Check for cancellation (thread-safe)
-                if ($app.State.CancelRequested) {
-                    Write-Host "[BACKGROUND] Cancellation requested, stopping execution"
-                    # Update UI thread-safely for cancelled items
-                    $app.UpdateTaskStatusThreadSafe($item, $app.Config.Messages.CancelledByUser, $app.Config.Colors.Filtered)
-                    continue
-                }
-                
-                # Update UI thread-safely for running status
-                $app.UpdateTaskStatusThreadSafe($item, $app.Config.Messages.Running, $app.Config.Colors.Running)
-                
-                # Update progress thread-safely
-                $app.UpdateExecutionProgressThreadSafe($completed + 1, $checkedItems.Count, $item.Text)
-                
-                try {
-                    $script = $item.Tag
-                    $result = $app.ExecuteScript($script)
-                    
-                    # Update UI thread-safely based on result
-                    $status = if ($result.Success) { $app.Config.Messages.Completed } else { $app.Config.Messages.Failed }
-                    $color = if ($result.Success) { $app.Config.Colors.Completed } else { $app.Config.Colors.Failed }
-                    $app.UpdateTaskStatusThreadSafe($item, $status, $color)
-                    
-                    # Update checked state thread-safely
-                    $app.UpdateTaskCheckedStateThreadSafe($item, !$result.Success)
-                    
-                    if (!$result.Success) { $failed++ }
-                }
-                catch {
-                    Write-Host "[BACKGROUND] Task execution failed: $_" -ForegroundColor Red
-                    $app.UpdateTaskStatusThreadSafe($item, $app.Config.Messages.Failed, $app.Config.Colors.Failed)
-                    $app.UpdateTaskCheckedStateThreadSafe($item, $true)
-                    $failed++
-                }
-                
-                $completed++
-                
-                # Add 5-second delay between executions for UI inspection
-                if ($completed -lt $checkedItems.Count -and !$app.State.CancelRequested) {
-                    Start-Sleep -Seconds 5
-                }
-            }
-            
-            # Complete execution thread-safely
-            $successCount = $completed - $failed
-            $app.CompleteExecutionThreadSafe($successCount, $failed, $checkedItems.Count, $app.State.CancelRequested)
-            
-            Write-Host "[BACKGROUND] Execution completed: $successCount successful, $failed failed"
-        }
+        # Start the timer
+        $this.State.ExecutionTimer.Start()
         
-        # Add script and parameters
-        $powershell.AddScript($scriptBlock).AddParameter("checkedItems", $checkedItems).AddParameter("app", $this) | Out-Null
-        
-        # Start async execution
-        $asyncResult = $powershell.BeginInvoke()
-        
-        # Store references for cleanup
-        $this.State.BackgroundPowerShell = $powershell
-        $this.State.BackgroundRunspace = $runspace
-        $this.State.BackgroundAsyncResult = $asyncResult
+        Write-Host "[DEBUG] StartBackgroundExecution - Timer started"
     }
     
-    # Thread-safe UI update methods using Invoke
+    [void]ProcessNextExecutionItem() {
+        # Check if we should stop execution
+        if ($this.State.CancelRequested -or $this.State.ExecutionIndex -ge $this.State.ExecutionItems.Count) {
+            $this.CompleteExecution()
+            return
+        }
+        
+        $item = $this.State.ExecutionItems[$this.State.ExecutionIndex]
+        $currentIndex = $this.State.ExecutionIndex + 1
+        $totalItems = $this.State.ExecutionItems.Count
+        
+        Write-Host "[DEBUG] ProcessNextExecutionItem - Processing item $currentIndex of $totalItems`: $($item.Text)"
+        
+        # Update UI for current task
+        $item.SubItems[3].Text = $this.Config.Messages.Running
+        $item.BackColor = $this.Config.Colors.Running
+        
+        # Update progress
+        $this.UpdateStatusBarExecutionProgress($currentIndex, $totalItems, $item.Text)
+        
+        try {
+            $script = $item.Tag
+            $result = $this.ExecuteScript($script)
+            
+            # Update UI based on result
+            if ($result.Success) {
+                $item.SubItems[3].Text = $this.Config.Messages.Completed
+                $item.BackColor = $this.Config.Colors.Completed
+                $item.Checked = $false
+            }
+            else {
+                $item.SubItems[3].Text = $this.Config.Messages.Failed
+                $item.BackColor = $this.Config.Colors.Failed
+                $item.Checked = $true
+                $this.State.ExecutionFailed++
+            }
+            
+            $this.State.ExecutionCompleted++
+        }
+        catch {
+            Write-Host "[DEBUG] Task execution failed: $_" -ForegroundColor Red
+            $item.SubItems[3].Text = $this.Config.Messages.Failed
+            $item.BackColor = $this.Config.Colors.Failed
+            $item.Checked = $true
+            $this.State.ExecutionFailed++
+            $this.State.ExecutionCompleted++
+        }
+        
+        # Move to next item
+        $this.State.ExecutionIndex++
+        
+        # Force UI refresh
+        $this.RefreshUI()
+    }
+    
+    [void]CompleteExecution() {
+        Write-Host "[DEBUG] CompleteExecution"
+        
+        # Stop the timer
+        if ($this.State.ExecutionTimer) {
+            $this.State.ExecutionTimer.Stop()
+            $this.State.ExecutionTimer.Dispose()
+            $this.State.ExecutionTimer = $null
+        }
+        
+        $successful = $this.State.ExecutionCompleted - $this.State.ExecutionFailed
+        $failed = $this.State.ExecutionFailed
+        $total = $this.State.ExecutionItems.Count
+        $cancelled = $this.State.CancelRequested
+        
+        # Show results in status bar
+        $this.ShowStatusBarResultsControls($successful, $failed, $total, $cancelled)
+        
+        # Set final status message
+        $summary = "Execution completed: $successful successful"
+        if ($failed -gt 0) { $summary += ", $failed failed" }
+        if ($cancelled) { $summary += " (cancelled)" }
+        $summary += " out of $total tasks."
+        
+        $statusColor = if ($failed -eq 0) { 'Green' } else { 'Orange' }
+        $this.SetStatusMessage($summary, $statusColor)
+        
+        # Reset execution state
+        $this.IsExecuting = $false
+        $this.Controls.ExecuteBtn.Enabled = $true
+        
+        # Re-enable the old cancel button and hide it
+        if ($this.Controls.ContainsKey("CancelBtn")) {
+            $this.Controls["CancelBtn"].Enabled = $false
+            $this.Controls["CancelBtn"].Visible = $false
+        }
+        
+        # Clear execution state
+        $this.State.ExecutionItems = $null
+        $this.State.ExecutionIndex = 0
+        $this.State.ExecutionCompleted = 0
+        $this.State.ExecutionFailed = 0
+        $this.State.CancelRequested = $false
+        
+        Write-Host "[DEBUG] CompleteExecution - Execution finished successfully"
+    }
+    
+    # Simplified UI update methods (no longer need thread-safe since using timer)
     [void]UpdateTaskStatusThreadSafe($item, $status, $color) {
-        if ($this.MainForm.InvokeRequired) {
-            $this.MainForm.Invoke([Action[object, string, object]] {
-                    param($taskItem, $statusText, $backColor)
-                    $taskItem.SubItems[3].Text = $statusText
-                    $taskItem.BackColor = $backColor
-                }, $item, $status, $color)
-        }
-        else {
-            $item.SubItems[3].Text = $status
-            $item.BackColor = $color
-        }
+        $item.SubItems[3].Text = $status
+        $item.BackColor = $color
     }
     
     [void]UpdateTaskCheckedStateThreadSafe($item, $checked) {
-        if ($this.MainForm.InvokeRequired) {
-            $this.MainForm.Invoke([Action[object, bool]] {
-                    param($taskItem, $checkedState)
-                    $taskItem.Checked = $checkedState
-                }, $item, $checked)
-        }
-        else {
-            $item.Checked = $checked
-        }
+        $item.Checked = $checked
     }
     
     [void]UpdateExecutionProgressThreadSafe($completed, $total, $currentTask) {
-        if ($this.MainForm.InvokeRequired) {
-            $this.MainForm.Invoke([Action[int, int, string]] {
-                    param($completedCount, $totalCount, $taskName)
-                    $this.UpdateStatusBarExecutionProgress($completedCount, $totalCount, $taskName)
-                }, $completed, $total, $currentTask)
-        }
-        else {
-            $this.UpdateStatusBarExecutionProgress($completed, $total, $currentTask)
-        }
+        $this.UpdateStatusBarExecutionProgress($completed, $total, $currentTask)
     }
     
     [void]CompleteExecutionThreadSafe($successful, $failed, $total, $cancelled) {
-        if ($this.MainForm.InvokeRequired) {
-            $this.MainForm.Invoke([Action[int, int, int, bool]] {
-                    param($successCount, $failedCount, $totalCount, $wasCancelled)
-                
-                    # Show results in status bar
-                    $this.ShowStatusBarResultsControls($successCount, $failedCount, $totalCount, $wasCancelled)
-                
-                    # Set final status message
-                    $summary = "Execution completed: $successCount successful"
-                    if ($failedCount -gt 0) { $summary += ", $failedCount failed" }
-                    if ($wasCancelled) { $summary += " (cancelled)" }
-                    $summary += " out of $totalCount tasks."
-                
-                    $statusColor = if ($failedCount -eq 0) { 'Green' } else { 'Orange' }
-                    $this.SetStatusMessage($summary, $statusColor)
-                
-                    # Reset execution state
-                    $this.IsExecuting = $false
-                    $this.Controls.ExecuteBtn.Enabled = $true
-                
-                    # Cleanup background thread resources
-                    $this.CleanupBackgroundExecution()
-                
-                }, $successful, $failed, $total, $cancelled)
-        }
-        else {
-            # Show results in status bar
-            $this.ShowStatusBarResultsControls($successful, $failed, $total, $cancelled)
-            
-            # Set final status message
-            $summary = "Execution completed: $successful successful"
-            if ($failed -gt 0) { $summary += ", $failed failed" }
-            if ($cancelled) { $summary += " (cancelled)" }
-            $summary += " out of $total tasks."
-            
-            $statusColor = if ($failed -eq 0) { 'Green' } else { 'Orange' }
-            $this.SetStatusMessage($summary, $statusColor)
-            
-            # Reset execution state
-            $this.IsExecuting = $false
-            $this.Controls.ExecuteBtn.Enabled = $true
-            
-            # Cleanup background thread resources
-            $this.CleanupBackgroundExecution()
-        }
+        # This method is now handled by CompleteExecution()
+        $this.CompleteExecution()
     }
     
     [void]CleanupBackgroundExecution() {
         Write-Host "[DEBUG] CleanupBackgroundExecution"
         
+        # Stop and cleanup execution timer if it exists
+        if ($this.State.ExecutionTimer) {
+            try {
+                $this.State.ExecutionTimer.Stop()
+                $this.State.ExecutionTimer.Dispose()
+                $this.State.ExecutionTimer = $null
+            }
+            catch {
+                Write-Host "[DEBUG] Error cleaning up execution timer: $_" -ForegroundColor Yellow
+            }
+        }
+        
+        # Legacy cleanup for old background thread approach (if any references exist)
         if ($this.State.BackgroundPowerShell) {
             try {
-                if (!$this.State.BackgroundAsyncResult.IsCompleted) {
+                if ($this.State.BackgroundAsyncResult -and !$this.State.BackgroundAsyncResult.IsCompleted) {
                     $this.State.BackgroundPowerShell.Stop()
                 }
-                $this.State.BackgroundPowerShell.EndInvoke($this.State.BackgroundAsyncResult)
+                if ($this.State.BackgroundAsyncResult) {
+                    $this.State.BackgroundPowerShell.EndInvoke($this.State.BackgroundAsyncResult)
+                }
                 $this.State.BackgroundPowerShell.Dispose()
             }
             catch {
@@ -1730,6 +1720,8 @@ class LMDTApp {
         }
         
         $this.State.BackgroundAsyncResult = $null
+        
+        Write-Host "[DEBUG] CleanupBackgroundExecution - Cleanup completed"
     }
 
     [hashtable]ExecuteScript($script) {
@@ -1952,18 +1944,10 @@ class LMDTApp {
             $this.State.CancelRequested = $true
             $this.Controls.StatusStopBtn.Enabled = $false
             $this.Controls.StatusStopBtn.Text = "Stopping..."
-            $this.Controls.StatusLabel.Text = "Cancellation requested - stopping after current task..."
+            $this.Controls.StatusLabel.Text = "Cancellation requested - stopping execution..."
             
-            # If we have a background thread, attempt to stop it gracefully
-            if ($this.State.BackgroundPowerShell -and !$this.State.BackgroundAsyncResult.IsCompleted) {
-                Write-Host "[DEBUG] OnStopExecution - Stopping background thread"
-                try {
-                    $this.State.BackgroundPowerShell.Stop()
-                }
-                catch {
-                    Write-Host "[DEBUG] Error stopping background PowerShell: $_" -ForegroundColor Yellow
-                }
-            }
+            # The timer will check CancelRequested flag and stop naturally
+            Write-Host "[DEBUG] OnStopExecution - Cancellation flag set"
         }
     }
     
@@ -2064,23 +2048,11 @@ class LMDTApp {
     [void]OnClearResults() {
         Write-Host "[DEBUG] OnClearResults"
         
-        $lv = $this.Controls.ScriptsListView
+        # Use the existing reload functionality to refresh the task view
+        # This will reload tasks from source and reset all states to default
+        $this.OnReloadCurrentView()
         
-        # Batch reset all task statuses with BeginUpdate/EndUpdate
-        $lv.BeginUpdate()
-        try {
-            for ($i = 0; $i -lt $lv.Items.Count; $i++) {
-                $item = $lv.Items[$i]
-                $item.SubItems[3].Text = $this.Config.Messages.Ready
-                $item.BackColor = $this.Config.Colors.Text
-                $item.Checked = $false
-            }
-        }
-        finally {
-            $lv.EndUpdate()
-        }
-        
-        # Hide all execution controls in status bar
+        # Additional clearing specific to execution results
         $this.HideStatusBarExecutionControls()
         
         # Clear execution results
@@ -2088,8 +2060,22 @@ class LMDTApp {
             $this.State.Remove('LastExecutionResults')
         }
         
-        $this.SetStatusMessage("Results cleared. Ready for new execution.", 'Green')
+        # Uncheck all tasks (OnReloadCurrentView preserves checked state, but we want to clear it)
+        $lv = $this.Controls.ScriptsListView
+        $lv.BeginUpdate()
+        try {
+            for ($i = 0; $i -lt $lv.Items.Count; $i++) {
+                $lv.Items[$i].Checked = $false
+            }
+        }
+        finally {
+            $lv.EndUpdate()
+        }
+        
+        # Update UI to reflect cleared state
+        $this.Controls.SelectAllCheckBox.Checked = $false
         $this.UpdateExecuteButtonText()
+        $this.SetStatusMessage("Results cleared. Ready for new execution.", 'Green')
     }
 
     [void]OnSwitchUser() {
@@ -2283,12 +2269,11 @@ class LMDTApp {
         }
         
         # Hide status bar execution controls if showing during-execution controls
-        if ($this.Controls.StatusExecPanel.Visible -and $this.Controls.StatusProgressBar.Visible) {
+        if ($this.Controls.ContainsKey("StatusStopBtn") -and $this.Controls.StatusStopBtn.Visible) {
             # Don't hide completely if showing results, just hide during-execution controls
             $this.Controls.StatusProgressBar.Visible = $false
             $this.Controls.StatusStopBtn.Visible = $false
             $this.Controls.StatusTaskCounter.Visible = $false
-            $this.Controls.StatusExecPanel.Visible = $false
         }
         
         # Hide cancel button if it's visible and reset to default state
@@ -2419,11 +2404,24 @@ class LMDTApp {
             return "$($this.Config.Owner.ToUpper())/$($this.Config.Repo.ToUpper())$($this.Config.Defaults.RemoteText)"
         }
     }
-    
     [void]OnFormShown() {
         Write-Host "[DEBUG] OnFormShown"
         $this.MainForm.Activate()
         $this.LoadData()
+    }
+
+    [void]OnFormClosed() {
+        Write-Host "[DEBUG] OnFormClosed - Cleaning up resources"
+        
+        # Stop any running execution
+        if ($this.IsExecuting) {
+            $this.State.CancelRequested = $true
+        }
+        
+        # Cleanup execution timer and background resources
+        $this.CleanupBackgroundExecution()
+        
+        Write-Host "[DEBUG] OnFormClosed - Cleanup completed"
     }
 
     [hashtable]ReadGroupedProfile([string]$profilePath) {
