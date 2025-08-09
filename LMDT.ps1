@@ -1,9 +1,6 @@
 # Load required assemblies first - MUST be at the very beginning for iex compatibility
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
-
-# PowerShell GUI utility for executing scripts
-
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # Function to determine the best data directory
@@ -505,6 +502,214 @@ class LocalScriptFileSource : LMDTTaskSource {
     }
 }
 
+# StatusBarManager class - Manages all status bar interactions and workflows
+class StatusBarManager {
+    $StatusBar          # System.Windows.Forms.Panel
+    $StatusLabel        # System.Windows.Forms.Label  
+    [array]$DynamicControls  # Track dynamically added controls
+    
+    # Constructor
+    StatusBarManager([LMDTApp]$app) {
+        $this.StatusBar = $app.Controls.StatusBar
+        $this.StatusLabel = $app.Controls.StatusLabel
+        $this.DynamicControls = @()
+    }
+    
+    # Core method: Set status message
+    [void]SetMessage([string]$text, [string]$color = 'Black') {
+        Write-Host "[DEBUG] StatusBarManager.SetMessage: $text" -ForegroundColor Gray
+        $this.StatusLabel.Text = $text
+        try {
+            $this.StatusLabel.ForeColor = $color
+        }
+        catch {
+            $this.StatusLabel.ForeColor = 'Black'
+        }
+    }
+    
+    # Core method: Add controls to status bar with automatic positioning
+    [array]AddControls([array]$controlSpecs) {
+        Write-Host "[DEBUG] StatusBarManager.AddControls - Adding $($controlSpecs.Count) controls" -ForegroundColor Gray
+        
+        # Clear existing dynamic controls first
+        $this.ClearControls()
+        
+        $controls = @()
+        $rightMargin = 10
+        $spacing = 5
+        $controlHeight = 22
+        $verticalOffset = ($this.StatusBar.Height - $controlHeight) / 2
+        
+        # Calculate total width needed
+        $totalWidth = 0
+        foreach ($spec in $controlSpecs) {
+            $totalWidth += $spec.Width + $spacing
+        }
+        
+        # Start position from right edge
+        $currentX = $this.StatusBar.Width - $rightMargin - $totalWidth
+        
+        foreach ($spec in $controlSpecs) {
+            $control = $this.CreateControl($spec, $currentX, $verticalOffset, $controlHeight)
+            if ($control) {
+                $this.StatusBar.Controls.Add($control)
+                $this.DynamicControls += $control
+                $controls += $control
+            }
+            $currentX += $spec.Width + $spacing
+        }
+        
+        $this.RefreshUI()
+        return $controls
+    }
+    
+    # Core method: Create individual control based on specification
+    [object]CreateControl([hashtable]$spec, [int]$x, [int]$y, [int]$height) {
+        $control = $null
+        
+        switch ($spec.Type.ToLower()) {
+            'button' {
+                $control = New-Object System.Windows.Forms.Button
+                $control.Text = $spec.Text
+                if ($spec.BackColor) { $control.BackColor = $spec.BackColor }
+                if ($spec.Action) { $control.Add_Click($spec.Action) }
+            }
+            'textbox' {
+                $control = New-Object System.Windows.Forms.TextBox
+                if ($spec.Text) { $control.Text = $spec.Text }
+                if ($spec.ForeColor) { $control.ForeColor = $spec.ForeColor }
+                if ($spec.Enter) { $control.Add_Enter($spec.Enter) }
+                if ($spec.Leave) { $control.Add_Leave($spec.Leave) }
+                if ($spec.KeyDown) { $control.Add_KeyDown($spec.KeyDown) }
+            }
+            'combobox' {
+                $control = New-Object System.Windows.Forms.ComboBox
+                $control.DropDownStyle = 'DropDownList'
+                if ($spec.Items) { $control.Items.AddRange($spec.Items) }
+                if ($spec.SelectedIndex -ge 0) { $control.SelectedIndex = $spec.SelectedIndex }
+            }
+            'datetimepicker' {
+                $control = New-Object System.Windows.Forms.DateTimePicker
+                $control.Format = 'Custom'
+                $control.CustomFormat = if ($spec.Format) { $spec.Format } else { 'MM/dd/yyyy hh:mm tt' }
+                if ($spec.Value) { $control.Value = $spec.Value }
+            }
+        }
+        
+        if ($control) {
+            $control.Width = $spec.Width
+            $control.Height = $height
+            $control.Location = New-Object System.Drawing.Point($x, $y)
+            $control.Anchor = 'Top, Right'
+        }
+        
+        return $control
+    }
+    
+    # Core method: Clear all dynamic controls
+    [void]ClearControls() {
+        Write-Host "[DEBUG] StatusBarManager.ClearControls" -ForegroundColor Gray
+        foreach ($control in $this.DynamicControls) {
+            if ($control -and $this.StatusBar.Controls.Contains($control)) {
+                $this.StatusBar.Controls.Remove($control)
+                $control.Dispose()
+            }
+        }
+        $this.DynamicControls = @()
+    }
+    
+    # Helper method: Show/hide built-in execution controls
+    [void]ShowControlsByType([hashtable]$controls, [string]$controlType, [bool]$visible = $true) {
+        Write-Host "[DEBUG] StatusBarManager.ShowControlsByType - Type: $controlType, Visible: $visible" -ForegroundColor Gray
+        
+        $typeMap = @{
+            'execution' = @('StatusProgressBar', 'StatusStopBtn', 'StatusTaskCounter')
+            'results'   = @('StatusViewLogsBtn', 'StatusRetryBtn', 'StatusClearBtn')
+        }
+        
+        if ($typeMap.ContainsKey($controlType)) {
+            foreach ($controlName in $typeMap[$controlType]) {
+                $this.SetControlVisibility($controls, $controlName, $visible)
+            }
+        }
+    }
+    
+    [void]SetControlVisibility([hashtable]$controls, [string]$controlName, [bool]$visible) {
+        try {
+            if ($controls.ContainsKey($controlName) -and $controls[$controlName]) {
+                $controls[$controlName].Visible = $visible
+                Write-Host "[DEBUG] StatusBarManager.SetControlVisibility - $controlName = $visible" -ForegroundColor DarkGray
+            }
+        }
+        catch {
+            Write-Host "[DEBUG] StatusBarManager.SetControlVisibility - Error setting $controlName visibility: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    
+    [void]ShowExecutionControls([hashtable]$controls) {
+        Write-Host "[DEBUG] StatusBarManager.ShowExecutionControls" -ForegroundColor Gray
+        $this.ShowControlsByType($controls, 'execution', $true)
+        $this.ShowControlsByType($controls, 'results', $false)
+    }
+    
+    [void]HideExecutionControls([hashtable]$controls) {
+        Write-Host "[DEBUG] StatusBarManager.HideExecutionControls" -ForegroundColor Gray
+        $this.ShowControlsByType($controls, 'execution', $false)
+    }
+    
+    [void]ShowResultsControls([hashtable]$controls) {
+        Write-Host "[DEBUG] StatusBarManager.ShowResultsControls" -ForegroundColor Gray
+        $this.ShowControlsByType($controls, 'results', $true)
+    }
+    
+    [void]HideResultsControls([hashtable]$controls) {
+        Write-Host "[DEBUG] StatusBarManager.HideResultsControls" -ForegroundColor Gray
+        $this.ShowControlsByType($controls, 'results', $false)
+    }
+    
+    # Legacy compatibility method - delegates to the main method
+    [void]HideResultsControls() {
+        Write-Host "[DEBUG] StatusBarManager.HideResultsControls (legacy)" -ForegroundColor Yellow
+        # This is a legacy method that doesn't know which controls to operate on
+        # Should be avoided - prefer the parameterized version
+    }
+    
+    # Helper method: Update progress controls generically
+    [void]UpdateProgressControls([hashtable]$controls, [int]$completed, [int]$total) {
+        Write-Host "[DEBUG] StatusBarManager.UpdateProgressControls - $completed/$total" -ForegroundColor Gray
+        try {
+            $this.SetControlProperty($controls, 'StatusProgressBar', 'Value', $completed)
+            $this.SetControlProperty($controls, 'StatusTaskCounter', 'Text', "$completed/$total")
+        }
+        catch {
+            Write-Host "[DEBUG] StatusBarManager.UpdateProgressControls - Error: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    
+    [void]SetControlProperty([hashtable]$controls, [string]$controlName, [string]$property, $value) {
+        try {
+            if ($controls.ContainsKey($controlName) -and $controls[$controlName]) {
+                $controls[$controlName].$property = $value
+                Write-Host "[DEBUG] StatusBarManager.SetControlProperty - $controlName.$property = $value" -ForegroundColor DarkGray
+            }
+        }
+        catch {
+            Write-Host "[DEBUG] StatusBarManager.SetControlProperty - Error setting $controlName.$property`: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    
+    [void]RefreshUI() {
+        # Force UI refresh
+        $appType = 'System.Windows.Forms.Application' -as [type]
+        if ($appType) { $appType::DoEvents() }
+    }
+    
+    [void]Dispose() {
+        Write-Host "[DEBUG] StatusBarManager.Dispose" -ForegroundColor Gray
+        $this.ClearControls()
+    }
+}
+
 class LMDTApp {
 
     [void]LoadGroupedTasksToListView([hashtable]$groupedTasks) {
@@ -541,6 +746,7 @@ class LMDTApp {
     [hashtable]$I18N = @{}
     [hashtable]$State = @{}
     [hashtable]$TaskCache = @{} # Cache for all parsed tasks for fast template lookup
+    [StatusBarManager]$StatusBarManager
 
     # Registry for discoverable sources
     static [hashtable]$SourceRegistry = @{}
@@ -731,293 +937,69 @@ class LMDTApp {
     }
     
     [void]ShowSchedulingControls($selectedItems) {
-        Write-Host "[DEBUG] ShowSchedulingControls - Tasks: $($selectedItems.Count)"
-        
-        # Store selected items for later use
-        $this.State.SchedulingItems = $selectedItems
-        
-        # Create dynamic input controls in the status bar (similar to template pattern)
-        $statusBar = $this.Controls.StatusBar
-        $app = $this  # Capture app instance for closures
-        
-        # Clear existing controls except StatusLabel and StatusProgressBar (same as template)
-        $controlsToRemove = @()
-        foreach ($control in $statusBar.Controls) {
-            if ($control -ne $this.Controls.StatusLabel -and $control -ne $this.Controls.StatusProgressBar) {
-                $controlsToRemove += $control
-            }
-        }
-        foreach ($control in $controlsToRemove) {
-            $statusBar.Controls.Remove($control)
-        }
-        
-        # Create scheduling controls with consistent styling
-        $controlHeight = 22
-        $verticalOffset = ($statusBar.Height - $controlHeight) / 2
-        
-        # Labels on the left side (consistent with template pattern)
-        $dateLabel = New-Object System.Windows.Forms.Label
-        $dateLabel.Text = "Schedule Date/Time:"
-        $dateLabel.Size = New-Object System.Drawing.Size(110, $controlHeight)
-        $dateLabel.Location = New-Object System.Drawing.Point(10, $verticalOffset)
-        $dateLabel.TextAlign = 'MiddleLeft'
-        $statusBar.Controls.Add($dateLabel)
-        
-        $repeatLabel = New-Object System.Windows.Forms.Label
-        $repeatLabel.Text = "Repeat:"
-        $repeatLabel.Size = New-Object System.Drawing.Size(50, $controlHeight)
-        $repeatLabel.Location = New-Object System.Drawing.Point(130, $verticalOffset)
-        $repeatLabel.TextAlign = 'MiddleLeft'
-        $statusBar.Controls.Add($repeatLabel)
-        
-        # Calculate right-aligned positions (working backwards from right edge)
-        $rightMargin = 10
-        $buttonWidth = 70
-        $comboWidth = 80
-        $dateTimeWidth = 140
-        $spacing = 3
-        
-        # Cancel button (rightmost)
-        $cancelBtn = New-Object System.Windows.Forms.Button
-        $cancelBtn.Text = "Cancel"
-        $cancelBtn.Width = $buttonWidth
-        $cancelBtn.Height = $controlHeight
-        $cancelBtn.Location = New-Object System.Drawing.Point(($statusBar.Width - $rightMargin - $buttonWidth), $verticalOffset)
-        $cancelBtn.Anchor = 'Top, Right'
-        $cancelBtn.Add_Click({
-                $app.OnCancelSchedule()
-            }.GetNewClosure())
-        $statusBar.Controls.Add($cancelBtn)
-        
-        # Schedule button (to the left of cancel)
-        $scheduleBtn = New-Object System.Windows.Forms.Button
-        $scheduleBtn.Text = "Schedule"
-        $scheduleBtn.Width = $buttonWidth
-        $scheduleBtn.Height = $controlHeight
-        $scheduleBtn.Location = New-Object System.Drawing.Point(($cancelBtn.Location.X - $spacing - $buttonWidth), $verticalOffset)
-        $scheduleBtn.Anchor = 'Top, Right'
-        $scheduleBtn.Add_Click({
-                $app.OnScheduleTask()
-            }.GetNewClosure())
-        $statusBar.Controls.Add($scheduleBtn)
-        
-        # Repeat combo (to the left of schedule button)
-        $repeatCombo = New-Object System.Windows.Forms.ComboBox
-        $repeatCombo.DropDownStyle = 'DropDownList'
-        $repeatCombo.Width = $comboWidth
-        $repeatCombo.Height = $controlHeight
-        $repeatCombo.Location = New-Object System.Drawing.Point(($scheduleBtn.Location.X - $spacing - $comboWidth), $verticalOffset)
-        $repeatCombo.Anchor = 'Top, Right'
-        $repeatCombo.Items.AddRange(@('None', 'Daily', 'Weekly', 'Monthly', 'Yearly'))
-        $repeatCombo.SelectedIndex = 0
-        $statusBar.Controls.Add($repeatCombo)
-        
-        # DateTime picker (to the left of repeat combo)
-        $datePicker = New-Object System.Windows.Forms.DateTimePicker
-        $datePicker.Format = 'Custom'
-        $datePicker.CustomFormat = 'MM/dd/yyyy hh:mm tt'
-        $datePicker.Width = $dateTimeWidth
-        $datePicker.Height = $controlHeight
-        $datePicker.Location = New-Object System.Drawing.Point(($repeatCombo.Location.X - $spacing - $dateTimeWidth), $verticalOffset)
-        $datePicker.Anchor = 'Top, Right'
-        $datePicker.Value = (Get-Date).AddMinutes(5)  # Default to 5 minutes from now
-        $statusBar.Controls.Add($datePicker)
-        
-        # Set focus and message
-        $datePicker.Focus()
-        $this.Controls.StatusLabel.Text = "Set schedule for $($selectedItems.Count) task(s) and click Schedule:"
-        
-        # Store reference for cleanup (same pattern as template)
-        $this.State.SchedulingInputControls = @($dateLabel, $repeatLabel, $datePicker, $repeatCombo, $scheduleBtn, $cancelBtn)
-        $this.State.SchedulingItems = $selectedItems
-        $this.State.SchedulingDatePicker = $datePicker
-        $this.State.SchedulingRepeatCombo = $repeatCombo
-    }
-    
-    [void]HideSchedulingControls() {
-        Write-Host "[DEBUG] HideSchedulingControls"
-        
-        # Use the centralized cleanup method (same as template pattern)
-        $this.CleanupSchedulingControls()
-        $this.SetStatusMessage("Ready", 'Black')
-    }
-    
-    [void]CleanupSchedulingControls() {
-        Write-Host "[DEBUG] CleanupSchedulingControls"
-        if ($this.State.SchedulingInputControls -and $this.State.SchedulingInputControls.Count -gt 0) {
-            $statusBar = $this.Controls.StatusBar
-            
-            # Remove all scheduling input controls
-            foreach ($control in $this.State.SchedulingInputControls) {
-                if ($statusBar.Controls.Contains($control)) {
-                    $statusBar.Controls.Remove($control)
-                    $control.Dispose()
+        Write-Host "[DEBUG] ShowSchedulingControls - using simplified StatusBarManager"
+        if ($this.StatusBarManager) {
+            # Define control specifications for scheduling input
+            $controlSpecs = @(
+                @{
+                    Type   = 'datetimepicker'
+                    Width  = 140
+                    Format = 'MM/dd/yyyy hh:mm tt'
+                    Value  = (Get-Date).AddMinutes(5)
+                },
+                @{
+                    Type          = 'combobox'
+                    Width         = 80
+                    Items         = @('No Repeat', 'Daily', 'Weekly', 'Monthly', 'Yearly')
+                    SelectedIndex = 0
+                },
+                @{
+                    Type      = 'button'
+                    Width     = 70
+                    Text      = "Schedule"
+                    BackColor = 'LightBlue'
+                },
+                @{
+                    Type      = 'button'
+                    Width     = 70
+                    Text      = "Cancel"
+                    BackColor = 'LightGray'
                 }
+            )
+            
+            # Create controls and store references for cross-control communication
+            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs)
+            if ($dynamicControls.Count -ge 4) {
+                $app = $this  # Capture reference for closures
+                $datePicker = $dynamicControls[0]
+                $repeatCombo = $dynamicControls[1]
+                $scheduleBtn = $dynamicControls[2]
+                $cancelBtn = $dynamicControls[3]
+                
+                # Update the Schedule button action with proper references
+                $scheduleBtn.Add_Click({
+                        $scheduleDateTime = $datePicker.Value
+                        $repeatType = $repeatCombo.SelectedItem
+                        if ($repeatType) {
+                            $app.CreateSimpleScheduledTask($selectedItems, $scheduleDateTime, $repeatType)
+                        }
+                        else {
+                            $app.StatusBarManager.SetMessage("Please select a repeat option.", 'Orange')
+                        }
+                    }.GetNewClosure())
+                
+                # Update the Cancel button action
+                $cancelBtn.Add_Click({
+                        $app.StatusBarManager.ClearControls()
+                        $app.StatusBarManager.SetMessage("Scheduling cancelled.", 'Orange')
+                    }.GetNewClosure())
             }
             
-            # Clear the state
-            $this.State.SchedulingInputControls = @()
-            $this.State.SchedulingItems = $null
-            $this.State.SchedulingDatePicker = $null
-            $this.State.SchedulingRepeatCombo = $null
-        }
-    }
-    
-    [void]CreateSimpleScheduledTask($selectedItems, $scheduleDateTime, $repeatType) {
-        Write-Host "[DEBUG] CreateSimpleScheduledTask - Items: $($selectedItems.Count), DateTime: $scheduleDateTime, Repeat: $repeatType"
-        
-        foreach ($item in $selectedItems) {
-            $tag = $item.Tag
-            if ($tag -and $tag.Command) {
-                $taskBaseName = "LMDT_" + ($tag.Description -replace '[^a-zA-Z0-9]', '_')
-                
-                # Create task action
-                $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -Command `"$($tag.Command)`""
-                
-                # Create trigger based on repeat type
-                $trigger = $null
-                $taskName = $taskBaseName
-                
-                try {
-                    switch ($repeatType) {
-                        'None' {
-                            $trigger = New-ScheduledTaskTrigger -Once -At $scheduleDateTime
-                            $taskName += "_OneTime_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
-                        }
-                        'Daily' {
-                            $trigger = New-ScheduledTaskTrigger -Daily -At $scheduleDateTime
-                            $taskName += "_Daily_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
-                        }
-                        'Weekly' {
-                            $trigger = New-ScheduledTaskTrigger -Weekly -At $scheduleDateTime -DaysOfWeek $scheduleDateTime.DayOfWeek
-                            $taskName += "_Weekly_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
-                        }
-                        'Monthly' {
-                            # For monthly, use once trigger and let user reschedule if needed
-                            # Note: True monthly recurrence requires more complex setup
-                            $trigger = New-ScheduledTaskTrigger -Once -At $scheduleDateTime
-                            $taskName += "_Monthly_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
-                            Write-Host "[DEBUG] Monthly task created as one-time (complex monthly recurrence not fully supported)" -ForegroundColor Yellow
-                        }
-                        'Yearly' {
-                            # For yearly, use once trigger and let user reschedule if needed  
-                            # Note: True yearly recurrence requires more complex setup
-                            $trigger = New-ScheduledTaskTrigger -Once -At $scheduleDateTime
-                            $taskName += "_Yearly_$($scheduleDateTime.ToString('yyyyMMdd_HHmm'))"
-                            Write-Host "[DEBUG] Yearly task created as one-time (complex yearly recurrence not fully supported)" -ForegroundColor Yellow
-                        }
-                    }
-                    
-                    # Create task settings
-                    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-                    
-                    # Register the scheduled task
-                    $registeredTask = Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Force
-                    
-                    Write-Host "[DEBUG] CreateSimpleScheduledTask - Created: $taskName" -ForegroundColor Green
-                    
-                }
-                catch {
-                    Write-Warning "[DEBUG] CreateSimpleScheduledTask - Failed to create $taskName : $_"
-                    $this.SetStatusMessage("Failed to schedule task: $($tag.Description) - $_", 'Red')
-                    return
-                }
+            # Set status message and focus
+            $this.StatusBarManager.SetMessage("Set schedule for $($selectedItems.Count) task(s) and click Schedule:", 'Black')
+            if ($dynamicControls.Count -gt 0) {
+                $dynamicControls[0].Focus()
             }
-        }
-        
-        # Show success message and scheduling results controls
-        $repeatText = if ($repeatType -eq 'None') { 'once' } else { $repeatType.ToLower() }
-        $this.ShowSchedulingResults($selectedItems.Count, $scheduleDateTime, $repeatText)
-    }
-    
-    [void]OnScheduleTask() {
-        Write-Host "[DEBUG] OnScheduleTask"
-        
-        if (-not $this.State.SchedulingItems) {
-            $this.SetStatusMessage("No tasks selected for scheduling.", 'Orange')
-            return
-        }
-        
-        # Get values from dynamic controls (not predefined controls)
-        if (-not $this.State.SchedulingDatePicker -or -not $this.State.SchedulingRepeatCombo) {
-            $this.SetStatusMessage("Scheduling controls not available.", 'Orange')
-            return
-        }
-        
-        $scheduleDateTime = $this.State.SchedulingDatePicker.Value
-        $repeatType = $this.State.SchedulingRepeatCombo.SelectedItem
-        
-        if (-not $repeatType) {
-            $this.SetStatusMessage("Please select a repeat option.", 'Orange')
-            return
-        }
-        
-        # Create the scheduled task (this will call ShowSchedulingResults internally)
-        $this.CreateSimpleScheduledTask($this.State.SchedulingItems, $scheduleDateTime, $repeatType)
-        
-        # Note: Don't hide scheduling controls here - ShowSchedulingResults will display the results
-        # The results will be cleared when user clicks "Clear" button
-    }
-    
-    [void]ShowSchedulingResults([int]$taskCount, [datetime]$scheduleDateTime, [string]$repeatText) {
-        Write-Host "[DEBUG] ShowSchedulingResults - Tasks: $taskCount, DateTime: $scheduleDateTime, Repeat: $repeatText"
-        
-        # Hide scheduling controls first
-        $this.CleanupSchedulingControls()
-        
-        # Create scheduling results controls in status bar (similar to execution results)
-        $statusBar = $this.Controls.StatusBar
-        $app = $this
-        
-        # Calculate right-aligned positions
-        $rightMargin = 10
-        $buttonWidth = 80
-        $spacing = 3
-        $controlHeight = 22
-        $verticalOffset = ($statusBar.Height - $controlHeight) / 2
-        
-        # Clear Scheduling button (rightmost)
-        $clearBtn = New-Object System.Windows.Forms.Button
-        $clearBtn.Text = "Clear"
-        $clearBtn.Width = $buttonWidth
-        $clearBtn.Height = $controlHeight
-        $clearBtn.Location = New-Object System.Drawing.Point(($statusBar.Width - $rightMargin - $buttonWidth), $verticalOffset)
-        $clearBtn.Anchor = 'Top, Right'
-        $clearBtn.BackColor = 'LightGray'
-        $clearBtn.Add_Click({
-                $app.OnClearSchedulingResults()
-            }.GetNewClosure())
-        $statusBar.Controls.Add($clearBtn)
-        
-        # View Tasks button (to the left of clear)
-        $viewTasksBtn = New-Object System.Windows.Forms.Button
-        $viewTasksBtn.Text = "View Tasks"
-        $viewTasksBtn.Width = $buttonWidth
-        $viewTasksBtn.Height = $controlHeight
-        $viewTasksBtn.Location = New-Object System.Drawing.Point(($clearBtn.Location.X - $spacing - $buttonWidth), $verticalOffset)
-        $viewTasksBtn.Anchor = 'Top, Right'
-        $viewTasksBtn.BackColor = 'LightBlue'
-        $viewTasksBtn.Add_Click({
-                $app.OnViewScheduledTasks()
-            }.GetNewClosure())
-        $statusBar.Controls.Add($viewTasksBtn)
-        
-        # Set success message
-        $this.Controls.StatusLabel.Text = "✓ Scheduled $taskCount task(s) to run $repeatText at $($scheduleDateTime.ToString('MM/dd/yyyy hh:mm tt'))"
-        $this.Controls.StatusLabel.ForeColor = 'Green'
-        
-        # Store scheduling results controls for cleanup
-        $this.State.SchedulingResultsControls = @($viewTasksBtn, $clearBtn)
-        
-        # Store scheduling results for later use
-        if (-not $this.State.ContainsKey('LastSchedulingResults')) {
-            $this.State.LastSchedulingResults = @{}
-        }
-        $this.State.LastSchedulingResults = @{
-            TaskCount        = $taskCount
-            ScheduleDateTime = $scheduleDateTime
-            RepeatText       = $repeatText
-            CompletedTime    = Get-Date
         }
     }
     
@@ -1111,20 +1093,9 @@ class LMDTApp {
     
     [void]HideSchedulingResultsControls() {
         Write-Host "[DEBUG] HideSchedulingResultsControls"
-        
-        if ($this.State.SchedulingResultsControls -and $this.State.SchedulingResultsControls.Count -gt 0) {
-            $statusBar = $this.Controls.StatusBar
-            
-            # Remove all scheduling results controls
-            foreach ($control in $this.State.SchedulingResultsControls) {
-                if ($statusBar.Controls.Contains($control)) {
-                    $statusBar.Controls.Remove($control)
-                    $control.Dispose()
-                }
-            }
-            
-            # Clear the state
-            $this.State.SchedulingResultsControls = @()
+        # This method is now handled by StatusBarManager.ClearControls()
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.ClearControls()
         }
     }
     
@@ -1134,6 +1105,129 @@ class LMDTApp {
         # Hide scheduling controls and clear state
         $this.HideSchedulingControls()
         $this.SetStatusMessage("Scheduling cancelled.", 'Gray')
+    }
+    
+    [void]HideSchedulingControls() {
+        Write-Host "[DEBUG] HideSchedulingControls"
+        # This method is now handled by StatusBarManager.ClearControls()
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.ClearControls()
+        }
+    }
+    
+    [void]CreateSimpleScheduledTask($selectedItems, $scheduleDateTime, $repeatType) {
+        Write-Host "[DEBUG] CreateSimpleScheduledTask - $($selectedItems.Count) items, $scheduleDateTime, $repeatType"
+        
+        try {
+            # Clear scheduling controls first
+            $this.StatusBarManager.ClearControls()
+            
+            # Create a simple scheduled task for the selected items
+            $taskName = "LMDT_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+            $commandList = @()
+            
+            foreach ($item in $selectedItems) {
+                $tag = $item.Tag
+                if ($tag -and $tag.Command) {
+                    $commandList += $tag.Command
+                }
+            }
+            
+            if ($commandList.Count -eq 0) {
+                $this.StatusBarManager.SetMessage("No valid commands found in selected tasks.", 'Red')
+                return
+            }
+            
+            # Create a PowerShell script that will execute all commands
+            $scriptContent = @"
+# LMDT Generated Script - $(Get-Date)
+# Tasks: $($selectedItems.Count)
+# Repeat: $repeatType
+
+"@
+            
+            foreach ($cmd in $commandList) {
+                $scriptContent += "`nWrite-Host 'Executing: $($cmd.Substring(0, [Math]::Min(50, $cmd.Length)))...' -ForegroundColor Green"
+                $scriptContent += "`n$cmd"
+                $scriptContent += "`nWrite-Host 'Completed.' -ForegroundColor Cyan"
+                $scriptContent += "`n"
+            }
+            
+            # Save script to temp location
+            $scriptPath = Join-Path $env:TEMP "$taskName.ps1"
+            $scriptContent | Set-Content $scriptPath -Force
+            
+            # Create the scheduled task
+            $action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -File `"$scriptPath`""
+            $trigger = New-ScheduledTaskTrigger -Once -At $scheduleDateTime
+            
+            # Set repeat interval if specified
+            if ($repeatType -and $repeatType -ne 'No Repeat') {
+                switch ($repeatType) {
+                    'Daily' { $trigger.Repetition = New-ScheduledTaskRepetition -Interval (New-TimeSpan -Days 1) -Duration ([TimeSpan]::MaxValue) }
+                    'Weekly' { $trigger.Repetition = New-ScheduledTaskRepetition -Interval (New-TimeSpan -Days 7) -Duration ([TimeSpan]::MaxValue) }
+                    'Monthly' { $trigger.Repetition = New-ScheduledTaskRepetition -Interval (New-TimeSpan -Days 30) -Duration ([TimeSpan]::MaxValue) }
+                    'Yearly' { $trigger.Repetition = New-ScheduledTaskRepetition -Interval (New-TimeSpan -Days 365) -Duration ([TimeSpan]::MaxValue) }
+                }
+            }
+            
+            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+            $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+            
+            # Register the task
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+            
+            # Show success message and scheduling results controls
+            $this.ShowSchedulingResults($selectedItems.Count, $scheduleDateTime, $repeatType)
+            
+        }
+        catch {
+            $this.StatusBarManager.SetMessage("Failed to create scheduled task: $($_.Exception.Message)", 'Red')
+            Write-Host "[ERROR] CreateSimpleScheduledTask failed: $_" -ForegroundColor Red
+        }
+    }
+    
+    [void]ShowSchedulingResults([int]$taskCount, [datetime]$scheduleDateTime, [string]$repeatText) {
+        Write-Host "[DEBUG] ShowSchedulingResults - Tasks: $taskCount"
+        if ($this.StatusBarManager) {
+            # Define control specifications for scheduling results
+            $controlSpecs = @(
+                @{
+                    Type      = 'button'
+                    Width     = 80
+                    Text      = "View Tasks"
+                    BackColor = 'LightBlue'
+                },
+                @{
+                    Type      = 'button'
+                    Width     = 80
+                    Text      = "Clear"
+                    BackColor = 'LightGray'
+                }
+            )
+            
+            # Create controls and store references for cross-control communication
+            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs)
+            if ($dynamicControls.Count -ge 2) {
+                $viewTasksBtn = $dynamicControls[0]
+                $clearBtn = $dynamicControls[1]
+                
+                # Update the View Tasks button action
+                $viewTasksBtn.Add_Click({
+                        $this.OnViewScheduledTasks()
+                    }.GetNewClosure())
+                
+                # Update the Clear button action
+                $clearBtn.Add_Click({
+                        $this.StatusBarManager.ClearControls()
+                        $this.StatusBarManager.SetMessage("Ready", 'Black')
+                    }.GetNewClosure())
+            }
+            
+            # Set success message
+            $repeatDisplay = if ($repeatText -eq 'No Repeat') { "once" } else { $repeatText.ToLower() }
+            $this.StatusBarManager.SetMessage("Scheduled $taskCount task(s) to run $repeatDisplay at $($scheduleDateTime.ToString('MM/dd/yyyy hh:mm tt'))", 'Green')
+        }
     }
     
     [void]OnCreateTemplate() {
@@ -1156,94 +1250,95 @@ class LMDTApp {
 
     [void]ShowTemplateInputUI($selectedItems) {
         Write-Host "[DEBUG] ShowTemplateInputUI"
-        $statusBar = $this.Controls.StatusBar
-        $app = $this  # Capture app instance for closures
-        
-        # Clear existing controls except StatusLabel and StatusProgressBar
-        $controlsToRemove = @()
-        foreach ($control in $statusBar.Controls) {
-            if ($control -ne $this.Controls.StatusLabel -and $control -ne $this.Controls.StatusProgressBar) {
-                $controlsToRemove += $control
+        if ($this.StatusBarManager) {
+            # Define control specifications for template input
+            $controlSpecs = @(
+                @{
+                    Type      = 'textbox'
+                    Width     = 200
+                    Text      = "Enter template name..."
+                    ForeColor = 'Gray'
+                    Enter     = {
+                        if ($this.Text -eq "Enter template name...") {
+                            $this.Text = ""
+                            $this.ForeColor = 'Black'
+                        }
+                    }.GetNewClosure()
+                    Leave     = {
+                        if ($this.Text.Trim() -eq "") {
+                            $this.Text = "Enter template name..."
+                            $this.ForeColor = 'Gray'
+                        }
+                    }.GetNewClosure()
+                    KeyDown   = {
+                        if ($_.KeyCode -eq 'Return') {
+                            $createBtn.PerformClick()
+                        }
+                    }
+                },
+                @{
+                    Type      = 'button'
+                    Width     = 80
+                    Text      = "Create"
+                    BackColor = 'LightBlue'
+                },
+                @{
+                    Type      = 'button'
+                    Width     = 80
+                    Text      = "Cancel"
+                    BackColor = 'LightGray'
+                }
+            )
+            
+            # Create controls and store references for cross-control communication
+            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs)
+            if ($dynamicControls.Count -ge 3) {
+                $app = $this  # Capture reference for closures
+                $nameInput = $dynamicControls[0]
+                $createBtn = $dynamicControls[1]
+                $cancelBtn = $dynamicControls[2]
+                
+                # Update the KeyDown handler now that we have createBtn reference
+                $nameInput.Add_KeyDown({
+                        if ($_.KeyCode -eq 'Return') {
+                            $createBtn.PerformClick()
+                        }
+                    }.GetNewClosure())
+                
+                # Update the Create button action with proper references
+                $createBtn.Add_Click({
+                        $templateName = $nameInput.Text.Trim()
+                        if ($templateName -and $templateName -ne "Enter template name...") {
+                            $app.CreateTemplateFromItems($templateName, $selectedItems)
+                            $app.StatusBarManager.ClearControls()
+                            $app.StatusBarManager.SetMessage("Template '$templateName' created successfully.", 'Green')
+                        }
+                        else {
+                            $app.StatusBarManager.SetMessage("Please enter a valid template name.", 'Red')
+                        }
+                    }.GetNewClosure())
+                
+                # Update the Cancel button action
+                $cancelBtn.Add_Click({
+                        $app.StatusBarManager.ClearControls()
+                        $app.StatusBarManager.SetMessage("Template creation cancelled.", 'Orange')
+                    }.GetNewClosure())
+            }
+            
+            # Set status message and focus
+            $this.StatusBarManager.SetMessage("Enter template name for $($selectedItems.Count) task(s):", 'Black')
+            if ($dynamicControls.Count -gt 0) {
+                $dynamicControls[0].Focus()
             }
         }
-        foreach ($control in $controlsToRemove) {
-            $statusBar.Controls.Remove($control)
-        }
-        
-        # Create template name input with label on left, controls on right
-        $controlHeight = 22
-        $verticalOffset = ($statusBar.Height - $controlHeight) / 2
-        
-        # Label on the left side
-        $inputLabel = New-Object System.Windows.Forms.Label
-        $inputLabel.Text = "Template Name:"
-        $inputLabel.Size = New-Object System.Drawing.Size(100, $controlHeight)
-        $inputLabel.Location = New-Object System.Drawing.Point(10, $verticalOffset)
-        $inputLabel.TextAlign = 'MiddleLeft'
-        $statusBar.Controls.Add($inputLabel)
-        
-        # Calculate right-aligned positions (working backwards from right edge)
-        $rightMargin = 10
-        $buttonWidth = 60
-        $textBoxWidth = 200
-        $spacing = 3
-        
-        # Input box (create first so it can be referenced in button handlers)
-        $inputBox = New-Object System.Windows.Forms.TextBox
-        $inputBox.Width = $textBoxWidth
-        $inputBox.Height = $controlHeight
-        $inputBox.Name = "TemplateNameInput"
-        $inputBox.Anchor = 'Top, Right'
-        
-        # Cancel button (rightmost)
-        $cancelBtn = New-Object System.Windows.Forms.Button
-        $cancelBtn.Text = "Cancel"
-        $cancelBtn.Width = $buttonWidth
-        $cancelBtn.Height = $controlHeight
-        $cancelBtn.Location = New-Object System.Drawing.Point(($statusBar.Width - $rightMargin - $buttonWidth), $verticalOffset)
-        $cancelBtn.Anchor = 'Top, Right'
-        $cancelBtn.Add_Click({
-                $app.HideTemplateInputUI()
-            }.GetNewClosure())
-        $statusBar.Controls.Add($cancelBtn)
-        
-        # Create button (to the left of cancel)
-        $saveBtn = New-Object System.Windows.Forms.Button
-        $saveBtn.Text = "Create"
-        $saveBtn.Width = $buttonWidth
-        $saveBtn.Height = $controlHeight
-        $saveBtn.Location = New-Object System.Drawing.Point(($cancelBtn.Location.X - $spacing - $buttonWidth), $verticalOffset)
-        $saveBtn.Anchor = 'Top, Right'
-        $saveBtn.Add_Click({
-                $templateName = $inputBox.Text.Trim()
-                if ($templateName) {
-                    $app.CreateTemplateFromItems($templateName, $selectedItems)
-                    $app.HideTemplateInputUI()
-                }
-                else {
-                    $app.SetStatusMessage("Please enter a template name.", 'Orange')
-                }
-            }.GetNewClosure())
-        $statusBar.Controls.Add($saveBtn)
-        
-        # Position and add input box (to the left of create button)
-        $inputBox.Location = New-Object System.Drawing.Point(($saveBtn.Location.X - $spacing - $textBoxWidth), $verticalOffset)
-        $statusBar.Controls.Add($inputBox)
-        
-        # Set focus and message
-        $inputBox.Focus()
-        $this.Controls.StatusLabel.Text = "Enter template name for $($selectedItems.Count) selected tasks:"
-        
-        # Store reference for cleanup
-        $this.State.TemplateInputControls = @($inputLabel, $inputBox, $saveBtn, $cancelBtn)
-        $this.State.TemplateItems = $selectedItems
     }
 
     [void]HideTemplateInputUI() {
         Write-Host "[DEBUG] HideTemplateInputUI"
-        # Use the centralized cleanup method
-        $this.CleanupStatusBar()
-        $this.SetStatusMessage("Ready", 'Black')
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.ClearControls()
+            $this.StatusBarManager.SetMessage("Ready", 'Black')
+        }
     }
 
     [void]OnInstall() {
@@ -1340,11 +1435,11 @@ class LMDTApp {
 
         # Main Form
         $this.MainForm = New-Object System.Windows.Forms.Form
-        # Create custom title bar format: "LMDT - Let me do this! | [Source] (Local/Remote)"
+        # Create custom title bar format: LMDT - Let me do this! | Source (Local/Remote)
         if ($sourceInfo.Contains("(Remote)")) {
-            # Remote execution - sourceInfo is in format "OWNER/REPO (Remote)"
+            # Remote execution - sourceInfo is in format OWNER/REPO (Remote)
             $repoName = $sourceInfo -replace " \(Remote\)$", ""
-            $sourceName = ($repoName -split "/")[-1]  # Get repo name from "owner/repo"
+            $sourceName = ($repoName -split "/")[-1]  # Get repo name from owner/repo
             $this.MainForm.Text = "$($this.Config.Window.Title) | $($sourceName.Substring(0,1).ToUpper() + $sourceName.Substring(1)) (Remote)"
         }
         else {
@@ -1735,6 +1830,10 @@ class LMDTApp {
         
         $moveDownMenu = $contextMenu.Items.Add("Move Down") 
         $moveDownMenu.Add_Click({ $app.MoveSelectedItemDown() })
+        
+        # Initialize StatusBarManager after controls are created
+        $this.StatusBarManager = [StatusBarManager]::new($this)
+        Write-Host "[DEBUG] StatusBarManager initialized" -ForegroundColor Green
     }
     # Sidebar Event Handlers
     [void]OnMore() {
@@ -2249,110 +2348,84 @@ class LMDTApp {
     
     [void]ShowStatusBarExecutionControls([int]$totalTasks) {
         Write-Host "[DEBUG] ShowStatusBarExecutionControls - Total: $totalTasks"
-        
-        # Show execution progress bar
-        $this.Controls.StatusProgressBar.Visible = $true
-        
-        # Configure progress bar
-        $this.Controls.StatusProgressBar.Minimum = 0
-        $this.Controls.StatusProgressBar.Maximum = $totalTasks
-        $this.Controls.StatusProgressBar.Value = 0
-        
-        # Show during-execution buttons
-        $this.Controls.StatusStopBtn.Visible = $true
-        $this.Controls.StatusStopBtn.Enabled = $true
-        $this.Controls.StatusStopBtn.Text = "Stop"
-        $this.Controls.StatusTaskCounter.Visible = $true
-        $this.Controls.StatusTaskCounter.Text = "0/$totalTasks"
-        
-        # Hide after-execution buttons
-        $this.HideStatusBarResultsControls()
-        
-        # Update main status message with execution info
-        $this.Controls.StatusLabel.Text = "Preparing to execute $totalTasks tasks..."
-        
-        $this.RefreshUI()
+        if ($this.StatusBarManager) {
+            # Clear any existing dynamic controls
+            $this.StatusBarManager.ClearControls()
+            
+            # Show built-in execution controls
+            $this.StatusBarManager.ShowExecutionControls($this.Controls)
+            
+            # Setup progress bar
+            $this.Controls.StatusProgressBar.Minimum = 0
+            $this.Controls.StatusProgressBar.Maximum = $totalTasks
+            $this.Controls.StatusProgressBar.Value = 0
+            $this.Controls.StatusTaskCounter.Text = "0/$totalTasks"
+            $this.Controls.StatusStopBtn.Text = "Stop"
+            $this.Controls.StatusStopBtn.Enabled = $true
+            
+            # Set status message
+            $this.StatusBarManager.SetMessage("Preparing to execute $totalTasks tasks...", 'Black')
+        }
     }
     
     [void]UpdateStatusBarExecutionProgress([int]$completed, [int]$total, [string]$currentTask) {
         Write-Host "[DEBUG] UpdateStatusBarExecutionProgress - $completed/$total - $currentTask"
-        
-        # Update progress bar
-        if ($this.Controls.StatusProgressBar.Visible) {
-            $this.Controls.StatusProgressBar.Value = $completed
+        if ($this.StatusBarManager) {
+            # Update progress controls generically
+            $this.StatusBarManager.UpdateProgressControls($this.Controls, $completed, $total)
+            
+            # Update status message with current task
+            $taskName = if ($currentTask.Length -gt 50) { $currentTask.Substring(0, 47) + "..." } else { $currentTask }
+            $this.StatusBarManager.SetMessage("Executing: $taskName ($completed/$total)", 'Black')
         }
-        
-        # Update main status label with execution info
-        $taskName = if ($currentTask.Length -gt 50) { $currentTask.Substring(0, 47) + "..." } else { $currentTask }
-        $this.Controls.StatusLabel.Text = "Executing: $taskName ($completed/$total)"
-        
-        # Update task counter
-        if ($this.Controls.StatusTaskCounter.Visible) {
-            $this.Controls.StatusTaskCounter.Text = "$completed/$total"
-        }
-        
-        $this.RefreshUI()
     }
     
     [void]ShowStatusBarResultsControls([int]$successful, [int]$failed, [int]$total, [bool]$cancelled) {
         Write-Host "[DEBUG] ShowStatusBarResultsControls - Success: $successful, Failed: $failed, Total: $total, Cancelled: $cancelled"
-        
-        # Hide during-execution controls
-        $this.Controls.StatusProgressBar.Visible = $false
-        $this.Controls.StatusStopBtn.Visible = $false
-        $this.Controls.StatusTaskCounter.Visible = $false
-        
-        # Show after-execution buttons
-        $this.Controls.StatusViewLogsBtn.Visible = $true
-        $this.Controls.StatusRetryBtn.Visible = ($failed -gt 0)
-        $this.Controls.StatusClearBtn.Visible = $true
-        
-        # Update main status message with results
-        $summaryText = "Completed: $successful/$total"
-        if ($failed -gt 0) { $summaryText += " ($failed failed)" }
-        if ($cancelled) { $summaryText += " (cancelled)" }
-        
-        $this.Controls.StatusLabel.Text = $summaryText
-        
-        # Store execution results for later use
-        if (-not $this.State.ContainsKey('LastExecutionResults')) {
-            $this.State.LastExecutionResults = @{}
+        if ($this.StatusBarManager) {
+            # Clear any existing dynamic controls
+            $this.StatusBarManager.ClearControls()
+            
+            # Hide execution controls and show results controls
+            $this.StatusBarManager.HideExecutionControls($this.Controls)
+            $this.StatusBarManager.ShowResultsControls($this.Controls)
+            
+            # Show retry button only if there are failed tasks
+            $this.Controls.StatusRetryBtn.Visible = ($failed -gt 0)
+            
+            # Update status message
+            $summaryText = "Completed: $successful/$total"
+            if ($failed -gt 0) { $summaryText += " ($failed failed)" }
+            if ($cancelled) { $summaryText += " (cancelled)" }
+            
+            $statusColor = if ($failed -eq 0) { 'Green' } else { 'Orange' }
+            $this.StatusBarManager.SetMessage($summaryText, $statusColor)
+            
+            # Store execution results
+            $this.State.LastExecutionResults = @{
+                Successful    = $successful
+                Failed        = $failed
+                Total         = $total
+                Cancelled     = $cancelled
+                CompletedTime = Get-Date
+            }
         }
-        $this.State.LastExecutionResults = @{
-            Successful    = $successful
-            Failed        = $failed
-            Total         = $total
-            Cancelled     = $cancelled
-            CompletedTime = Get-Date
-        }
-        
-        $this.RefreshUI()
     }
-    
+
     [void]HideStatusBarExecutionControls() {
         Write-Host "[DEBUG] HideStatusBarExecutionControls"
-        
-        # Hide execution progress bar
-        $this.Controls.StatusProgressBar.Visible = $false
-        
-        # Hide all execution-related buttons
-        $this.Controls.StatusStopBtn.Visible = $false
-        $this.Controls.StatusTaskCounter.Visible = $false
-        
-        $this.HideStatusBarResultsControls()
-        
-        # Reset main status message
-        $this.Controls.StatusLabel.Text = "Ready"
-        
-        $this.RefreshUI()
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.ClearControls()
+            $this.StatusBarManager.HideExecutionControls($this.Controls)
+            $this.StatusBarManager.SetMessage("Ready", 'Black')
+        }
     }
     
     [void]HideStatusBarResultsControls() {
         Write-Host "[DEBUG] HideStatusBarResultsControls"
-        
-        $this.Controls.StatusViewLogsBtn.Visible = $false
-        $this.Controls.StatusRetryBtn.Visible = $false
-        $this.Controls.StatusClearBtn.Visible = $false
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.HideResultsControls($this.Controls)
+        }
     }
     
     # ===== EXECUTION CONTROL EVENT HANDLERS (Updated for Status Bar) =====
@@ -2594,105 +2667,33 @@ class LMDTApp {
 
     [void]SetStatusMessage([string]$message, [string]$color = 'Black') {
         Write-Host "[DEBUG] SetStatusMessage: $message"
-        if ($this.Controls.StatusLabel) {
-            $updateAction = {
-                # First, completely clean up the status bar including progress bar and template controls
-                $this.CompleteStatusBarCleanup()
-                
-                # Now set the new message
-                $this.Controls.StatusLabel.Text = $message
-                
-                # Use the provided color parameter
-                try {
-                    $this.Controls.StatusLabel.ForeColor = $color
-                }
-                catch {
-                    # Fallback to black if color name is invalid
-                    $this.Controls.StatusLabel.ForeColor = 'Black'
-                }
-                
-                # Force UI update
-                $appType = 'System.Windows.Forms.Application' -as [type]
-                if ($appType) {
-                    $appType::DoEvents()
-                }
-            }
-            
-            # Execute on main thread if needed
-            if ($this.MainForm.InvokeRequired) {
-                $this.MainForm.Invoke($updateAction)
-            }
-            else {
-                & $updateAction
-            }
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.SetMessage($message, $color)
         }
     }
 
     [void]SetStatusMessageWithProgress([string]$message, [string]$color = 'Blue') {
         Write-Host "[DEBUG] SetStatusMessageWithProgress: $message"
-        if ($this.Controls.StatusLabel) {
-            $updateAction = {
-                # Clean up template input controls but keep progress bar visible
-                if ($this.State.TemplateInputControls -and $this.State.TemplateInputControls.Count -gt 0) {
-                    $statusBar = $this.Controls.StatusBar
-                    
-                    # Remove all template input controls
-                    foreach ($control in $this.State.TemplateInputControls) {
-                        if ($statusBar.Controls.Contains($control)) {
-                            $statusBar.Controls.Remove($control)
-                        }
-                    }
-                    
-                    # Clear the state
-                    $this.State.TemplateInputControls = @()
-                    $this.State.TemplateItems = @()
-                }
-                
-                # Set the message and color
-                $this.Controls.StatusLabel.Text = $message
-                
-                try {
-                    $this.Controls.StatusLabel.ForeColor = $color
-                }
-                catch {
-                    $this.Controls.StatusLabel.ForeColor = 'Blue'
-                }
-                
-                # Force UI update
-                $appType = 'System.Windows.Forms.Application' -as [type]
-                if ($appType) {
-                    $appType::DoEvents()
-                }
-            }
-            
-            # Execute on main thread if needed
-            if ($this.MainForm.InvokeRequired) {
-                $this.MainForm.Invoke($updateAction)
-            }
-            else {
-                & $updateAction
-            }
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.SetMessage($message, $color)
         }
     }
 
     [void]CompleteStatusBarCleanup() {
         Write-Host "[DEBUG] CompleteStatusBarCleanup"
-        
-        # Clean up template input controls
-        $this.CleanupStatusBar()
-        
-        # Hide and reset old progress bar (if still being used)
-        if ($this.Controls.ContainsKey("StatusProgressBar") -and $this.Controls.StatusProgressBar.Parent -eq $this.Controls.StatusBar) {
-            $this.Controls.StatusProgressBar.Visible = $false
-            $this.Controls.StatusProgressBar.Value = 0
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.ClearControls()
+            $this.StatusBarManager.HideExecutionControls($this.Controls)
+            $this.StatusBarManager.HideResultsControls($this.Controls)
         }
         
-        # Hide status bar execution controls if showing during-execution controls
-        if ($this.Controls.ContainsKey("StatusStopBtn") -and $this.Controls.StatusStopBtn.Visible) {
-            # Don't hide completely if showing results, just hide during-execution controls
-            $this.Controls.StatusProgressBar.Visible = $false
-            $this.Controls.StatusStopBtn.Visible = $false
-            $this.Controls.StatusTaskCounter.Visible = $false
+        # Reset execution state
+        $this.IsExecuting = $false
+        $this.State.CancelRequested = $false
+        
+        # Re-enable execute button in case it was disabled
+        if ($this.Controls.ExecuteBtn) {
+            $this.Controls.ExecuteBtn.Enabled = $true
         }
         
         # Hide cancel button if it's visible and reset to default state
@@ -2701,40 +2702,15 @@ class LMDTApp {
             $this.Controls["CancelBtn"].Visible = $false
             $this.Controls["CancelBtn"].Text = $this.Config.Controls.CancelText
         }
-        
-        # Re-enable execute button in case it was disabled
-        if ($this.Controls.ExecuteBtn) {
-            $this.Controls.ExecuteBtn.Enabled = $true
-        }
-        
-        # Reset execution state
-        $this.IsExecuting = $false
-        $this.State.CancelRequested = $false
     }
 
     [void]CleanupStatusBar() {
         Write-Host "[DEBUG] CleanupStatusBar"
-        
-        # Clean up template input controls
-        if ($this.State.TemplateInputControls -and $this.State.TemplateInputControls.Count -gt 0) {
-            $statusBar = $this.Controls.StatusBar
-            
-            # Remove all template input controls
-            foreach ($control in $this.State.TemplateInputControls) {
-                if ($statusBar.Controls.Contains($control)) {
-                    $statusBar.Controls.Remove($control)
-                }
-            }
-            
-            # Clear the state
-            $this.State.TemplateInputControls = @()
-            $this.State.TemplateItems = @()
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.ClearControls()
         }
         
-        # NOTE: Do NOT clean up scheduling controls here to avoid conflicts
-        # Scheduling controls have their own dedicated cleanup methods
-        
-        # Also clean up scheduling results controls
+        # Also clean up scheduling results controls (keep this for backwards compatibility)
         $this.HideSchedulingResultsControls()
     }
 
@@ -2847,6 +2823,11 @@ class LMDTApp {
         
         # Cleanup execution timer and background resources
         $this.CleanupBackgroundExecution()
+        
+        # Dispose StatusBarManager
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.Dispose()
+        }
         
         Write-Host "[DEBUG] OnFormClosed - Cleanup completed"
     }
