@@ -1,7 +1,8 @@
 # =============================================================================
-# Dot's PowerShell Profile
-# A comprehensive PowerShell profile for enhanced terminal experience
-# Compatible with PowerShell 5.1 and PowerShell 7+
+# Dot's PowerShell Profile - Terminal customization shell environment configuration
+# A comprehensive PowerShell profile for enhanced terminal experience keyboard shortcuts
+# Compatible with PowerShell 5.1 and PowerShell 7+ cross-platform shell scripting
+# Keywords: profile startup initialization aliases functions keybindings shortcuts
 # =============================================================================
 
 # Profile Information
@@ -14,7 +15,7 @@ $ProfileInfo = @{
 
 Write-Host "Loading $($ProfileInfo.Name) v$($ProfileInfo.Version)..." -ForegroundColor Cyan
 
-# Initialize Starship Prompt (if available)
+# Initialize Starship Prompt - Custom terminal prompt theme appearance display formatting
 if (Get-Command starship -ErrorAction SilentlyContinue) {
     Invoke-Expression (&starship init powershell)
     Write-Host "✓ Starship prompt initialized" -ForegroundColor Green
@@ -23,23 +24,24 @@ else {
     Write-Warning "Starship not found. Install with: winget install starship"
 }
 
-# Enhanced PSReadLine Configuration (PowerShell 5.1+ / 7+)
+# Enhanced PSReadLine Configuration - Keyboard input handling key bindings shortcuts navigation
+# Affects: command completion history search arrow keys tab behavior input editing
 if (Get-Module -ListAvailable PSReadLine) {
     Import-Module PSReadLine
     
-    # Prediction and History
+    # Prediction and History - Command suggestions autocomplete intellisense
     Set-PSReadLineOption -PredictionSource History
     if ($PSVersionTable.PSVersion.Major -ge 7) {
         Set-PSReadLineOption -PredictionViewStyle ListView
     }
     
-    # Editing and Navigation
+    # Editing and Navigation - Keyboard shortcuts key handlers input method
     Set-PSReadLineOption -EditMode Windows
     Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
     Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
     Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
     
-    # Colors
+    # Colors - Terminal display appearance theme syntax highlighting
     Set-PSReadLineOption -Colors @{
         Command   = 'Yellow'
         Parameter = 'Green'
@@ -57,7 +59,7 @@ else {
     Write-Warning "PSReadLine not available. Some features may be limited."
 }
 
-# Useful Aliases
+# Useful Aliases - Command shortcuts abbreviations quick access convenience
 Set-Alias -Name vim -Value nvim -ErrorAction SilentlyContinue
 Set-Alias -Name ll -Value Get-ChildItem
 Set-Alias -Name la -Value Get-ChildItem
@@ -65,7 +67,7 @@ Set-Alias -Name l -Value Get-ChildItem
 Set-Alias -Name grep -Value Select-String
 Set-Alias -Name touch -Value New-Item
 
-# Enhanced Functions
+# Enhanced Functions - Custom commands utilities navigation helpers
 function .. { Set-Location .. }
 function ... { Set-Location ..\.. }
 function .... { Set-Location ..\..\.. }
@@ -118,7 +120,7 @@ function Invoke-ProfileReload {
     Write-Host "Profile reloaded!" -ForegroundColor Green
 }
 
-# Git shortcuts (if Git is available)
+# Git shortcuts - Version control commands repository management source control
 if (Get-Command git -ErrorAction SilentlyContinue) {
     function gs { git status }
     function ga { git add $args }
@@ -128,7 +130,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     function gd { git diff $args }
 }
 
-# Docker shortcuts (if Docker is available)
+# Docker shortcuts - Container management virtualization deployment orchestration
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     function dps { docker ps }
     function dpsa { docker ps -a }
@@ -136,7 +138,7 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
     function dc { docker-compose $args }
 }
 
-# System Information Function
+# System Information Function - Hardware details OS version CPU memory specifications
 function Get-SystemInfo {
     $os = Get-CimInstance Win32_OperatingSystem
     $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
@@ -150,7 +152,7 @@ function Get-SystemInfo {
     Write-Host "Profile: $($ProfileInfo.Name)" -ForegroundColor Yellow
 }
 
-# Welcome Message
+# Welcome Message - Profile loading startup information user greeting
 Write-Host ""
 Write-Host "Welcome to $($ProfileInfo.Name)!" -ForegroundColor Green
 Write-Host "Type 'Get-SystemInfo' for system details" -ForegroundColor DarkGray
