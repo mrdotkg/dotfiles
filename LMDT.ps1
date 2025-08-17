@@ -2682,17 +2682,14 @@ class LMDTApp {
         # Clear StatusBarManager dynamic controls first
         if ($this.StatusBarManager) {
             $this.StatusBarManager.ClearControls()
-            $this.StatusBarManager.HideExecutionControls($this.Controls)
-            $this.StatusBarManager.HideResultsControls($this.Controls)
-            $this.StatusBarManager.SetMessage("Ready", 'Black')
         }
-        
-        # Reset execution state
-        $this.IsExecuting = $false
         
         # Use the existing reload functionality to refresh the task view
         # This will reload tasks from source and reset all states to default
         $this.OnReloadCurrentView()
+        
+        # Additional clearing specific to execution results
+        $this.HideStatusBarExecutionControls()
         
         # Clear execution results
         if ($this.State.ContainsKey('LastExecutionResults')) {
