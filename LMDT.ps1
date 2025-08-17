@@ -528,7 +528,7 @@ class StatusBarManager {
     }
     
     # Core method: Add controls to status bar with automatic positioning
-    [array]AddControls([array]$controlSpecs) {
+    [array]AddControls([array]$controlSpecs, [hashtable]$appControls = $null) {
         Write-Host "[DEBUG] StatusBarManager.AddControls - Adding $($controlSpecs.Count) controls" -ForegroundColor Gray
         
         # Clear existing dynamic controls first
@@ -546,7 +546,7 @@ class StatusBarManager {
             $totalWidth += $spec.Width + $spacing
         }
         
-        # Start position from right edge
+        # Start position from right edge (original positioning)
         $currentX = $this.StatusBar.Width - $rightMargin - $totalWidth
         
         foreach ($spec in $controlSpecs) {
@@ -747,6 +747,8 @@ class LMDTApp {
     [hashtable]$State = @{}
     [hashtable]$TaskCache = @{} # Cache for all parsed tasks for fast template lookup
     [StatusBarManager]$StatusBarManager
+    [string]$LogFilePath # Path to current execution log file
+    [array]$ExecutionLogs = @() # In-memory execution logs
 
     # Registry for discoverable sources
     static [hashtable]$SourceRegistry = @{}
@@ -901,7 +903,7 @@ class LMDTApp {
             )
             
             # Create controls and store references for cross-control communication
-            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs)
+            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs, $this.Controls)
             if ($dynamicControls.Count -ge 4) {
                 $app = $this  # Capture reference for closures
                 $datePicker = $dynamicControls[0]
@@ -924,7 +926,10 @@ class LMDTApp {
                 # Update the Cancel button action
                 $cancelBtn.Add_Click({
                         $app.StatusBarManager.ClearControls()
+                        $app.StatusBarManager.HideExecutionControls($app.Controls)
+                        $app.StatusBarManager.HideResultsControls($app.Controls)
                         $app.StatusBarManager.SetMessage("Scheduling cancelled.", 'Orange')
+                        $app.IsExecuting = $false  # Reset execution state
                     }.GetNewClosure())
             }
             
@@ -1140,7 +1145,7 @@ class LMDTApp {
             )
             
             # Create controls and store references for cross-control communication
-            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs)
+            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs, $this.Controls)
             if ($dynamicControls.Count -ge 2) {
                 $viewTasksBtn = $dynamicControls[0]
                 $clearBtn = $dynamicControls[1]
@@ -1153,7 +1158,10 @@ class LMDTApp {
                 # Update the Clear button action
                 $clearBtn.Add_Click({
                         $this.StatusBarManager.ClearControls()
+                        $this.StatusBarManager.HideExecutionControls($this.Controls)
+                        $this.StatusBarManager.HideResultsControls($this.Controls)
                         $this.StatusBarManager.SetMessage("Ready", 'Black')
+                        $this.IsExecuting = $false  # Reset execution state
                     }.GetNewClosure())
             }
             
@@ -1224,7 +1232,7 @@ class LMDTApp {
             )
             
             # Create controls and store references for cross-control communication
-            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs)
+            $dynamicControls = $this.StatusBarManager.AddControls($controlSpecs, $this.Controls)
             if ($dynamicControls.Count -ge 3) {
                 $app = $this  # Capture reference for closures
                 $nameInput = $dynamicControls[0]
@@ -1254,7 +1262,10 @@ class LMDTApp {
                 # Update the Cancel button action
                 $cancelBtn.Add_Click({
                         $app.StatusBarManager.ClearControls()
+                        $app.StatusBarManager.HideExecutionControls($app.Controls)
+                        $app.StatusBarManager.HideResultsControls($app.Controls)
                         $app.StatusBarManager.SetMessage("Template creation cancelled.", 'Orange')
+                        $app.IsExecuting = $false  # Reset execution state
                     }.GetNewClosure())
             }
             
@@ -1985,6 +1996,9 @@ class LMDTApp {
     [void]StartBackgroundExecution($checkedItems) {
         Write-Host "[DEBUG] StartBackgroundExecution - Starting execution for $($checkedItems.Count) tasks"
         
+        # **ENHANCED LOGGING: Initialize execution logging**
+        $this.InitializeExecutionLogging()
+        
         # Use a timer-based approach instead of background thread to avoid UI deadlocks
         $this.State.ExecutionItems = $checkedItems
         $this.State.ExecutionIndex = 0
@@ -2075,6 +2089,15 @@ class LMDTApp {
         $failed = $this.State.ExecutionFailed
         $total = $this.State.ExecutionItems.Count
         $cancelled = $this.State.CancelRequested
+        
+        # **ENHANCED LOGGING: Finalize execution logging**
+        $executionSummary = @{
+            Successful = $successful
+            Failed = $failed
+            Total = $total
+            Cancelled = $cancelled
+        }
+        $this.FinalizeExecutionLogging($executionSummary)
         
         # Show results in status bar
         $this.ShowStatusBarResultsControls($successful, $failed, $total, $cancelled)
@@ -2175,8 +2198,91 @@ class LMDTApp {
         Write-Host "[DEBUG] CleanupBackgroundExecution - Cleanup completed"
     }
 
+    # ===== LOGGING INFRASTRUCTURE =====
+    
+    [void]InitializeExecutionLogging() {
+        Write-Host "[DEBUG] InitializeExecutionLogging"
+        
+        # Create log file with timestamp
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $logFileName = "LMDT_Execution_$timestamp.log"
+        $this.LogFilePath = Join-Path (Join-Path $this.Config.DataDir "Logs") $logFileName
+        
+        # Clear in-memory logs
+        $this.ExecutionLogs = @()
+        
+        # Write minimal header with just timestamp
+        $this.WriteToLog("LMDT Execution Log - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')", "INFO", "")
+        $this.WriteToLog("", "INFO", "")
+    }
+    
+    [void]WriteToLog([string]$message, [string]$level = "INFO", [string]$taskName = "") {
+        $timestamp = Get-Date -Format "HH:mm:ss"
+        
+        # Create clean log entry without excessive metadata
+        $logEntry = "[$timestamp] $message"
+        
+        # Add to in-memory logs
+        $this.ExecutionLogs += $logEntry
+        
+        # Write to file
+        try {
+            $logEntry | Add-Content -Path $this.LogFilePath -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+        catch {
+            Write-Host "[DEBUG] Failed to write to log file: $_" -ForegroundColor Red
+        }
+        
+        # Also output to console for debugging (with color)
+        $color = switch ($level) {
+            "ERROR" { "Red" }
+            "WARN" { "Yellow" }
+            "SUCCESS" { "Green" }
+            default { "White" }
+        }
+        Write-Host $logEntry -ForegroundColor $color
+    }
+    
+    [void]LogTaskExecution([string]$taskName, [string]$command, [hashtable]$result, [double]$executionTimeMs) {
+        # Log the command being executed
+        $this.WriteToLog("TASK: $taskName", "INFO", "")
+        $this.WriteToLog("CMD: $command", "INFO", "")
+        
+        # Log raw output/errors - this is what the user actually wants to see
+        if ($result.Success) {
+            if ($result.Output -and $result.Output.Trim()) {
+                # Split and log each line of actual output without extra formatting
+                $outputLines = $result.Output.Trim() -split "`r?`n"
+                foreach ($line in $outputLines) {
+                    $this.WriteToLog("OUT: $line", "INFO", "")
+                }
+            } else {
+                $this.WriteToLog("OUT: (No output)", "INFO", "")
+            }
+        }
+        else {
+            $this.WriteToLog("ERROR: $($result.Output)", "ERROR", "")
+        }
+        
+        # Add separator for readability
+        $this.WriteToLog("---", "INFO", "")
+    }
+    
+    [void]FinalizeExecutionLogging([hashtable]$summary) {
+        $this.WriteToLog("", "INFO", "")
+        $this.WriteToLog("SUMMARY: $($summary.Successful)/$($summary.Total) successful, $($summary.Failed) failed", "INFO", "")
+        if ($summary.Cancelled) {
+            $this.WriteToLog("STATUS: CANCELLED", "WARN", "")
+        }
+        $this.WriteToLog("FINISHED: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')", "INFO", "")
+    }
+
     [hashtable]ExecuteScript($script) {
-        Write-Host "[DEBUG] ExecuteScript"        
+        Write-Host "[DEBUG] ExecuteScript"
+        $startTime = Get-Date
+        $taskName = ""
+        $command = ""
+        
         try {
             $result = ""
             $machine = $this.Machines[$this.Controls.MachineCombo.SelectedIndex]
@@ -2186,19 +2292,36 @@ class LMDTApp {
                 $command = $script.Command
                 $file = $script.File
                 $line = $script.LineNumber
+                $taskName = $script.Description
             }
             else {
                 # Assume it's a hashtable (legacy format)
                 $command = $script.Command
                 $file = $script.File
                 $line = $script.LineNumber
+                $taskName = $script.Description
             }
             
-            # Get the actual command to execute
-            if ($file -and (Test-Path $file)) {
-                $lines = Get-Content $file
-                if ($line -le $lines.Count -and $line -gt 0) {
-                    $command = $lines[$line - 1]
+            # Use the pre-parsed command content instead of trying to extract by line number
+            # The ParseScriptFile method has already extracted the correct command content
+            if (-not $command -or $command.Trim() -eq "") {
+                # Fallback: try to extract from file if command is empty
+                if ($file -and (Test-Path $file)) {
+                    $lines = Get-Content $file
+                    if ($line -le $lines.Count -and $line -gt 0) {
+                        $command = $lines[$line - 1]
+                    }
+                }
+            }
+            
+            # Special handling for script files: If the file has functions/definitions, 
+            # execute the entire file content to ensure functions are available
+            if ($file -and (Test-Path $file) -and $file.EndsWith('.ps1')) {
+                $fileContent = Get-Content $file -Raw
+                # If the file contains function definitions, use the entire file content
+                if ($fileContent -match '^\s*function\s+' -or $fileContent -match '\nfunction\s+') {
+                    Write-Host "[DEBUG] Script file contains function definitions, executing entire file" -ForegroundColor Cyan
+                    $command = $fileContent
                 }
             }
             
@@ -2210,6 +2333,11 @@ class LMDTApp {
             catch {
                 Write-Warning "[DEBUG] Failed to add to history: $_"
             }
+            
+            # **ENHANCED LOGGING: Capture actual command output**
+            $actualCommand = $command
+            $executionResult = $null
+            $executionError = $null
             
             if ($machine.Type -eq "SSH") {
                 $sshCommand = "$($this.Config.Defaults.SSHCommandPrefix)$($machine.Name) '$command'"
@@ -2226,6 +2354,8 @@ class LMDTApp {
                     Write-Host "[INFO] SSH execution: $sshCommand" -ForegroundColor Green
                 }
                 
+                $actualCommand = $sshCommand
+                
                 # For SSH commands, also add the SSH command to history
                 try {
                     Add-History -InputObject $sshCommand
@@ -2235,45 +2365,127 @@ class LMDTApp {
                     Write-Warning "[DEBUG] Failed to add SSH command to history: $_"
                 }
                 
-                # Execute SSH command - if it requires password, user must have SSH keys or handle authentication
+                # Execute SSH command with proper output capture
                 try {
-                    $result = Invoke-Expression $sshCommand
+                    $executionResult = Invoke-Expression $sshCommand 2>&1
+                    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
+                        throw "SSH command exited with code $LASTEXITCODE"
+                    }
                     Write-Host "[INFO] SSH command executed successfully" -ForegroundColor Green
                 }
                 catch {
-                    Write-Warning "[INFO] SSH command failed (possibly due to authentication): $_"
-                    $result = "⚠️ SSH execution failed. Ensure SSH key authentication is configured or run manually: $sshCommand"
+                    $executionError = $_.Exception.Message
+                    Write-Warning "[INFO] SSH command failed: $executionError"
+                    $executionResult = "⚠️ SSH execution failed: $executionError`nEnsure SSH key authentication is configured or run manually: $sshCommand"
                 }
             }
             else {
                 # Local execution
                 if ($this.ExecutionMode -eq $this.Config.Defaults.AdminMode) {
-                    # For administrator execution, provide guidance instead of credential prompt
+                    # For administrator execution, use Start-Process with -Verb RunAs
                     Write-Host "[INFO] Admin execution requested for: $command" -ForegroundColor Yellow
-                    $result = "⚠️ Admin execution mode selected. To run as administrator, please manually execute this command in an elevated PowerShell session."
+                    try {
+                        # Execute as administrator using Start-Process
+                        $processArgs = @{
+                            FilePath     = "powershell.exe"
+                            ArgumentList = @("-Command", $command)
+                            Verb         = "RunAs"
+                            Wait         = $true
+                            PassThru     = $true
+                            WindowStyle  = "Hidden"
+                        }
+                        $process = Start-Process @processArgs
+                        if ($process.ExitCode -eq 0) {
+                            $executionResult = "Command executed as Administrator (exit code: 0)"
+                        } else {
+                            $executionError = "Command failed with exit code: $($process.ExitCode)"
+                            $executionResult = $executionError
+                        }
+                    }
+                    catch {
+                        $executionError = "Failed to execute as Administrator: $($_.Exception.Message)"
+                        $executionResult = $executionError
+                    }
                 }
-                elseif ($this.ExecutionMode -ne $this.Config.Defaults.AdminText -and $this.ExecutionMode -ne $this.Config.Defaults.CurrentUserMode) {
-                    # For other user execution, provide guidance instead of credential prompt
-                    $targetUser = if ($this.ExecutionMode.StartsWith("As ")) { $this.ExecutionMode.Substring(3) } else { $this.ExecutionMode }
-                    Write-Host "[INFO] User '$targetUser' execution requested for: $command" -ForegroundColor Yellow
-                    $result = "⚠️ Execution as user '$targetUser' selected. To run as this user, please manually execute this command in a PowerShell session running as '$targetUser'."
-                }
-                elseif ($this.ExecutionMode -eq $this.Config.Defaults.OtherUserText) {
-                    # For other user execution, provide guidance instead of credential prompt
-                    Write-Host "[INFO] Other user execution requested for: $command" -ForegroundColor Yellow
-                    $result = "⚠️ Other user execution mode selected. To run as a different user, please manually execute this command in a PowerShell session running as the target user."
+                elseif ($this.ExecutionMode -eq $this.Config.Defaults.CurrentUserMode -or 
+                        $this.ExecutionMode.Contains("(me)") -or 
+                        $this.ExecutionMode -eq $env:USERNAME) {
+                    # Current user execution - capture all output including errors
+                    Write-Host "[INFO] Executing as current user: $command" -ForegroundColor Green
+                    try {
+                        # Create a PowerShell instance to capture Write-Host output
+                        $ps = [PowerShell]::Create()
+                        $ps.AddScript($command) | Out-Null
+                        
+                        # Capture all output streams
+                        $result = $ps.Invoke()
+                        $errors = $ps.Streams.Error
+                        $warnings = $ps.Streams.Warning
+                        $verbose = $ps.Streams.Verbose
+                        $debug = $ps.Streams.Debug
+                        $information = $ps.Streams.Information
+                        
+                        # Combine all output
+                        $allOutput = @()
+                        if ($result) { $allOutput += $result }
+                        if ($information) { $allOutput += $information | ForEach-Object { $_.MessageData } }
+                        if ($warnings) { $allOutput += $warnings | ForEach-Object { "WARNING: $_" } }
+                        if ($verbose) { $allOutput += $verbose | ForEach-Object { "VERBOSE: $_" } }
+                        if ($debug) { $allOutput += $debug | ForEach-Object { "DEBUG: $_" } }
+                        
+                        $executionResult = $allOutput -join "`n"
+                        
+                        # Check for errors
+                        if ($errors -or $ps.HadErrors) {
+                            $executionError = ($errors | ForEach-Object { $_.Exception.Message }) -join "; "
+                        }
+                        
+                        $ps.Dispose()
+                    }
+                    catch {
+                        $executionError = $_.Exception.Message
+                        $executionResult = "Error executing command: $executionError"
+                    }
                 }
                 else {
-                    # Current user execution - use Invoke-Expression (command already added to history above)
-                    Write-Host "[INFO] Executing as current user: $command" -ForegroundColor Green
-                    $result = Invoke-Expression $command
+                    # For other specific users, try to use Start-Process with different credentials
+                    # Note: This will require user interaction for credentials in most cases
+                    $targetUser = $this.ExecutionMode
+                    Write-Host "[INFO] Attempting execution as user '$targetUser' for: $command" -ForegroundColor Yellow
+                    
+                    # For now, show guidance since credential prompting in GUI is complex
+                    # Future enhancement: Could implement proper credential dialog
+                    $executionError = "Execution as specific user '$targetUser' requires manual credential entry"
+                    $executionResult = "⚠️ To run as user '$targetUser', please execute this command manually in a PowerShell session running as that user:`n`nCommand: $command"
                 }
             }
             
-            return @{ Success = $true; Output = $result }
+            # Calculate execution time
+            $executionTime = (Get-Date) - $startTime
+            $executionTimeMs = $executionTime.TotalMilliseconds
+            
+            # Determine success/failure
+            # Consider tasks with warnings (⚠️) or explicit errors as failures
+            $isSuccess = ($null -eq $executionError) -and ($executionResult -notlike "*⚠️*")
+            $finalResult = @{ 
+                Success = $isSuccess
+                Output = if ($executionResult) { $executionResult | Out-String } else { "(No output)" }
+            }
+            
+            # **ENHANCED LOGGING: Log the execution details**
+            $this.LogTaskExecution($taskName, $actualCommand, $finalResult, $executionTimeMs)
+            
+            return $finalResult
         }
         catch {
-            return @{ Success = $false; Output = $_.Exception.Message }
+            $executionTime = (Get-Date) - $startTime
+            $executionTimeMs = $executionTime.TotalMilliseconds
+            $errorResult = @{ Success = $false; Output = $_.Exception.Message }
+            
+            # Log the error
+            $this.LogTaskExecution($taskName, $command, $errorResult, $executionTimeMs)
+            
+            return $errorResult
         }
     }
 
@@ -2377,47 +2589,41 @@ class LMDTApp {
     }
     
     [void]OnViewLogs() {
-        Write-Host "[DEBUG] OnViewLogs"
+        Write-Host "[DEBUG] OnViewLogs - Opening log file in default editor"
         
-        # Create a simple log viewer window
-        $logForm = New-Object System.Windows.Forms.Form
-        $logForm.Text = "Execution Logs"
-        $logForm.Width = 600
-        $logForm.Height = 400
-        $logForm.StartPosition = 'CenterParent'
-        
-        $logTextBox = New-Object System.Windows.Forms.TextBox
-        $logTextBox.Multiline = $true
-        $logTextBox.ScrollBars = 'Vertical'
-        $logTextBox.Dock = 'Fill'
-        $logTextBox.ReadOnly = $true
-        $logTextBox.Font = New-Object System.Drawing.Font("Consolas", 9)
-        
-        # Get log content from ListView items
-        $logContent = @()
-        $logContent += "=== LMDT Execution Log ==="
-        $logContent += "Generated: $(Get-Date)"
-        if ($this.State.LastExecutionResults) {
-            $results = $this.State.LastExecutionResults
-            $logContent += "Execution Summary: $($results.Successful)/$($results.Total) successful, $($results.Failed) failed"
-            $logContent += "Completed: $($results.CompletedTime)"
-        }
-        $logContent += ""
-        $logContent += "=== Task Results ==="
-        
-        foreach ($item in $this.Controls.ScriptsListView.Items) {
-            $status = $item.SubItems[3].Text
-            $logContent += "[$status] $($item.Text)"
-            if ($status -eq $this.Config.Messages.Failed) {
-                $logContent += "   Command: $($item.SubItems[1].Text)"
-                $logContent += "   File: $($item.SubItems[2].Text)"
-                $logContent += ""
+        # Try to open current session log file first
+        if ($this.LogFilePath -and (Test-Path $this.LogFilePath)) {
+            try {
+                Start-Process "notepad.exe" -ArgumentList $this.LogFilePath
+                $this.SetStatusMessage("Opened current execution log in notepad", 'Green')
+                return
+            }
+            catch {
+                Write-Host "[DEBUG] Failed to open current log file with notepad: $_" -ForegroundColor Yellow
             }
         }
         
-        $logTextBox.Text = $logContent -join "`r`n"
-        $logForm.Controls.Add($logTextBox)
-        $logForm.ShowDialog()
+        # Fallback: try to open the most recent log file
+        $logsDir = Join-Path $this.Config.DataDir "Logs"
+        if (Test-Path $logsDir) {
+            $recentLog = Get-ChildItem $logsDir -Filter "LMDT_Execution_*.log" -ErrorAction SilentlyContinue | 
+                        Sort-Object LastWriteTime -Descending | 
+                        Select-Object -First 1
+            
+            if ($recentLog) {
+                try {
+                    Start-Process "notepad.exe" -ArgumentList $recentLog.FullName
+                    $this.SetStatusMessage("Opened most recent log file in notepad", 'Green')
+                    return
+                }
+                catch {
+                    Write-Host "[DEBUG] Failed to open recent log file with notepad: $_" -ForegroundColor Yellow
+                }
+            }
+        }
+        
+        # No log files found
+        $this.SetStatusMessage("No log files found. Run some tasks to generate logs.", 'Orange')
     }
     
     [void]OnRetryFailed() {
@@ -2473,12 +2679,20 @@ class LMDTApp {
     [void]OnClearResults() {
         Write-Host "[DEBUG] OnClearResults"
         
+        # Clear StatusBarManager dynamic controls first
+        if ($this.StatusBarManager) {
+            $this.StatusBarManager.ClearControls()
+            $this.StatusBarManager.HideExecutionControls($this.Controls)
+            $this.StatusBarManager.HideResultsControls($this.Controls)
+            $this.StatusBarManager.SetMessage("Ready", 'Black')
+        }
+        
+        # Reset execution state
+        $this.IsExecuting = $false
+        
         # Use the existing reload functionality to refresh the task view
         # This will reload tasks from source and reset all states to default
         $this.OnReloadCurrentView()
-        
-        # Additional clearing specific to execution results
-        $this.HideStatusBarExecutionControls()
         
         # Clear execution results
         if ($this.State.ContainsKey('LastExecutionResults')) {

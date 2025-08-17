@@ -50,7 +50,7 @@ Write-Host "Setting up PowerShell profiles..." -ForegroundColor Green
 # 📁 PowerShell 5 Setup: Configure legacy PowerShell profile for compatibility modules cmdlets
 $ps5ProfileDir = "$env:USERPROFILE\Documents\WindowsPowerShell"
 $ps5ProfilePath = "$ps5ProfileDir\Microsoft.PowerShell_profile.ps1"
-$sourceProfile = "$PSScriptRoot\powershell\dot_msps_profile.ps1"
+$sourceProfile = "$PSScriptRoot\powershell\dot.profile.ps1"
 
 if (!(Test-Path $ps5ProfileDir)) { 
     New-Item -ItemType Directory -Path $ps5ProfileDir -Force | Out-Null 
